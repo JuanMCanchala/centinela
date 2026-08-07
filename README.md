@@ -290,13 +290,37 @@ web/                        frontend sin paso de compilación
 
 ## Modelo declarado (compuerta G3)
 
-**`phi3.5:3.8b-mini-instruct-q4_K_M`** vía Ollama, con
-**`llama3.2:1b`** evaluado y descartado (ver hallazgo 1).
+**`phi3.5:3.8b-mini-instruct-q4_K_M`** vía Ollama, con **`llama3.2:1b`** evaluado y
+descartado (ver hallazgo 1).
 
 Ambos están en la lista de modelos permitidos de
 [`docs/stack-tecnico.md`](https://github.com/TechSphere2026/ParticipantArtifacts/blob/main/docs/stack-tecnico.md)
-del reto. La justificación completa y las mediciones están en
-[`docs/informe-final.md`](docs/informe-final.md).
+del reto. Se verifica en `api/centinela/config.py`, en el `Makefile` y en `GET /api/salud`.
+
+---
+
+## Documentación
+
+| Documento | Qué contiene |
+|---|---|
+| [`docs/informe-final.md`](docs/informe-final.md) | Informe final: declaración del modelo, decisión técnica, riesgos, proceso |
+| [`docs/arquitectura.md`](docs/arquitectura.md) | Diagramas de arquitectura y flujo de decisión, verificados contra el código |
+| [`docs/metricas.md`](docs/metricas.md) | Todas las métricas medidas, generadas por script |
+| [`docs/informe-corpus.md`](docs/informe-corpus.md) | Auditoría de integridad del corpus entregado |
+| [`prompts/`](prompts/) | Prompts versionados, uno por archivo, con su esquema y notas |
+
+## Verificar la entrega
+
+```bash
+make test        # 55 tests unitarios y de regresión
+make eval        # 160 casos oficiales · cero falsos negativos clínicos
+make redteam     # 32 casos adversariales (requiere la API levantada)
+make diagrama    # cada elemento del diagrama existe en el código
+make auditar     # defectos detectados en el corpus entregado
+make bench       # latencia de modelo y voz
+make g2          # ensayo cronometrado de la compuerta de arranque
+make metricas    # regenera docs/metricas.md desde las mediciones
+```
 
 ---
 
