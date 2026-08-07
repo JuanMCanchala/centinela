@@ -110,6 +110,8 @@ async def main() -> int:
         default="El dolor esta como en un seis y tengo la herida enrojecida",
         help="frase que se sintetiza con Piper y se manda como si fuera el paciente",
     )
+    ap.add_argument("--rapido", action="store_true", help="envia el audio de golpe (falsea la especulacion)")
+    ap.add_argument("--sin-especular", action="store_true", help="no manda pausa_corta: mide la latencia sin especulacion")
     ap.add_argument("--tono", action="store_true",
                     help="manda un tono en vez de voz (debe dar sin_habla)")
     args = ap.parse_args()
@@ -133,20 +135,42 @@ async def main() -> int:
     print(f"PCM16: {len(pcm)} bytes ({len(pcm)/2/16000:.2f}s a 16 kHz mono)")
 
     async with websockets.connect(f"{args.url}/ws/llamada/{lid}", max_size=None) as ws:
-        # El navegador manda trozos de 1024 muestras (64 ms), no todo de golpe.
+        # Se imita al navegador: trozos de 1024 muestras (64 ms) en tiempo real, no
+        # todo de golpe. Enviarlo de golpe falsearia la prueba, porque la
+        # especulacion depende de que el audio llegue al ritmo del habla.
         trozo = 1024 * 2
-        t_envio = time.perf_counter()
+        n_trozos = 0
         for i in range(0, len(pcm), trozo):
             await ws.send(pcm[i:i + trozo])
-        ms_envio = (time.perf_counter() - t_envio) * 1000
-        print(f"  envio de {len(pcm)//trozo} trozos: {ms_envio:.0f} ms")
+            n_trozos += 1
+            if not args.rapido:
+                await asyncio.sleep(0.064)
+        print(f"  {n_trozos} trozos enviados en tiempo real")
+
+        # El cliente real manda `pausa_corta` a los 350 ms de silencio, 550 ms
+        # antes de declarar el fin del turno. Se reproduce esa secuencia.
+        if not args.sin_especular:
+            await ws.send(json.dumps({"tipo": "pausa_corta"}))
+            print("  -> pausa_corta (el servidor empieza a transcribir ya)")
+            # Se consume el acuse para que no se confunda con la respuesta.
+            try:
+                aviso = json.loads(await asyncio.wait_for(ws.recv(), timeout=5))
+                if aviso.get("tipo") == "especulando":
+                    print(f"     especulacion arrancada={aviso['arrancada']} "
+                          f"sobre {aviso['segundos_acumulados']}s")
+            except asyncio.TimeoutError:
+                pass
+            if not args.rapido:
+                await asyncio.sleep(0.55)
 
         t0 = time.perf_counter()
         await ws.send(json.dumps({"tipo": "fin_habla"}))
-        print(f"  -> fin_habla enviado, cronometro en marcha\n")
+        print("  -> fin_habla enviado, cronometro en marcha\n")
 
         recibido_audio = False
-        for _ in range(6):
+        primer_sonido = None
+        esperando_relleno = False
+        for _ in range(8):
             try:
                 msg = await asyncio.wait_for(ws.recv(), timeout=90)
             except asyncio.TimeoutError:
@@ -155,14 +179,25 @@ async def main() -> int:
 
             ms = (time.perf_counter() - t0) * 1000
             if isinstance(msg, bytes):
-                print(f"  [{ms:8.0f} ms] AUDIO {len(msg)} bytes "
+                if primer_sonido is None:
+                    primer_sonido = ms
+                etiqueta = "RELLENO" if esperando_relleno else "AUDIO"
+                print(f"  [{ms:8.0f} ms] {etiqueta} {len(msg)} bytes "
                       f"({max(0,len(msg)-44)/2/22050:.1f}s de voz)")
-                recibido_audio = True
-                break
+                if esperando_relleno:
+                    esperando_relleno = False
+                else:
+                    recibido_audio = True
+                    break
             else:
                 d = json.loads(msg)
                 tipo = d.get("tipo")
-                if tipo == "transcripcion":
+                if tipo == "relleno":
+                    esperando_relleno = True
+                    print(f"  [{ms:8.0f} ms] aviso de relleno (muletilla en camino)")
+                elif tipo == "especulando":
+                    print(f"  [{ms:8.0f} ms] especulando arrancada={d.get('arrancada')}")
+                elif tipo == "transcripcion":
                     print(f"  [{ms:8.0f} ms] transcripcion  stt={d['ms']:.0f} ms  "
                           f"rtf={d['factor_tiempo_real']}  texto={d['texto'][:60]!r}")
                 elif tipo == "sin_habla":

@@ -53,6 +53,7 @@ from .rag.embedder import Embedder
 from .rag.ingest import chunkear, extraer_documento
 from .rag.retriever import Retriever
 from .rag.store import KnowledgeStore
+from .stt.sesion import SesionTranscripcion
 from .stt.whisper import WhisperSTT, pcm16_a_float32
 from .tts.piper import PiperTTS, concatenar_wav
 
@@ -74,9 +75,9 @@ async def lifespan(app: FastAPI):
     E["responder"] = ResponderClinico(E["retriever"], E["llm"])
     E["tts"] = PiperTTS(dir_cache=config.dir_audio_cache)
     E["stt"] = WhisperSTT(
-        tamano=config.modelo_stt,
-        dispositivo=config.dispositivo_stt,
-        tipo_computo=config.tipo_computo_stt,
+        tamano=config.modelo_stt or None,
+        dispositivo=config.dispositivo_stt or None,
+        tipo_computo=config.tipo_computo_stt or None,
         dir_modelos=RAIZ / "data" / "modelos" / "whisper",
     )
     E["escalation"] = EscalationService(config.dir_runtime)
@@ -96,7 +97,7 @@ async def lifespan(app: FastAPI):
         )
 
     if config.pre_renderizar_audio and E["tts"].disponible:
-        E["prerender"] = await E["tts"].pre_renderizar(S.todas_las_locuciones())
+        E["prerender"] = await E["tts"].pre_renderizar(S.todas_las_locuciones() + S.naturalidad())
     else:
         E["prerender"] = {"aviso": "pre-renderizado desactivado o Piper no disponible"}
 
@@ -677,6 +678,57 @@ FRECUENCIA_ESPERADA = 16000
 MAX_SEGUNDOS_TURNO = 60
 
 
+async def _procesar_turno_desde_sesion(
+    llamada_id: str, policy: DialogPolicy, sesion: SesionTranscripcion
+) -> dict:
+    """Cierra el turno usando la transcripcion especulativa si esta disponible."""
+
+    crono = Cronometro(llamada_id, len(policy.turnos))
+
+    with crono.etapa("stt"):
+        res = await sesion.finalizar()
+    trans = res.transcripcion
+
+    if trans.sin_habla:
+        salida = {
+            "tipo": "sin_habla",
+            "mensaje": trans.motivo_descarte or "no se detecto voz en el audio",
+            "duracion_audio_s": trans.duracion_audio_s,
+            "duracion_voz_s": trans.duracion_voz_s,
+        }
+    else:
+        salida = await _completar_turno(llamada_id, policy, trans, crono)
+        salida["transcripcion"]["origen"] = res.origen
+        salida["transcripcion"]["ms_ahorrados"] = res.ms_ahorrados
+
+    return salida
+
+
+async def _completar_turno(
+    llamada_id: str, policy: DialogPolicy, trans, crono: Cronometro
+) -> dict:
+    """Del texto transcrito a la respuesta hablada."""
+
+    with crono.etapa("extraccion"):
+        accion = await policy.procesar(trans.texto)
+
+    with crono.etapa("tts"):
+        audio = await _sintetizar_accion(accion)
+    crono.primer_audio()
+
+    payload = await _empaquetar_turno(llamada_id, policy, accion, crono, audio)
+    return {
+        "tipo": "turno",
+        "transcripcion": {
+            "texto": trans.texto,
+            "ms": trans.ms,
+            "factor_tiempo_real": round(trans.factor_tiempo_real, 4),
+            "duracion_voz_s": trans.duracion_voz_s,
+        },
+        **payload,
+    }
+
+
 async def _procesar_audio_turno(
     llamada_id: str, policy: DialogPolicy, crudo: bytes
 ) -> dict:
@@ -718,27 +770,12 @@ async def _procesar_audio_turno(
         if trans.sin_habla:
             salida = {
                 "tipo": "sin_habla",
-                "mensaje": "no se detecto voz en el audio",
+                "mensaje": trans.motivo_descarte or "no se detecto voz en el audio",
                 "duracion_audio_s": trans.duracion_audio_s,
+                "duracion_voz_s": trans.duracion_voz_s,
             }
         else:
-            with crono.etapa("extraccion"):
-                accion = await policy.procesar(trans.texto)
-
-            with crono.etapa("tts"):
-                audio = await _sintetizar_accion(accion)
-            crono.primer_audio()
-
-            payload = await _empaquetar_turno(llamada_id, policy, accion, crono, audio)
-            salida = {
-                "tipo": "turno",
-                "transcripcion": {
-                    "texto": trans.texto,
-                    "ms": trans.ms,
-                    "factor_tiempo_real": round(trans.factor_tiempo_real, 4),
-                },
-                **payload,
-            }
+            salida = await _completar_turno(llamada_id, policy, trans, crono)
 
     return salida
 
@@ -767,11 +804,27 @@ async def turno_por_audio(llamada_id: str, peticion: Request) -> JSONResponse:
 
 
 async def _atender_fin_habla(
-    ws: WebSocket, llamada_id: str, policy: DialogPolicy, crudo: bytes
+    ws: WebSocket, llamada_id: str, policy: DialogPolicy, sesion: SesionTranscripcion
 ) -> None:
-    """Envia por el WebSocket el resultado de procesar el turno de voz."""
+    """Cierra el turno de voz y devuelve la respuesta por el WebSocket.
 
-    resultado = await _procesar_audio_turno(llamada_id, policy, crudo)
+    Lo primero que sale por el cable es una muletilla -- "mm-hm", "ajá" -- tomada
+    del cache de audio. Cuesta microsegundos leerla y hace que el paciente reciba
+    sonido en el instante en que calla, no cuando el pipeline termina. No es un
+    truco cosmetico: en una conversacion humana ese sonido existe, y su ausencia
+    es la senal mas fuerte de que al otro lado hay una maquina.
+
+    El relleno no se envia si la sesion no tiene audio suficiente: emitir "ajá"
+    ante un carraspeo seria peor que no emitir nada.
+    """
+
+    if sesion.n_muestras >= int(0.4 * 16000):
+        relleno = await _muletilla_pensando()
+        if relleno:
+            await ws.send_json({"tipo": "relleno"})
+            await ws.send_bytes(relleno)
+
+    resultado = await _procesar_turno_desde_sesion(llamada_id, policy, sesion)
 
     if resultado["tipo"] == "turno":
         # La transcripcion se manda por separado y antes del turno: el paciente ve
@@ -784,6 +837,22 @@ async def _atender_fin_habla(
             await ws.send_bytes(audio)
     else:
         await ws.send_json(resultado)
+
+
+async def _muletilla_pensando() -> bytes:
+    """Siguiente muletilla del ciclo, desde el cache pre-renderizado.
+
+    Se rotan en orden y no al azar: al azar, dos turnos seguidos pueden repetir la
+    misma, y repetir "ajá" dos veces es mas delator que no decir nada.
+    """
+
+    locuciones = S.MULETILLAS_PENSANDO
+    indice = E.get("indice_muletilla", 0)
+    E["indice_muletilla"] = (indice + 1) % len(locuciones)
+    loc = locuciones[indice]
+
+    audio = await E["tts"].sintetizar(loc.texto, clave=loc.clave)
+    return audio.wav
 
 
 @app.websocket("/ws/llamada/{llamada_id}")
@@ -812,23 +881,38 @@ async def ws_llamada(ws: WebSocket, llamada_id: str) -> None:
         await ws.close()
         return
 
-    buffer = bytearray()
+    # Una sesion de transcripcion por llamada: acumula el audio y puede empezar a
+    # transcribirlo antes de que el turno cierre.
+    sesion = SesionTranscripcion(stt=E["stt"])
 
     try:
         while True:
             mensaje = await ws.receive()
 
             if "bytes" in mensaje and mensaje["bytes"]:
-                buffer.extend(mensaje["bytes"])
+                sesion.agregar(pcm16_a_float32(mensaje["bytes"]))
 
             elif "text" in mensaje and mensaje["text"]:
                 evento = json.loads(mensaje["text"])
                 tipo = evento.get("tipo")
 
-                if tipo == "fin_habla":
-                    crudo = bytes(buffer)
-                    buffer.clear()
-                    await _atender_fin_habla(ws, llamada_id, policy, crudo)
+                if tipo == "pausa_corta":
+                    # El cliente detecto una pausa breve, mucho antes de declarar
+                    # el fin del turno. Se arranca la transcripcion aqui: si el
+                    # paciente ya termino, estara lista cuando llegue `fin_habla`.
+                    arrancada = sesion.especular()
+                    await ws.send_json({
+                        "tipo": "especulando",
+                        "arrancada": arrancada,
+                        "segundos_acumulados": round(sesion.n_muestras / 16000, 2),
+                    })
+
+                elif tipo == "fin_habla":
+                    await _atender_fin_habla(ws, llamada_id, policy, sesion)
+
+                elif tipo == "descartar":
+                    # El VAD del cliente decidio que lo captado no era voz.
+                    sesion.limpiar()
 
                 elif tipo == "cerrar":
                     accion = policy.cerrar_ahora()

@@ -79,7 +79,16 @@
     <div class="transcripcion" id="transcripcion">
       <p class="vacio">La conversación aparecerá acá.</p>
     </div>
+    <!-- Tres canales de audio separados a proposito:
+         · reproductor: la respuesta del agente.
+         · reproductor-relleno: la muletilla ("mm-hm") que suena en el instante en
+           que el paciente calla, mientras el pipeline trabaja. Va aparte para que
+           no se cancele con la respuesta.
+         · ambiente: bucle de fondo (teclado, murmullo, linea). El silencio digital
+           absoluto es lo que delata a un agente. -->
     <audio id="reproductor" hidden></audio>
+    <audio id="reproductor-relleno" hidden></audio>
+    <audio id="ambiente" src="/estatico/ambiente.wav" loop hidden></audio>
   </section>
 
   <section class="panel decision">

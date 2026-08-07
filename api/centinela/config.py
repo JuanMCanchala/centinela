@@ -37,9 +37,17 @@ class Config:
     url_ollama: str = os.environ.get("CENTINELA_OLLAMA_URL", "http://127.0.0.1:11434")
 
     # --- voz ---
-    modelo_stt: str = os.environ.get("CENTINELA_STT_MODEL", "small")
-    dispositivo_stt: str = os.environ.get("CENTINELA_STT_DEVICE", "cpu")
-    tipo_computo_stt: str = os.environ.get("CENTINELA_STT_COMPUTE", "int8")
+    #
+    # Vacio a proposito: `WhisperSTT` detecta si hay GPU y elige el modelo en
+    # consecuencia (`large-v3-turbo` en CUDA, `small` en CPU). Fijar "small" aqui
+    # como estaba antes impedia usar la GPU aunque estuviera disponible, y con
+    # `small` el sistema transcribia "si, soy yo" como "Season young".
+    #
+    # Las tres variables de entorno siguen mandando si se quiere forzar algo:
+    #   CENTINELA_STT_MODEL=medium CENTINELA_STT_DEVICE=cpu
+    modelo_stt: str = os.environ.get("CENTINELA_STT_MODEL", "")
+    dispositivo_stt: str = os.environ.get("CENTINELA_STT_DEVICE", "")
+    tipo_computo_stt: str = os.environ.get("CENTINELA_STT_COMPUTE", "")
 
     # --- comportamiento ---
     calentar_al_arrancar: bool = os.environ.get("CENTINELA_WARMUP", "1") == "1"
@@ -57,7 +65,11 @@ class Config:
         return {
             "modelo_llm": self.modelo_llm,
             "url_ollama": self.url_ollama,
-            "modelo_stt": f"{self.modelo_stt} ({self.dispositivo_stt}/{self.tipo_computo_stt})",
+            "stt_forzado": {
+                "modelo": self.modelo_stt or "(autodetectado)",
+                "dispositivo": self.dispositivo_stt or "(autodetectado)",
+                "computo": self.tipo_computo_stt or "(autodetectado)",
+            },
             "dir_index": str(self.dir_index),
             "dir_runtime": str(self.dir_runtime),
         }

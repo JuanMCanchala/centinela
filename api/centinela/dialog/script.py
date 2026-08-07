@@ -255,7 +255,58 @@ ACUSES = (
     Locucion("acuse_2", "Listo, queda anotado."),
     Locucion("acuse_3", "De acuerdo."),
     Locucion("acuse_4", "Gracias por contarme."),
+    Locucion("acuse_5", "Ah, bueno."),
+    Locucion("acuse_6", "Ya veo."),
+    Locucion("acuse_7", "Claro."),
+    Locucion("acuse_8", "Perfecto."),
 )
+
+# --------------------------------------------------------------------------
+# Capa de naturalidad
+#
+# Lo que delata a un agente de voz no es el timbre: es la cadencia. Una persona
+# no responde con una frase completa y perfectamente formada exactamente 1.8
+# segundos despues de que uno calla. Emite un sonido mientras piensa, dice "mm"
+# mientras escucha, y arranca la frase con una muletilla.
+#
+# Estas locuciones son cortas a proposito. Se pre-sintetizan igual que el resto
+# del guion, asi que reproducirlas cuesta microsegundos y se pueden soltar en el
+# instante exacto en que hacen falta -- que es justo lo que las hace creibles.
+# --------------------------------------------------------------------------
+
+# Se emiten inmediatamente al detectar que el paciente termino de hablar, antes
+# de que el pipeline tenga la respuesta. Cubren el hueco de proceso con algo que
+# una persona diria, en vez de con silencio digital.
+MULETILLAS_PENSANDO = (
+    Locucion("pensando_1", "Mm-hm."),
+    Locucion("pensando_2", "Ajá."),
+    Locucion("pensando_3", "Ya."),
+    Locucion("pensando_4", "Okey."),
+    Locucion("pensando_5", "Mm, a ver."),
+    Locucion("pensando_6", "Déjeme anotar eso."),
+)
+
+# Para cuando el proceso se alarga de verdad -- una consulta al corpus, un turno
+# largo. Reconocer la espera en voz alta es lo que hace una persona.
+MULETILLAS_ESPERA_LARGA = (
+    Locucion("espera_1", "Un segundito, por favor."),
+    Locucion("espera_2", "Permítame revisar eso."),
+    Locucion("espera_3", "Déjeme confirmarlo aquí."),
+)
+
+# Arranques de frase. Empezar siempre la respuesta en la primera palabra util es
+# una de las cosas que suena mas mecanica.
+ARRANQUES = (
+    Locucion("arranque_1", "Bueno,"),
+    Locucion("arranque_2", "Mire,"),
+    Locucion("arranque_3", "Vea,"),
+    Locucion("arranque_4", "Pues"),
+    Locucion("arranque_5", "A ver,"),
+)
+
+
+def naturalidad() -> list[Locucion]:
+    return list(MULETILLAS_PENSANDO) + list(MULETILLAS_ESPERA_LARGA) + list(ARRANQUES)
 
 # Lo que se le dice al paciente cuando una bandera roja rompe el cuestionario.
 # El agente NO sigue preguntando por el apetito despues de que alguien reporta

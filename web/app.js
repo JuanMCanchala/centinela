@@ -246,6 +246,7 @@ $("#btn-iniciar").addEventListener("click", async () => {
     $("#btn-iniciar").disabled = true;
     $("#btn-cerrar").disabled = false;
     $("#zona-microfono").hidden = false;
+    iniciarAmbiente();
     conectarWS();
   } catch (e) {
     agregarTurno("sistema", `Error al iniciar: ${e.message}`, "alerta");
@@ -270,6 +271,7 @@ $("#btn-cerrar").addEventListener("click", async () => {
 
 function finalizar() {
   detenerVoz();
+  detenerAmbiente();
   estado.ws?.close();
   estado.ws = null;
   $("#btn-iniciar").disabled = false;
@@ -368,18 +370,33 @@ const VAD = {
   msPorTrama: 64,           // 1024 muestras a 16 kHz
   msCalibracion: 600,
   msSilencioParaCerrar: 900,
+  // Pausa breve que dispara la transcripcion especulativa en el servidor. Es la
+  // optimizacion de latencia mas grande del sistema: cuando el turno cierra a los
+  // 900 ms, el servidor lleva ya 550 ms transcribiendo, asi que buena parte del
+  // trabajo esta hecho. Si el paciente solo estaba tomando aire y sigue hablando,
+  // el servidor descarta la especulacion sin coste -- corrio en un hilo aparte
+  // mientras el paciente hablaba.
+  msPausaParaEspecular: 350,
   msMinimoHabla: 250,       // por debajo de esto es una tos, no un turno
   msMaximoTurno: 30000,     // corte de seguridad
   preRollTramas: 5,         // ~320 ms
-  factorSobreRuido: 3.2,    // umbral = piso de ruido x este factor
-  umbralMinimo: 0.010,      // suelo absoluto, para micros muy silenciosos
-  // Techo del umbral. Sin este techo, una sala ruidosa o un microfono con
-  // ganancia automatica agresiva producen un piso alto, el umbral se va por
-  // encima del nivel de voz normal, y el agente NUNCA oye nada -- fallando en
-  // silencio, que es la peor forma de fallar. El habla normal a un palmo del
-  // microfono ronda 0.05-0.25 de RMS, asi que 0.045 deja margen holgado.
-  umbralMaximo: 0.045,
-  umbralBargeIn: 0.12,      // hablar por encima de esto interrumpe al agente
+  factorSobreRuido: 4.0,    // umbral = piso de ruido x este factor
+  // Suelo absoluto del umbral. Estaba en 0.010 y era demasiado bajo: en una sala
+  // silenciosa el umbral se quedaba en ese minimo y el VAD abria turno con la
+  // respiracion o con el teclado. El audio resultante era casi silencio, y casi
+  // silencio es exactamente lo que hace alucinar a Whisper ("Suscribete").
+  umbralMinimo: 0.022,
+  // Techo del umbral. Sin techo, una sala ruidosa o un microfono con ganancia
+  // automatica agresiva producen un piso alto, el umbral se va por encima del
+  // nivel de voz normal, y el agente NUNCA oye nada -- fallando en silencio, que
+  // es la peor forma de fallar. El habla normal a un palmo del microfono ronda
+  // 0.05-0.25 de RMS.
+  umbralMaximo: 0.050,
+  // Un turno solo se envia si en algun momento la senal llego a este nivel. Es
+  // una segunda puerta, independiente del umbral: filtra el caso en que el ruido
+  // ambiente sube lo justo para cruzar el umbral pero nunca hay voz de verdad.
+  picoMinimoParaEnviar: 0.035,
+  umbralBargeIn: 0.14,      // hablar por encima de esto interrumpe al agente
 };
 
 const voz = {
@@ -401,6 +418,9 @@ const voz = {
   turnoPcm: [],
   msHablando: 0,
   msSilencio: 0,
+  picoTurno: 0,
+  yaEspeculo: false,
+  esperandoRelleno: false,
   enviadasWs: 0,
   bargeInHabilitado: true,
   temporizadorRespuesta: null,
@@ -430,9 +450,20 @@ function conectarWS() {
       return;
     }
     const m = JSON.parse(ev.data);
-    if (m.tipo === "transcripcion") {
+    if (m.tipo === "relleno") {
+      // Lo siguiente que llega es la muletilla ("mm-hm"). Se marca para que el
+      // reproductor no la confunda con la respuesta y no cambie de fase: el
+      // agente todavia esta pensando.
+      voz.esperandoRelleno = true;
+    } else if (m.tipo === "especulando") {
+      if (m.arrancada) {
+        infoVoz(`transcribiendo ya (${m.segundos_acumulados}s), sin esperar el cierre`);
+      }
+    } else if (m.tipo === "transcripcion") {
       agregarTurno("paciente", m.texto);
-      infoVoz(`transcrito en ${ms(m.ms)} · RTF ${m.factor_tiempo_real} · vía WS`);
+      const ahorro = m.ms_ahorrados > 0 ? ` · ${ms(m.ms_ahorrados)} adelantados` : "";
+      const origen = { especulativa: "especulativa", espera_especulativa: "parcial", completa: "completa" }[m.origen] || "";
+      infoVoz(`transcrito en ${ms(m.ms)} · RTF ${m.factor_tiempo_real} · ${origen}${ahorro}`);
     } else if (m.tipo === "cierre") {
       cancelarEsperaRespuesta();
       agregarTurno("agente", m.agente_dice);
@@ -615,6 +646,7 @@ function procesarTrama(evento) {
       voz.msHablando = 0;
       voz.msSilencio = 0;
       voz.enviadasWs = 0;
+      voz.picoTurno = rms;
       voz.turnoPcm = [];
       for (const trama of voz.preRoll) enviarAudio(trama);
       voz.preRoll = [];
@@ -624,20 +656,45 @@ function procesarTrama(evento) {
   if (voz.fase === "hablando") {
     enviarAudio(pcm);
     voz.msHablando += msTrama;
+    voz.picoTurno = Math.max(voz.picoTurno, rms);
     voz.msSilencio = hayVoz ? 0 : voz.msSilencio + msTrama;
+
+    if (hayVoz) {
+      voz.yaEspeculo = false;
+    } else if (!voz.yaEspeculo && voz.msSilencio >= VAD.msPausaParaEspecular) {
+      // Pausa breve: se le dice al servidor que empiece a transcribir ya. Todavia
+      // no es el fin del turno -- el paciente puede seguir --, pero si termino
+      // aqui, la transcripcion estara lista cuando cerremos.
+      voz.yaEspeculo = true;
+      if (estado.ws?.readyState === WebSocket.OPEN) {
+        estado.ws.send(JSON.stringify({ tipo: "pausa_corta" }));
+      }
+    }
 
     const callo = voz.msSilencio >= VAD.msSilencioParaCerrar;
     const demasiadoLargo = voz.msHablando >= VAD.msMaximoTurno;
 
     if (callo || demasiadoLargo) {
-      if (voz.msHablando - voz.msSilencio >= VAD.msMinimoHabla) {
+      const msVoz = voz.msHablando - voz.msSilencio;
+      const suficienteVoz = msVoz >= VAD.msMinimoHabla;
+      // Segunda puerta: ademas de durar lo suficiente, el turno tiene que haber
+      // alcanzado un pico de verdad. Sin esto, un ruido sostenido justo por
+      // encima del umbral abria un turno de casi-silencio, y casi-silencio es lo
+      // que hace que Whisper invente frases de YouTube.
+      const suficientePico = voz.picoTurno >= VAD.picoMinimoParaEnviar;
+
+      if (suficienteVoz && suficientePico) {
         cerrarTurno(demasiadoLargo);
       } else {
-        // Ruido corto: se descarta el turno sin molestar al servidor.
-        infoVoz("sonido demasiado corto, sigo escuchando");
+        const razon = !suficienteVoz
+          ? `solo ${msVoz.toFixed(0)} ms de voz`
+          : `pico ${voz.picoTurno.toFixed(3)} por debajo de ${VAD.picoMinimoParaEnviar}`;
+        infoVoz(`descartado (${razon}), sigo escuchando`);
         fase("escuchando");
         voz.msHablando = 0;
         voz.msSilencio = 0;
+        voz.picoTurno = 0;
+        voz.turnoPcm = [];
       }
     }
   }
@@ -652,7 +709,7 @@ function calibrar(rms, msTrama) {
     // Mediana en vez de media: un golpe en la mesa durante la calibracion no
     // debe subir el umbral para toda la llamada.
     voz.piso = ordenadas[Math.floor(ordenadas.length / 2)];
-    voz.umbral = Math.max(VAD.umbralMinimo, voz.piso * VAD.factorSobreRuido);
+    voz.umbral = Math.min(VAD.umbralMaximo, Math.max(VAD.umbralMinimo, voz.piso * VAD.factorSobreRuido));
     $("#medidor-umbral").style.left = `${Math.min(100, voz.umbral * 400)}%`;
     infoVoz(`ruido de sala ${voz.piso.toFixed(4)} · umbral de voz ${voz.umbral.toFixed(4)}`);
     fase("escuchando");
@@ -848,8 +905,21 @@ function remuestrearA16k(entrada, frecuenciaOrigen) {
 
 function reproducirBlob(datos) {
   const blob = new Blob([datos], { type: "audio/wav" });
+  const url = URL.createObjectURL(blob);
+
+  if (voz.esperandoRelleno) {
+    // Muletilla: se reproduce en un canal aparte para que no cancele ni sea
+    // cancelada por la respuesta. Suena mientras el pipeline sigue trabajando.
+    voz.esperandoRelleno = false;
+    const relleno = $("#reproductor-relleno");
+    relleno.src = url;
+    relleno.volume = 0.85;
+    relleno.play().catch(() => {});
+    return;
+  }
+
   const a = $("#reproductor");
-  a.src = URL.createObjectURL(blob);
+  a.src = url;
   if (voz.activa) fase("agente");
   a.play().catch(() => {});
 }
@@ -865,6 +935,52 @@ $("#reproductor").addEventListener("ended", () => {
 $("#reproductor").addEventListener("error", () => {
   if (voz.activa && voz.fase === "agente") fase("escuchando");
 });
+
+/* ---------------------------- ambiente de fondo ----------------------------
+ *
+ * El silencio digital absoluto es lo que delata a un agente. Una llamada humana
+ * desde un centro de seguimiento trae de fondo teclado, murmullo lejano y el
+ * zumbido de la linea; sin nada de eso, el hueco entre frases suena a vacio
+ * antinatural.
+ *
+ * El bucle esta generado por `scripts/generar_ambiente.py` y empalma consigo
+ * mismo sin costura: un audio cualquiera produce un chasquido cada vez que
+ * reinicia, y ese chasquido periodico delata la maquina mas que el silencio.
+ */
+
+const AMBIENTE_VOLUMEN = 0.16;
+
+function iniciarAmbiente() {
+  const a = $("#ambiente");
+  a.volume = 0;
+  a.loop = true;
+  a.play().then(() => {
+    // Entrada gradual: que aparezca de golpe al descolgar es tan artificial como
+    // no tenerlo.
+    let v = 0;
+    const subir = setInterval(() => {
+      v = Math.min(AMBIENTE_VOLUMEN, v + AMBIENTE_VOLUMEN / 25);
+      a.volume = v;
+      if (v >= AMBIENTE_VOLUMEN) clearInterval(subir);
+    }, 60);
+  }).catch(() => {
+    // El navegador puede bloquear la reproduccion automatica. No es critico.
+  });
+}
+
+function detenerAmbiente() {
+  const a = $("#ambiente");
+  let v = a.volume;
+  const bajar = setInterval(() => {
+    v = Math.max(0, v - AMBIENTE_VOLUMEN / 12);
+    a.volume = v;
+    if (v <= 0) {
+      clearInterval(bajar);
+      a.pause();
+      a.currentTime = 0;
+    }
+  }, 50);
+}
 
 function interrumpirAgente() {
   const a = $("#reproductor");

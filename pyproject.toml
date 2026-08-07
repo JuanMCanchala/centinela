@@ -21,6 +21,13 @@ dependencies = [
     "rapidocr-onnxruntime==1.4.4",  # OCR del PDF escaneado, sin tesseract del sistema
     # --- voz ---
     "faster-whisper==1.1.1",     # CTranslate2; trae Silero VAD integrado
+    # Bibliotecas CUDA para la transcripcion en GPU. Se instalan siempre porque no
+    # hay forma limpia de condicionarlas en pyproject, y son inofensivas sin GPU:
+    # `WhisperSTT` valida la GPU con una inferencia real y, si no funciona, se
+    # degrada a CPU sola. Sin estas dos, ctranslate2 en Windows falla con
+    # "Library cublas64_12.dll is not found" o -- peor -- se queda colgado.
+    "nvidia-cublas-cu12==12.9.2.10",
+    "nvidia-cudnn-cu12==9.24.0.43",
     # TTS: piper se usa como binario externo, no como wheel de Python.
     # piper-tts no publica wheel para win_amd64 (piper-phonemize solo trae
     # manylinux y macos), asi que scripts/fetch_piper.py baja el binario
