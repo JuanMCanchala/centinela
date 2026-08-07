@@ -24,7 +24,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
-from fastapi import FastAPI, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import (
+    FastAPI,
+    File,
+    HTTPException,
+    Request,
+    UploadFile,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -669,12 +677,15 @@ FRECUENCIA_ESPERADA = 16000
 MAX_SEGUNDOS_TURNO = 60
 
 
-async def _atender_fin_habla(
-    ws: WebSocket, llamada_id: str, policy: DialogPolicy, crudo: bytes
-) -> None:
-    """Procesa un turno de voz completo: audio -> transcripcion -> respuesta.
+async def _procesar_audio_turno(
+    llamada_id: str, policy: DialogPolicy, crudo: bytes
+) -> dict:
+    """Audio PCM16 16 kHz -> transcripcion -> decision -> respuesta hablada.
 
-    Vive aparte del bucle del WebSocket para que ese bucle solo enrute mensajes.
+    Devuelve un diccionario con la forma del mensaje que se manda al cliente. No
+    sabe nada del transporte a proposito: lo usan tanto el WebSocket como el
+    endpoint HTTP de respaldo, asi que el camino de voz es exactamente el mismo
+    por los dos y no hay riesgo de que uno funcione y el otro no.
     """
 
     crono = Cronometro(llamada_id, len(policy.turnos))
@@ -686,32 +697,31 @@ async def _atender_fin_habla(
         # llega con otra frecuencia la duracion sale absurda y Whisper gasta
         # segundos transcribiendo ruido -- que es exactamente el sintoma de "se
         # queda procesando". Mejor decir el problema que trabajar de mas.
-        await ws.send_json({
+        salida = {
             "tipo": "error",
             "mensaje": (
                 f"el audio dura {duracion:.0f} s interpretado a 16 kHz, lo que sugiere "
                 f"que llego con otra frecuencia de muestreo. El cliente debe "
                 f"remuestrear a 16 kHz mono."
             ),
-        })
+        }
+    elif duracion < 0.2:
+        salida = {
+            "tipo": "sin_habla",
+            "mensaje": f"el audio recibido dura {duracion:.2f} s, demasiado corto",
+            "duracion_audio_s": round(duracion, 2),
+        }
     else:
         with crono.etapa("stt"):
             trans = await asyncio.to_thread(E["stt"].transcribir, muestras)
 
         if trans.sin_habla:
-            await ws.send_json({
+            salida = {
                 "tipo": "sin_habla",
                 "mensaje": "no se detecto voz en el audio",
                 "duracion_audio_s": trans.duracion_audio_s,
-            })
+            }
         else:
-            await ws.send_json({
-                "tipo": "transcripcion",
-                "texto": trans.texto,
-                "ms": trans.ms,
-                "factor_tiempo_real": round(trans.factor_tiempo_real, 4),
-            })
-
             with crono.etapa("extraccion"):
                 accion = await policy.procesar(trans.texto)
 
@@ -720,9 +730,60 @@ async def _atender_fin_habla(
             crono.primer_audio()
 
             payload = await _empaquetar_turno(llamada_id, policy, accion, crono, audio)
-            await ws.send_json({"tipo": "turno", **payload})
-            if audio:
-                await ws.send_bytes(audio)
+            salida = {
+                "tipo": "turno",
+                "transcripcion": {
+                    "texto": trans.texto,
+                    "ms": trans.ms,
+                    "factor_tiempo_real": round(trans.factor_tiempo_real, 4),
+                },
+                **payload,
+            }
+
+    return salida
+
+
+@app.post("/api/llamadas/{llamada_id}/audio")
+async def turno_por_audio(llamada_id: str, peticion: Request) -> JSONResponse:
+    """Turno de voz por HTTP: respaldo cuando el WebSocket no esta disponible.
+
+    Existe porque el WebSocket puede fallar por causas que no controlamos --
+    proxies corporativos, extensiones del navegador, politicas de red -- y perder
+    el microfono por eso seria perder la mitad del reto. El cuerpo es PCM16 mono
+    a 16 kHz crudo, el mismo formato que los mensajes binarios del WebSocket, y
+    pasa por el mismo pipeline.
+
+    Cuesta una vuelta de red mas que el WebSocket, y por eso no es el camino por
+    defecto, pero el resto es identico.
+    """
+
+    policy = E["llamadas"].get(llamada_id)
+    if policy is None:
+        raise HTTPException(404, "llamada no encontrada")
+
+    crudo = await peticion.body()
+    resultado = await _procesar_audio_turno(llamada_id, policy, crudo)
+    return JSONResponse(resultado)
+
+
+async def _atender_fin_habla(
+    ws: WebSocket, llamada_id: str, policy: DialogPolicy, crudo: bytes
+) -> None:
+    """Envia por el WebSocket el resultado de procesar el turno de voz."""
+
+    resultado = await _procesar_audio_turno(llamada_id, policy, crudo)
+
+    if resultado["tipo"] == "turno":
+        # La transcripcion se manda por separado y antes del turno: el paciente ve
+        # lo que dijo mientras el agente todavia esta pensando la respuesta.
+        trans = resultado.pop("transcripcion")
+        await ws.send_json({"tipo": "transcripcion", **trans})
+        await ws.send_json(resultado)
+        audio = E.get("ultimo_audio") or b""
+        if audio:
+            await ws.send_bytes(audio)
+    else:
+        await ws.send_json(resultado)
 
 
 @app.websocket("/ws/llamada/{llamada_id}")

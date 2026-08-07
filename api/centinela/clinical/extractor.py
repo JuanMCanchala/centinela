@@ -140,7 +140,7 @@ class Extractor:
     ) -> ResultadoExtraccion:
         """Actualiza `estado` con lo que aporte este turno. No lo reemplaza."""
 
-        norm = normalizar_turno(texto_paciente)
+        norm = normalizar_turno(texto_paciente, dominio_objetivo)
         res = ResultadoExtraccion(estado=estado, normalizado=norm, respondio=True)
 
         # ---------- capa 1: reglas numericas ----------

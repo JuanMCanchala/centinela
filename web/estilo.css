@@ -182,6 +182,13 @@ input[type=text]:focus, select:focus { outline: 1px solid var(--acento); border-
   background: var(--amarillo); left: 0; transition: left .2s;
 }
 
+/* Lectura numerica del VAD. Fea a proposito: es un instrumento, no decoracion.
+   Convierte un "no me escucha" en un diagnostico de un vistazo. */
+.mic-numeros {
+  font-family: var(--mono); font-size: .68rem; color: var(--texto-suave);
+  margin-top: .3rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
 .respaldo { border-top: 1px solid var(--borde); padding-top: .9rem; margin-top: .9rem; }
 .atajos { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .5rem; }
 .atajos button {

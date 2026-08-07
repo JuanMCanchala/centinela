@@ -159,7 +159,13 @@ async function cargarSaludDetalle() {
 function poblarPacientes() {
   const sel = $("#selector-paciente");
   PACIENTES.forEach((p, i) => sel.append(new Option(p.etiqueta, String(i))));
-  sel.addEventListener("change", mostrarFicha);
+  sel.addEventListener("change", () => {
+    mostrarFicha();
+    // Cambiar de paciente borra lo que se vea del anterior. Dejar la decisión de
+    // otro paciente en pantalla junto a la ficha del nuevo es la peor
+    // combinación posible en una interfaz clínica.
+    if (!estado.llamadaId) limpiarPanelesDecision();
+  });
   mostrarFicha();
 
   const cont = $("#atajos-prueba");
@@ -201,9 +207,28 @@ function agregarTurno(quien, texto, clases = "") {
   return div;
 }
 
+/** Deja los paneles de decisión en blanco.
+ *
+ * Se llama al iniciar cada llamada. Sin esto, arrancar una llamada nueva dejaba
+ * en pantalla la decisión, el estado clínico y las citas de la llamada ANTERIOR:
+ * el semáforo marcaba ROJO con "fiebre 38.2" para un paciente al que todavía no
+ * se le había preguntado nada. En una demo clínica eso no es un detalle
+ * cosmético: es información falsa sobre un paciente concreto.
+ */
+function limpiarPanelesDecision() {
+  $("#transcripcion").innerHTML = '<p class="vacio">La conversación aparecerá acá.</p>';
+  $$("#semaforo .luz").forEach((l) => l.classList.remove("activa"));
+  $("#motivo-decision").textContent = "Sin datos todavía.";
+  $("#motivo-decision").className = "motivo";
+  $("#tabla-estado").innerHTML = "";
+  $("#reglas-disparadas").innerHTML = '<p class="vacio">Ninguna.</p>';
+  $("#citas").innerHTML = '<p class="vacio">Sin citas todavía.</p>';
+  $("#latencia").innerHTML = '<p class="vacio">—</p>';
+}
+
 $("#btn-iniciar").addEventListener("click", async () => {
   const p = pacienteActual();
-  $("#transcripcion").innerHTML = "";
+  limpiarPanelesDecision();
   try {
     const r = await api("/api/llamadas", {
       method: "POST",
@@ -347,8 +372,14 @@ const VAD = {
   msMaximoTurno: 30000,     // corte de seguridad
   preRollTramas: 5,         // ~320 ms
   factorSobreRuido: 3.2,    // umbral = piso de ruido x este factor
-  umbralMinimo: 0.012,      // suelo absoluto, para micros muy silenciosos
-  umbralBargeIn: 0.10,      // hablar por encima de esto interrumpe al agente
+  umbralMinimo: 0.010,      // suelo absoluto, para micros muy silenciosos
+  // Techo del umbral. Sin este techo, una sala ruidosa o un microfono con
+  // ganancia automatica agresiva producen un piso alto, el umbral se va por
+  // encima del nivel de voz normal, y el agente NUNCA oye nada -- fallando en
+  // silencio, que es la peor forma de fallar. El habla normal a un palmo del
+  // microfono ronda 0.05-0.25 de RMS, asi que 0.045 deja margen holgado.
+  umbralMaximo: 0.045,
+  umbralBargeIn: 0.12,      // hablar por encima de esto interrumpe al agente
 };
 
 const voz = {
@@ -361,13 +392,31 @@ const voz = {
   frecuenciaReal: 0,
   piso: 0,
   umbral: VAD.umbralMinimo,
+  rmsActual: 0,
   muestrasCalibracion: [],
   preRoll: [],
+  // Todo el audio del turno se acumula tambien aqui, no solo se envia por el
+  // WebSocket. Es lo que permite reintentar por HTTP si el WebSocket no esta
+  // disponible: sin esta copia, un WebSocket caido significa perder el turno.
+  turnoPcm: [],
   msHablando: 0,
   msSilencio: 0,
-  enviadas: 0,
+  enviadasWs: 0,
   bargeInHabilitado: true,
+  temporizadorRespuesta: null,
+  transporte: "-",          // ws | http | -
 };
+
+// Si el servidor no contesta en este plazo, se desatasca la interfaz y se dice
+// por que. Un "Procesando..." eterno es el peor resultado posible: el usuario no
+// sabe si hablar, esperar o recargar.
+const MS_ESPERA_RESPUESTA = 25000;
+
+function estadoWs() {
+  const ws = estado.ws;
+  if (!ws) return "sin conexión";
+  return ["conectando", "abierto", "cerrando", "cerrado"][ws.readyState] || "?";
+}
 
 function conectarWS() {
   const proto = location.protocol === "https:" ? "wss" : "ws";
@@ -376,34 +425,43 @@ function conectarWS() {
 
   estado.ws.onmessage = (ev) => {
     if (typeof ev.data !== "string") {
+      cancelarEsperaRespuesta();
       reproducirBlob(ev.data);
       return;
     }
     const m = JSON.parse(ev.data);
     if (m.tipo === "transcripcion") {
       agregarTurno("paciente", m.texto);
-      infoVoz(`transcrito en ${ms(m.ms)} · RTF ${m.factor_tiempo_real}`);
-    } else if (m.tipo === "sin_habla") {
-      // No es un error: el VAD del servidor no encontro voz. Se vuelve a
-      // escuchar de inmediato en vez de dejar al usuario esperando.
-      infoVoz("no se detectó voz, siga hablando");
-      fase("escuchando");
-    } else if (m.tipo === "turno") {
-      procesarRespuestaTurno(m);
+      infoVoz(`transcrito en ${ms(m.ms)} · RTF ${m.factor_tiempo_real} · vía WS`);
     } else if (m.tipo === "cierre") {
+      cancelarEsperaRespuesta();
       agregarTurno("agente", m.agente_dice);
       pintarDecision(m.decision);
       finalizar();
-    } else if (m.tipo === "error") {
-      agregarTurno("sistema", `Error del servidor: ${m.mensaje}`, "alerta");
-      fase("escuchando");
+    } else {
+      // turno, sin_habla y error comparten el manejo con el camino HTTP.
+      manejarResultadoVoz(m);
     }
   };
 
-  estado.ws.onclose = () => {
-    if (voz.activa) infoVoz("canal de voz cerrado");
+  estado.ws.onopen = () => {
+    console.log("[centinela] WebSocket abierto:", estado.ws.url);
+    if (voz.activa) infoVoz("canal de voz conectado");
   };
-  estado.ws.onerror = () => infoVoz("error en el canal de voz");
+
+  estado.ws.onclose = (ev) => {
+    console.warn("[centinela] WebSocket cerrado", ev.code, ev.reason);
+    if (voz.activa) {
+      infoVoz(`canal de voz cerrado (código ${ev.code}); se usará HTTP`);
+    }
+  };
+
+  estado.ws.onerror = () => {
+    console.error("[centinela] error en el WebSocket:", estado.ws.url);
+    if (voz.activa) {
+      infoVoz("el WebSocket falló; el audio se enviará por HTTP");
+    }
+  };
 }
 
 /* --------------------------- estado visible -------------------------------- */
@@ -556,7 +614,8 @@ function procesarTrama(evento) {
       fase("hablando");
       voz.msHablando = 0;
       voz.msSilencio = 0;
-      voz.enviadas = 0;
+      voz.enviadasWs = 0;
+      voz.turnoPcm = [];
       for (const trama of voz.preRoll) enviarAudio(trama);
       voz.preRoll = [];
     }
@@ -602,21 +661,127 @@ function calibrar(rms, msTrama) {
 
 function cerrarTurno(porLargo) {
   fase("procesando");
-  if (porLargo) infoVoz("turno cortado a los 30 s");
-  // Aqui arranca la medicion de latencia que exige la rúbrica: el instante en
+  const segundos = (voz.turnoPcm.reduce((n, t) => n + t.length, 0) / 16000).toFixed(1);
+
+  // Aqui arranca la medicion de latencia que exige la rubrica: el instante en
   // que el VAD decide que el paciente termino de hablar.
-  if (estado.ws?.readyState === WebSocket.OPEN) {
+  const porWs = estado.ws?.readyState === WebSocket.OPEN && voz.enviadasWs > 0;
+
+  if (porWs) {
+    voz.transporte = "ws";
     estado.ws.send(JSON.stringify({ tipo: "fin_habla" }));
+    infoVoz(`${segundos}s enviados por WebSocket${porLargo ? " (cortado a 30 s)" : ""}`);
+    armarEsperaRespuesta();
+  } else {
+    // El WebSocket no esta disponible. En vez de perder el turno, se manda el
+    // mismo audio por HTTP: el servidor lo pasa por el mismo pipeline.
+    voz.transporte = "http";
+    infoVoz(`WebSocket ${estadoWs()}; enviando ${segundos}s por HTTP`);
+    enviarTurnoPorHttp();
   }
+
   voz.msHablando = 0;
   voz.msSilencio = 0;
   voz.preRoll = [];
 }
 
 function enviarAudio(pcm) {
+  // Siempre se guarda copia local, aunque el WebSocket este abierto: es la que
+  // permite el reintento por HTTP.
+  voz.turnoPcm.push(pcm);
   if (estado.ws?.readyState === WebSocket.OPEN) {
     estado.ws.send(pcm.buffer);
-    voz.enviadas++;
+    voz.enviadasWs++;
+  }
+}
+
+function pcmDelTurno() {
+  const total = voz.turnoPcm.reduce((n, t) => n + t.length, 0);
+  const junto = new Int16Array(total);
+  let off = 0;
+  for (const t of voz.turnoPcm) {
+    junto.set(t, off);
+    off += t.length;
+  }
+  return junto;
+}
+
+async function enviarTurnoPorHttp() {
+  const pcm = pcmDelTurno();
+  voz.turnoPcm = [];
+
+  if (pcm.length < 3200) {  // menos de 200 ms
+    infoVoz("audio demasiado corto, sigo escuchando");
+    fase("escuchando");
+    return;
+  }
+
+  try {
+    const r = await fetch(`/api/llamadas/${estado.llamadaId}/audio`, {
+      method: "POST",
+      headers: { "Content-Type": "application/octet-stream" },
+      body: pcm.buffer,
+    });
+    const d = await r.json();
+    manejarResultadoVoz(d);
+  } catch (e) {
+    agregarTurno("sistema", `No se pudo enviar el audio: ${e.message}`, "alerta");
+    infoVoz(`fallo el envío por HTTP: ${e.message}`);
+    fase("escuchando");
+  }
+}
+
+/** Punto unico de manejo del resultado de un turno de voz, venga por donde venga. */
+function manejarResultadoVoz(d) {
+  cancelarEsperaRespuesta();
+
+  if (d.tipo === "turno") {
+    if (d.transcripcion) {
+      agregarTurno("paciente", d.transcripcion.texto);
+      infoVoz(`transcrito en ${ms(d.transcripcion.ms)} · RTF ` +
+        `${d.transcripcion.factor_tiempo_real} · vía ${voz.transporte.toUpperCase()}`);
+    }
+    procesarRespuestaTurno(d);
+    // Por HTTP no llegan bytes de audio: se pide por su URL.
+    if (voz.transporte === "http" && d.audio_bytes) reproducir(d.audio_url);
+  } else if (d.tipo === "sin_habla") {
+    infoVoz(`no se detectó voz (${d.duracion_audio_s ?? "?"}s) · siga hablando`);
+    fase("escuchando");
+  } else if (d.tipo === "error") {
+    agregarTurno("sistema", `Error del servidor: ${d.mensaje}`, "alerta");
+    infoVoz("error del servidor, vuelvo a escuchar");
+    fase("escuchando");
+  }
+}
+
+/* --------------- nunca quedarse colgado en "Procesando" -------------------- */
+
+function armarEsperaRespuesta() {
+  cancelarEsperaRespuesta();
+  voz.temporizadorRespuesta = setTimeout(() => {
+    if (voz.fase !== "procesando") return;
+    agregarTurno(
+      "sistema",
+      `El servidor no respondió en ${MS_ESPERA_RESPUESTA / 1000} s ` +
+      `(WebSocket: ${estadoWs()}). Reintentando por HTTP.`,
+      "alerta",
+    );
+    // El audio del turno sigue en memoria, asi que el reintento es real y no
+    // le pide al paciente que repita.
+    if (voz.turnoPcm.length) {
+      voz.transporte = "http";
+      enviarTurnoPorHttp();
+    } else {
+      infoVoz("sin respuesta y sin audio guardado; vuelvo a escuchar");
+      fase("escuchando");
+    }
+  }, MS_ESPERA_RESPUESTA);
+}
+
+function cancelarEsperaRespuesta() {
+  if (voz.temporizadorRespuesta) {
+    clearTimeout(voz.temporizadorRespuesta);
+    voz.temporizadorRespuesta = null;
   }
 }
 
@@ -626,9 +791,24 @@ function calcularRms(muestras) {
   return Math.sqrt(suma / muestras.length);
 }
 
+let ultimoPintado = 0;
+
 function pintarMedidor(rms) {
+  voz.rmsActual = rms;
   $("#medidor-nivel").style.width = `${Math.min(100, rms * 400)}%`;
   $("#medidor-nivel").classList.toggle("sobre-umbral", rms > voz.umbral);
+
+  // Lectura numerica, refrescada 5 veces por segundo. Es lo que convierte un
+  // "no me escucha" en un diagnostico: si el nivel nunca supera el umbral, el
+  // problema es el microfono o la sala, no el agente.
+  const ahora = performance.now();
+  if (ahora - ultimoPintado > 200 && voz.fase !== "calibrando") {
+    ultimoPintado = ahora;
+    $("#mic-numeros").textContent =
+      `nivel ${rms.toFixed(4)} · umbral ${voz.umbral.toFixed(4)} · ` +
+      `${(voz.frecuenciaReal / 1000).toFixed(1)} kHz→16 · ` +
+      `WS ${estadoWs()} · ${voz.enviadasWs} tramas`;
+  }
 }
 
 /* --------------------------- remuestreo a 16 kHz --------------------------- */

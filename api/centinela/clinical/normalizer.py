@@ -375,13 +375,62 @@ PISTAS_SUENO = {
 }
 
 
-def pistas_cualitativas(texto: str) -> dict[str, str]:
+# Vocabulario que indica que el turno esta HABLANDO de un dominio.
+#
+# Existe por un fallo real y peligroso. Las listas de arriba incluian "normal"
+# como termino suelto para la categoria normal de cuatro dominios, asi que un
+# paciente que preguntaba *"el dolor es un 6, no se si eso es normal"* marcaba
+# herida, movilidad, apetito y sueno como NORMALES de golpe -- sin haber dicho
+# una palabra sobre ninguno de los cuatro.
+#
+# La consecuencia no es cosmetica: el agente creia que ya conocia esos dominios
+# y no volvia a preguntar por ellos. Es exactamente el mecanismo del falso
+# negativo que el motor de decision esta disenado para evitar, colandose una capa
+# antes. Lo encontro una captura de la interfaz donde los cuatro dominios citaban
+# el mismo turno, que solo hablaba de dolor.
+#
+# Ahora una pista de categoria "normal" solo se acepta si el turno menciona ese
+# dominio, o si es el dominio que el agente acaba de preguntar.
+DOMINIO_MENCIONADO = {
+    "herida": (
+        "herida", "cicatriz", "punto", "sutura", "corte", "incision", "vendaje",
+        "curacion", "gasa", "aposito", "grapa",
+    ),
+    "movilidad": (
+        "camin", "mover", "movi", "levantar", "pararme", "andar", "pie", "pierna",
+        "paso", "escalera", "desplaz", "apoyar", "deambul",
+    ),
+    "apetito": (
+        "apetito", "hambre", "comer", "comid", "comi", "aliment", "trag", "boca",
+        "estomago", "desayun", "almorz", "cen", "provoca", "nause", "vomit",
+    ),
+    "sueno": (
+        "sueno", "dorm", "duerm", "noche", "descans", "acost", "despiert",
+        "insomni", "madrugada",
+    ),
+}
+
+
+def menciona_dominio(base_sin_tildes: str, dominio: str) -> bool:
+    presente = any(t in base_sin_tildes for t in DOMINIO_MENCIONADO.get(dominio, ()))
+    return presente
+
+
+def pistas_cualitativas(texto: str, dominio_objetivo: str = "") -> dict[str, str]:
     """Categoria sugerida por dominio segun lexico observado en el dataset.
 
-    Se ordena de mas grave a menos grave a proposito: si un turno contiene a la
-    vez "sale un liquido amarillo" y "se ve bien", gana el hallazgo grave. En
-    salud, ante dos lecturas posibles del mismo turno, la conservadora es la que
-    escala.
+    Dos reglas gobiernan esta funcion, y las dos vienen de la asimetria clinica.
+
+    **De mas grave a menos grave.** Si un turno contiene a la vez "sale un liquido
+    amarillo" y "se ve bien", gana el hallazgo grave. Ante dos lecturas posibles
+    del mismo turno, la conservadora es la que escala.
+
+    **Un "normal" necesita contexto.** Las categorias de hallazgo (purulenta,
+    eritema, incapacitante...) se aceptan siempre: son especificas y nombran algo
+    que el paciente solo puede haber dicho a proposito. La categoria "normal", en
+    cambio, solo se acepta si el turno habla de ese dominio o si es el dominio que
+    se acaba de preguntar. Marcar un dominio como normal sin que nadie lo haya
+    dicho es la forma mas sigilosa de producir un falso negativo.
     """
 
     base = sin_tildes(texto)
@@ -397,8 +446,16 @@ def pistas_cualitativas(texto: str) -> dict[str, str]:
             if dominio not in salida:
                 for t in terminos:
                     if t in base:
-                        salida[dominio] = categoria
-                        break
+                        if categoria == "normal":
+                            admisible = (
+                                menciona_dominio(base, dominio)
+                                or dominio == dominio_objetivo
+                            )
+                        else:
+                            admisible = True
+                        if admisible:
+                            salida[dominio] = categoria
+                            break
 
     return salida
 
@@ -417,7 +474,15 @@ class TurnoNormalizado:
         return self.canal.degradado
 
 
-def normalizar_turno(texto: str) -> TurnoNormalizado:
+def normalizar_turno(texto: str, dominio_objetivo: str = "") -> TurnoNormalizado:
+    """Analiza un turno del paciente.
+
+    `dominio_objetivo` es el dominio que el agente acaba de preguntar. Se usa solo
+    para desambiguar un "normal" sin contexto: si el agente pregunto por la herida
+    y el paciente dice "se ve bien", eso es la herida. Sin ese dato, un "bien"
+    suelto no se atribuye a nada.
+    """
+
     limpio, canal = limpiar_ruido(texto)
     normalizado = TurnoNormalizado(
         texto_original=texto,
@@ -425,6 +490,6 @@ def normalizar_turno(texto: str) -> TurnoNormalizado:
         canal=canal,
         registro=detectar_registro(limpio),
         numeros=extraer_numeros(limpio),
-        pistas=pistas_cualitativas(limpio),
+        pistas=pistas_cualitativas(limpio, dominio_objetivo),
     )
     return normalizado

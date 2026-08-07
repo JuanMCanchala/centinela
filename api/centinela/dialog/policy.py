@@ -201,7 +201,8 @@ class DialogPolicy:
         # Un turno que no es un reporte de sintomas no debe alimentar el estado
         # clinico. No es solo eficiencia: es que el estado clinico solo puede
         # contener lo que el paciente dijo sobre como se siente.
-        norm_previo = normalizar_turno(texto_paciente)
+        dominio_objetivo = self._dominio_actual() or ""
+        norm_previo = normalizar_turno(texto_paciente, dominio_objetivo)
         cls = clasificar(
             texto_paciente,
             habla_tercero=norm_previo.registro.habla_tercero,
@@ -220,7 +221,7 @@ class DialogPolicy:
                 estado=self.estado,
                 turno_idx=turno_idx,
                 pregunta_agente=self.ultima_pregunta,
-                dominio_objetivo=self._dominio_actual() or "",
+                dominio_objetivo=dominio_objetivo,
             )
         norm = extraccion.normalizado
 
