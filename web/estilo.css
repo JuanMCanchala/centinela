@@ -4,19 +4,36 @@
  * CENTINELA -- consola de operaciones
  * =========================================================================
  *
- * Una regla gobierna todo lo visual: LA CONSOLA ES MONOCROMA, Y EL COLOR ESTA
- * RESERVADO PARA LA CRITICIDAD CLINICA.
+ * Una regla gobierna todo lo visual: LA CONSOLA ES MONOCROMA, Y EL COLOR MARCA
+ * LO QUE PIDE ATENCION.
  *
  * No hay color de marca, ni degradados, ni botones de colores. Los unicos tres
- * valores saturados de la interfaz son verde, ambar y rojo, y no los elegi yo:
- * los da el dominio. La consecuencia practica es que cuando algo tiene color,
- * significa que un paciente esta en riesgo -- que es exactamente el trabajo del
- * producto. Un boton azul de "guardar" competiria por la misma atencion que una
+ * valores saturados son verde, ambar y rojo, y no los elegi yo: los da el
+ * triaje. Un boton azul de "guardar" competiria por la misma atencion que una
  * fiebre de 38.5.
  *
+ * En las superficies clinicas -- cola, decision, la tira -- el color significa
+ * criticidad del paciente y nada mas. En las operativas -- salud del sistema,
+ * resultado de una subida, veredicto de una suite -- verde confirma y rojo avisa,
+ * pero siempre en trazos pequenos y nunca como area.
+ *
+ * Donde esa distincion se cruzaba, gano lo clinico: "procesado y disponible" en
+ * la lista de documentos estaba en verde y va en tinta. Verde es un color de
+ * triaje; usarlo ahi significaria que verde quiere decir "paciente bien" en una
+ * pantalla y "PDF indexado" en otra, y las lee la misma persona. Ademas eran 106
+ * filas en verde compitiendo con nueve pacientes en rojo.
+ *
  * Corolario de accesibilidad, no negociable en algo clinico: el nivel NUNCA se
- * comunica solo con color. Siempre lleva glifo y palabra. La deficiencia rojo-
- * verde afecta a ~8% de los hombres, y este panel lo lee personal de enfermeria.
+ * comunica solo con color. Siempre lleva glifo y palabra, y en la tira lleva
+ * ademas posicion vertical (rojo arriba) con su etiqueta al margen.
+ *
+ * Eso no es celo de mas. Medi la luminancia relativa de los tres: verde 0.134,
+ * ambar 0.157, rojo 0.135. En escala de grises son el MISMO tono. Los tres pasan
+ * AA sobre blanco por separado, pero entre si tienen 1.1:1 de contraste, asi que
+ * para quien tiene deficiencia rojo-verde -- ~8% de los hombres, y este panel lo
+ * lee personal de enfermeria -- el color no distingue nada. Lo que distingue es
+ * el glifo, la palabra y la posicion. El color solo acelera la lectura de quien
+ * puede verlo.
  *
  * Tipografia: Chivo y Chivo Mono, de Omnibus-Type (fundicion argentina). Un
  * producto clinico en espanol compuesto con una grotesca latinoamericana, y con
@@ -26,24 +43,51 @@
  */
 
 :root {
-  /* --- neutros: sala de lectura de radiologia, no negro puro ------------- */
-  --tinta:        #0b0e11;
-  --placa:        #14181d;
-  --placa-alta:   #1a1f26;
-  --placa-hundida:#0e1216;
-  --linea:        #232a32;
-  --linea-viva:   #313a46;
-  --hueso:        #e6eaef;
-  --gris:         #7c8794;
-  --gris-tenue:   #515b68;
+  /* --- neutros: el registro clinico impreso, no crema ---------------------
+   *
+   * Los nombres son de ROL y no de aspecto. La version anterior los llamaba
+   * `--tinta` (el fondo, casi negro) y `--hueso` (el texto, casi blanco); al
+   * pasar a claro esos nombres pasaban a decir exactamente lo contrario de lo
+   * que valen. Un token que miente sobre su valor es peor que uno feo.
+   *
+   * El gris del cromo es frio, con algo de azul. No crema: crema empuja el panel
+   * hacia lo editorial, y esto es un instrumento que se mira ocho horas seguidas
+   * bajo luz fluorescente. Las superficies de contenido son blanco puro para que
+   * el papel y la pantalla se parezcan -- lo que se ve aqui se acaba pegando en
+   * una historia clinica. */
+  --fondo:              #e9edf2;
+  --superficie:         #ffffff;
+  --superficie-alta:    #f2f5f9;
+  --superficie-hundida: #f6f8fa;
+  --superficie-presion: #e7ecf2;
+  --linea:              #dce2ea;
+  --linea-viva:         #b9c3d0;
+  --linea-fuerte:       #a8b4c2;
+  --reticula:           #e4eaf1;
+  --texto:              #111820;
+  --texto-suave:        #3a4553;
+  --texto-medio:        #4c5764;
+  /* #5c6672 y no un gris mas claro: este token compone texto de 11 px (metadatos,
+   * sha, paginas, contadores). El primer valor que probe, #6d7885, daba 3.82:1
+   * sobre `--fondo` -- por debajo de AA. Este da 4.96:1 sobre el peor fondo en
+   * que aparece. Texto pequeno que no se lee es texto que no esta. */
+  --texto-tenue:        #5c6672;
+  --barra:              #c2cbd6;
+  --barra-viva:         #a9b4c1;
 
-  /* --- los tres unicos colores: criticidad clinica ---------------------- */
-  --verde:  #34d399;
-  --ambar:  #f0b429;
-  --rojo:   #f0473e;
-  --verde-fondo: rgba(52, 211, 153, 0.10);
-  --ambar-fondo: rgba(240, 180, 41, 0.10);
-  --rojo-fondo:  rgba(240, 71, 62, 0.11);
+  /* --- los tres unicos colores: criticidad clinica ----------------------
+   *
+   * Reafinados para fondo claro, y no es un ajuste menor: el ambar del tema
+   * oscuro era #f0b429, que sobre blanco tiene 1.9:1 de contraste -- ilegible.
+   * Estos tres pasan AA (4.5:1) sobre blanco, comprobado. En una herramienta
+   * clinica el color que marca criticidad no puede ser el que peor se lee. */
+  --verde:  #0a7550;   /* 4.9:1 sobre blanco */
+  --ambar:  #a25e00;   /* 4.9:1 */
+  --rojo:   #c42a1c;   /* 5.9:1 */
+  --verde-fondo: rgba(10, 117, 80, 0.07);
+  --ambar-fondo: rgba(162, 94, 0, 0.08);
+  --rojo-fondo:  rgba(196, 42, 28, 0.06);
+  --rojo-borde-suave: #e3c2be;
 
   --display: "Chivo", "Segoe UI", system-ui, sans-serif;
   --mono: "Chivo Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
@@ -80,8 +124,8 @@ html, body {
 }
 
 body {
-  background: var(--tinta);
-  color: var(--hueso);
+  background: var(--fondo);
+  color: var(--texto);
   font-family: var(--display);
   font-size: var(--t13);
   line-height: 1.5;
@@ -99,7 +143,7 @@ body {
   font-weight: 700;
   letter-spacing: 0.09em;
   text-transform: uppercase;
-  color: var(--gris);
+  color: var(--texto-medio);
   margin: 0;
 }
 
@@ -107,19 +151,23 @@ h1, h2, h3 { font-weight: 700; margin: 0; }
 
 code, .codigo, .mono { font-family: var(--mono); }
 
-a { color: var(--hueso); text-decoration-color: var(--gris-tenue); }
+a { color: var(--texto); text-decoration-color: var(--texto-tenue); }
 
 ::selection { background: var(--linea-viva); }
 
 /* Foco visible siempre. Es un panel que se opera con teclado en un puesto de
  * enfermeria, no una landing. */
 :focus-visible {
-  outline: 2px solid var(--hueso);
+  outline: 2px solid var(--texto);
   outline-offset: 1px;
 }
 
 /* =========================== cinta superior ============================= */
 
+/* La cinta se tine igual que el riel: las dos son cromo, y juntas forman la L que
+ * envuelve la superficie blanca de trabajo. Con la cinta en blanco y el riel
+ * tenido habia un escalon de tono en la esquina superior izquierda que no
+ * significaba nada. */
 .cinta {
   height: var(--cinta);
   flex: 0 0 auto;
@@ -127,7 +175,7 @@ a { color: var(--hueso); text-decoration-color: var(--gris-tenue); }
   align-items: stretch;
   gap: 24px;
   padding: 0 16px 0 0;
-  background: var(--placa);
+  background: var(--superficie-alta);
   border-bottom: 1px solid var(--linea);
 }
 
@@ -152,7 +200,7 @@ a { color: var(--hueso); text-decoration-color: var(--gris-tenue); }
 .marca .sub {
   font-family: var(--mono);
   font-size: 0.625rem;
-  color: var(--gris-tenue);
+  color: var(--texto-tenue);
   letter-spacing: 0.02em;
 }
 
@@ -167,7 +215,7 @@ a { color: var(--hueso); text-decoration-color: var(--gris-tenue); }
   stroke-linejoin: round;
 }
 
-.icono-marca { width: 20px; height: 20px; color: var(--hueso); }
+.icono-marca { width: 20px; height: 20px; color: var(--texto); }
 
 .pestanas {
   display: flex;
@@ -181,7 +229,7 @@ a { color: var(--hueso); text-decoration-color: var(--gris-tenue); }
   background: none;
   border: 0;
   border-bottom: 2px solid transparent;
-  color: var(--gris);
+  color: var(--texto-medio);
   font-family: var(--display);
   font-size: var(--t12);
   font-weight: 500;
@@ -191,11 +239,11 @@ a { color: var(--hueso); text-decoration-color: var(--gris-tenue); }
   transition: color 0.12s ease;
 }
 
-.pestana:hover { color: var(--hueso); }
+.pestana:hover { color: var(--texto); }
 
 .pestana.activa {
-  color: var(--hueso);
-  border-bottom-color: var(--hueso);
+  color: var(--texto);
+  border-bottom-color: var(--texto);
   font-weight: 700;
 }
 
@@ -210,7 +258,7 @@ a { color: var(--hueso); text-decoration-color: var(--gris-tenue); }
   flex: 0 1 auto;
   font-family: var(--mono);
   font-size: var(--t11);
-  color: var(--gris);
+  color: var(--texto-medio);
   white-space: nowrap;
   overflow: hidden;
 }
@@ -221,7 +269,7 @@ a { color: var(--hueso); text-decoration-color: var(--gris-tenue); }
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--gris-tenue);
+  background: var(--texto-tenue);
   flex: 0 0 auto;
 }
 
@@ -237,9 +285,16 @@ a { color: var(--hueso); text-decoration-color: var(--gris-tenue); }
   min-height: 0;
 }
 
+/* El riel va tenido y la superficie de trabajo va blanca.
+ *
+ * En el tema oscuro la jerarquia se leia por elevacion: el cromo era mas claro
+ * que el fondo. En claro eso se invierte, y la convencion que de verdad funciona
+ * es la contraria: el cromo se tine y el CONTENIDO es blanco. Asi el riel se lee
+ * como lo que es -- una lista de navegacion -- y no compite con el registro de la
+ * llamada, que es donde se lee de verdad. */
 .riel {
   border-right: 1px solid var(--linea);
-  background: var(--placa);
+  background: var(--superficie-alta);
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -278,11 +333,12 @@ a { color: var(--hueso); text-decoration-color: var(--gris-tenue); }
   grid-template-rows: auto minmax(0, 1fr) auto;
   min-height: 0;
   min-width: 0;
+  background: var(--superficie);
 }
 
 .costado {
   border-left: 1px solid var(--linea);
-  background: var(--placa);
+  background: var(--superficie);
   overflow-y: auto;
   min-height: 0;
 }
@@ -311,7 +367,7 @@ a { color: var(--hueso); text-decoration-color: var(--gris-tenue); }
 .columna-simple > .panel { margin-bottom: 22px; }
 
 .panel {
-  background: var(--placa);
+  background: var(--superficie);
   border: 1px solid var(--linea);
   border-radius: var(--radio);
   padding: 18px 20px;
@@ -332,21 +388,21 @@ a { color: var(--hueso); text-decoration-color: var(--gris-tenue); }
   font-weight: 700;
   letter-spacing: 0.09em;
   text-transform: uppercase;
-  color: var(--gris);
+  color: var(--texto-medio);
   margin: 18px 0 8px;
 }
 
 .ayuda {
-  color: var(--gris);
+  color: var(--texto-medio);
   font-size: var(--t12);
   margin: 0 0 12px;
   max-width: 68ch;
 }
 
-.ayuda-inline { color: var(--gris-tenue); font-size: var(--t11); }
+.ayuda-inline { color: var(--texto-tenue); font-size: var(--t11); }
 
 .vacio {
-  color: var(--gris-tenue);
+  color: var(--texto-tenue);
   font-size: var(--t12);
   font-style: normal;
   margin: 0;
@@ -362,18 +418,18 @@ a { color: var(--hueso); text-decoration-color: var(--gris-tenue); }
   font-weight: 700;
   letter-spacing: 0.07em;
   text-transform: uppercase;
-  color: var(--gris);
+  color: var(--texto-medio);
   margin-bottom: 5px;
 }
 
-.campo em { font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--gris-tenue); }
+.campo em { font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--texto-tenue); }
 
 select, input[type="text"], input[type="file"] {
   width: 100%;
-  background: var(--placa-hundida);
+  background: var(--superficie-hundida);
   border: 1px solid var(--linea);
   border-radius: var(--radio-chico);
-  color: var(--hueso);
+  color: var(--texto);
   font-family: var(--display);
   font-size: var(--t12);
   padding: 7px 9px;
@@ -381,7 +437,7 @@ select, input[type="text"], input[type="file"] {
 
 select { font-family: var(--mono); font-size: var(--t11); }
 
-input[type="text"]::placeholder { color: var(--gris-tenue); }
+input[type="text"]::placeholder { color: var(--texto-tenue); }
 
 input[type="text"]:focus, select:focus { border-color: var(--linea-viva); }
 
@@ -389,7 +445,7 @@ input[type="file"] {
   font-family: var(--mono);
   font-size: var(--t11);
   padding: 6px;
-  color: var(--gris);
+  color: var(--texto-medio);
 }
 
 .fila { display: flex; gap: 6px; align-items: center; }
@@ -399,10 +455,10 @@ input[type="file"] {
 
 .boton {
   appearance: none;
-  background: var(--placa-alta);
+  background: var(--superficie-alta);
   border: 1px solid var(--linea-viva);
   border-radius: var(--radio-chico);
-  color: var(--hueso);
+  color: var(--texto);
   font-family: var(--display);
   font-size: var(--t12);
   font-weight: 500;
@@ -412,20 +468,20 @@ input[type="file"] {
   transition: background 0.12s ease, border-color 0.12s ease;
 }
 
-.boton:hover:not(:disabled) { background: #222831; border-color: #3d4753; }
+.boton:hover:not(:disabled) { background: var(--superficie-presion); border-color: var(--linea-fuerte); }
 
 .boton:disabled { opacity: 0.38; cursor: not-allowed; }
 
 /* El boton primario es el mas claro, no el mas colorido. El color no se gasta
  * en jerarquia de interfaz. */
 .boton.primario {
-  background: var(--hueso);
-  border-color: var(--hueso);
-  color: var(--tinta);
+  background: var(--texto);
+  border-color: var(--texto);
+  color: var(--fondo);
   font-weight: 700;
 }
 
-.boton.primario:hover:not(:disabled) { background: #fff; border-color: #fff; }
+.boton.primario:hover:not(:disabled) { background: #000; border-color: #000; }
 
 .boton.chico { font-size: var(--t11); padding: 4px 9px; }
 
@@ -443,7 +499,7 @@ input[type="file"] {
   display: flex;
   align-items: center;
   gap: 11px;
-  background: var(--placa-hundida);
+  background: var(--superficie-hundida);
 }
 
 .nivel-caja .glifo { font-size: var(--t18); line-height: 1; font-family: var(--mono); }
@@ -459,7 +515,7 @@ input[type="file"] {
 .nivel-caja .pie {
   font-family: var(--mono);
   font-size: var(--t11);
-  color: var(--gris);
+  color: var(--texto-medio);
   margin-top: 3px;
 }
 
@@ -474,7 +530,7 @@ input[type="file"] {
 .nivel-caja[data-nivel="rojo"] .palabra,
 .nivel-caja[data-nivel="rojo"] .glifo     { color: var(--rojo); }
 
-.nivel-caja[data-nivel="—"] .palabra { color: var(--gris-tenue); font-size: var(--t18); }
+.nivel-caja[data-nivel="—"] .palabra { color: var(--texto-tenue); font-size: var(--t18); }
 
 /* El semaforo de tres luces que app.js sigue gobernando. Se conserva porque el
  * jurado lo vio en el video de la ronda anterior, pero reducido a indicador. */
@@ -490,19 +546,19 @@ input[type="file"] {
   padding: 5px 0;
   border: 1px solid var(--linea);
   border-radius: var(--radio-chico);
-  color: var(--gris-tenue);
-  background: var(--placa-hundida);
+  color: var(--texto-tenue);
+  background: var(--superficie-hundida);
 }
 
 .luz.verde.activa    { color: var(--verde); border-color: var(--verde); background: var(--verde-fondo); }
 .luz.amarillo.activa { color: var(--ambar); border-color: var(--ambar); background: var(--ambar-fondo); }
 .luz.rojo.activa     { color: var(--rojo);  border-color: var(--rojo);  background: var(--rojo-fondo); }
 
-.motivo { font-size: var(--t13); margin: 0; color: var(--hueso); }
-.motivo.provisional { color: var(--gris); }
+.motivo { font-size: var(--t13); margin: 0; color: var(--texto); }
+.motivo.provisional { color: var(--texto-medio); }
 .motivo.provisional::after {
   content: " · provisional, la llamada sigue abierta";
-  color: var(--gris-tenue);
+  color: var(--texto-tenue);
   font-size: var(--t11);
 }
 
@@ -520,8 +576,15 @@ input[type="file"] {
  * bandera, ningun texto posterior la retira. La forma del dibujo dice algo
  * verdadero del sistema en vez de decorarlo.
  */
+/* En claro la tira deja de ser una estilizacion y pasa a ser el artefacto.
+ *
+ * Las hojas de anestesia y las tiras de monitor se imprimen en papel reticulado.
+ * En el tema oscuro el gesto era una referencia; sobre blanco, con la reticula
+ * fina en azul grisaceo, es literalmente lo que un anestesiologo tiene delante.
+ * De todo el cambio de tema, esto es lo unico que mejora en vez de solo
+ * traducirse. */
 .tira-caja {
-  background: var(--placa-hundida);
+  background: var(--superficie);
   border-bottom: 1px solid var(--linea);
   padding: 12px 18px 8px;
 }
@@ -539,7 +602,7 @@ input[type="file"] {
   gap: 14px;
   font-family: var(--mono);
   font-size: var(--t11);
-  color: var(--gris-tenue);
+  color: var(--texto-tenue);
 }
 
 .tira-leyenda span { display: flex; align-items: center; gap: 5px; }
@@ -552,36 +615,36 @@ input[type="file"] {
   display: inline-block;
 }
 
-.marca-leyenda.resuelto { background: var(--hueso); border-color: var(--hueso); }
+.marca-leyenda.resuelto { background: var(--texto); border-color: var(--texto); }
 .marca-leyenda.pendiente { background: transparent; }
 
 #tira { display: block; width: 100%; height: auto; }
 
 .tira-carril-fondo { fill: transparent; }
 .tira-reticula { stroke: var(--linea); stroke-width: 1; }
-.tira-reticula-fina { stroke: #1b2128; stroke-width: 1; }
+.tira-reticula-fina { stroke: var(--reticula); stroke-width: 1; }
 .tira-etiqueta {
-  fill: var(--gris);
+  fill: var(--texto-medio);
   font-family: var(--mono);
   font-size: 9.5px;
   letter-spacing: 0.04em;
 }
-.tira-etiqueta.dim { fill: var(--gris-tenue); }
+.tira-etiqueta.dim { fill: var(--texto-tenue); }
 .tira-valor {
-  fill: var(--hueso);
+  fill: var(--texto);
   font-family: var(--mono);
   font-size: 10px;
   text-anchor: end;
 }
-.tira-valor.falta { fill: var(--gris-tenue); }
-.tira-celda { fill: var(--hueso); }
+.tira-valor.falta { fill: var(--texto-tenue); }
+.tira-celda { fill: var(--texto); }
 .tira-celda.eco { fill: var(--linea-viva); }
 .tira-escalera { fill: none; stroke-width: 2; stroke-linejoin: miter; }
 .tira-escalera.verde    { stroke: var(--verde); }
 .tira-escalera.amarillo { stroke: var(--ambar); }
 .tira-escalera.rojo     { stroke: var(--rojo); }
-.tira-cursor { stroke: var(--hueso); stroke-width: 1; stroke-dasharray: 2 3; opacity: 0.55; }
-.tira-salto { fill: var(--hueso); font-family: var(--mono); font-size: 9px; }
+.tira-cursor { stroke: var(--texto); stroke-width: 1; stroke-dasharray: 2 3; opacity: 0.55; }
+.tira-salto { fill: var(--texto); font-family: var(--mono); font-size: 9px; }
 
 /* La hoja de traspaso, cuando se consulta una llamada cerrada. Va en mono y sin
  * adornos porque es lo que es: una nota clinica que alguien lee al recibir el
@@ -590,8 +653,8 @@ input[type="file"] {
   font-family: var(--mono);
   font-size: var(--t11);
   line-height: 1.6;
-  color: #b6c0cc;
-  background: var(--tinta);
+  color: var(--texto-suave);
+  background: var(--fondo);
   border: 1px solid var(--linea);
   border-radius: var(--radio-chico);
   padding: 12px 14px;
@@ -635,7 +698,7 @@ input[type="file"] {
   grid-template-columns: 86px minmax(0, 1fr);
   gap: 12px;
   padding: 6px 2px;
-  border-bottom: 1px solid #191e24;
+  border-bottom: 1px solid var(--reticula);
   font-family: var(--mono);
   font-size: var(--t12);
   line-height: 1.55;
@@ -645,21 +708,21 @@ input[type="file"] {
   font-size: var(--t11);
   letter-spacing: 0.07em;
   text-transform: uppercase;
-  color: var(--gris-tenue);
+  color: var(--texto-tenue);
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
   align-content: start;
 }
 
-.turno.paciente > div:last-child { color: var(--hueso); }
-.turno.agente > div:last-child { color: #b6c0cc; }
-.turno.agente .quien { color: var(--gris); }
+.turno.paciente > div:last-child { color: var(--texto); }
+.turno.agente > div:last-child { color: var(--texto-suave); }
+.turno.agente .quien { color: var(--texto-medio); }
 
 .turno.sistema {
   font-size: var(--t11);
-  color: var(--gris);
-  background: var(--placa-hundida);
+  color: var(--texto-medio);
+  background: var(--superficie-hundida);
 }
 
 .turno.alerta { border-left: 2px solid var(--rojo); padding-left: 8px; }
@@ -671,7 +734,7 @@ input[type="file"] {
   padding: 1px 4px;
   border: 1px solid var(--linea-viva);
   border-radius: 1px;
-  color: var(--gris);
+  color: var(--texto-medio);
   text-transform: uppercase;
   white-space: nowrap;
 }
@@ -680,7 +743,7 @@ input[type="file"] {
 .etiqueta-intencion.audio_degradado,
 .etiqueta-intencion.fuera_de_mision { color: var(--ambar); border-color: var(--ambar); }
 .etiqueta-intencion.pide_humano,
-.etiqueta-intencion.habla_tercero { color: var(--gris); }
+.etiqueta-intencion.habla_tercero { color: var(--texto-medio); }
 
 /* ============================ estado clinico =========================== */
 
@@ -688,12 +751,12 @@ input[type="file"] {
 
 .tabla-estado td {
   padding: 5px 0;
-  border-bottom: 1px solid #191e24;
+  border-bottom: 1px solid var(--reticula);
   vertical-align: top;
 }
 
 .tabla-estado td:first-child {
-  color: var(--gris);
+  color: var(--texto-medio);
   font-size: var(--t11);
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -702,7 +765,7 @@ input[type="file"] {
 
 .tabla-estado td:last-child { font-family: var(--mono); text-align: right; }
 
-.tabla-estado tr.falta td { color: var(--gris-tenue); }
+.tabla-estado tr.falta td { color: var(--texto-tenue); }
 
 /* La frase textual del paciente que justifica el dato, en su propia fila a lo
  * ancho. Es la trazabilidad del estado clinico: cada valor de la tabla se puede
@@ -710,11 +773,11 @@ input[type="file"] {
 .tabla-estado td.cita {
   font-family: var(--mono);
   font-size: var(--t11);
-  color: var(--gris);
+  color: var(--texto-medio);
   text-align: left;
   padding: 0 0 6px 9px;
   border-left: 1px solid var(--linea-viva);
-  border-bottom: 1px solid #191e24;
+  border-bottom: 1px solid var(--reticula);
   line-height: 1.5;
 }
 
@@ -729,7 +792,7 @@ input[type="file"] {
   border-left-width: 2px;
   border-radius: var(--radio-chico);
   padding: 8px 10px;
-  background: var(--placa-hundida);
+  background: var(--superficie-hundida);
   font-size: var(--t12);
 }
 
@@ -750,7 +813,7 @@ input[type="file"] {
 .regla .dato {
   font-family: var(--mono);
   font-size: var(--t11);
-  color: var(--gris);
+  color: var(--texto-medio);
   margin-top: 4px;
 }
 
@@ -759,7 +822,7 @@ input[type="file"] {
 .regla .cita {
   font-family: var(--mono);
   font-size: var(--t11);
-  color: var(--gris-tenue);
+  color: var(--texto-tenue);
   border-top: 1px solid var(--linea);
   margin-top: 6px;
   padding-top: 5px;
@@ -773,7 +836,7 @@ input[type="file"] {
   border: 1px solid var(--linea);
   border-left: 2px solid var(--linea-viva);
   border-radius: var(--radio-chico);
-  background: var(--placa-hundida);
+  background: var(--superficie-hundida);
   padding: 8px 10px;
   margin-top: 6px;
 }
@@ -781,7 +844,7 @@ input[type="file"] {
 .cita-doc .doc-nombre {
   font-family: var(--mono);
   font-size: var(--t11);
-  color: var(--hueso);
+  color: var(--texto);
   word-break: break-word;
 }
 
@@ -793,14 +856,14 @@ input[type="file"] {
   border-left: 1px solid var(--linea-viva);
   font-family: var(--mono);
   font-size: var(--t11);
-  color: var(--gris);
+  color: var(--texto-medio);
   line-height: 1.55;
 }
 
 .regla .meta, .doc .meta {
   font-family: var(--mono);
   font-size: var(--t11);
-  color: var(--gris-tenue);
+  color: var(--texto-tenue);
   margin-top: 3px;
 }
 
@@ -813,7 +876,7 @@ input[type="file"] {
   padding: 1px 5px;
   border: 1px solid var(--linea-viva);
   border-radius: 1px;
-  color: var(--gris);
+  color: var(--texto-medio);
   margin-left: 5px;
 }
 
@@ -823,7 +886,7 @@ input[type="file"] {
 .insignia.mal { color: var(--rojo); border-color: var(--rojo); }
 
 .cita-doc { word-break: break-word; }
-.cita-pagina, .doc-pagina { font-family: var(--mono); font-size: var(--t11); color: var(--gris-tenue); }
+.cita-pagina, .doc-pagina { font-family: var(--mono); font-size: var(--t11); color: var(--texto-tenue); }
 
 /* ============================== latencia =============================== */
 
@@ -842,12 +905,12 @@ input[type="file"] {
 }
 
 .etapas .vacio { grid-column: 1 / -1; }
-.etapas .nombre { color: var(--gris); letter-spacing: 0.03em; }
-.etapas .ms { text-align: right; color: var(--hueso); font-variant-numeric: tabular-nums; }
+.etapas .nombre { color: var(--texto-medio); letter-spacing: 0.03em; }
+.etapas .ms { text-align: right; color: var(--texto); font-variant-numeric: tabular-nums; }
 
 .etapas .total { border-top: 1px solid var(--linea); padding-top: 5px; margin-top: 3px; }
-.etapas .nombre.total { color: var(--hueso); font-weight: 700; }
-.etapas .ms.total { color: var(--hueso); font-weight: 700; }
+.etapas .nombre.total { color: var(--texto); font-weight: 700; }
+.etapas .ms.total { color: var(--texto); font-weight: 700; }
 
 /* ============================== microfono ============================== */
 
@@ -860,8 +923,8 @@ input[type="file"] {
   flex: 0 0 auto;
   border-radius: 50%;
   border: 1px solid var(--linea-viva);
-  background: var(--placa-alta);
-  color: var(--gris);
+  background: var(--superficie-alta);
+  color: var(--texto-medio);
   cursor: pointer;
   display: grid;
   place-items: center;
@@ -870,21 +933,21 @@ input[type="file"] {
 
 .boton-mic .icono-mic { width: 17px; height: 17px; }
 
-.boton-mic.escuchando { color: var(--hueso); border-color: var(--hueso); }
+.boton-mic.escuchando { color: var(--texto); border-color: var(--texto); }
 
 /* El anillo late solo mientras el paciente habla. Es el unico movimiento
  * continuo de la consola: indica "te estoy oyendo ahora". */
 .boton-mic.grabando {
-  color: var(--hueso);
-  border-color: var(--hueso);
+  color: var(--texto);
+  border-color: var(--texto);
   animation: latido 1.5s ease-in-out infinite;
 }
 
-.boton-mic.agente { color: var(--gris-tenue); border-color: var(--linea); }
+.boton-mic.agente { color: var(--texto-tenue); border-color: var(--linea); }
 
 @keyframes latido {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(230, 234, 239, 0.28); }
-  50%      { box-shadow: 0 0 0 5px rgba(230, 234, 239, 0); }
+  0%, 100% { box-shadow: 0 0 0 0 rgba(17, 24, 32, 0.22); }
+  50%      { box-shadow: 0 0 0 5px rgba(17, 24, 32, 0); }
 }
 
 .mic-info { flex: 1 1 auto; min-width: 0; }
@@ -895,12 +958,12 @@ input[type="file"] {
   letter-spacing: 0.02em;
 }
 
-.mic-detalle { font-size: var(--t11); color: var(--gris); margin: 2px 0 7px; }
+.mic-detalle { font-size: var(--t11); color: var(--texto-medio); margin: 2px 0 7px; }
 
 .medidor {
   position: relative;
   height: 4px;
-  background: var(--placa-hundida);
+  background: var(--superficie-hundida);
   border: 1px solid var(--linea);
   border-radius: 1px;
   overflow: hidden;
@@ -909,11 +972,11 @@ input[type="file"] {
 .medidor-relleno {
   height: 100%;
   width: 0;
-  background: var(--gris-tenue);
+  background: var(--texto-tenue);
   transition: width 0.05s linear;
 }
 
-.medidor-relleno.sobre-umbral { background: var(--hueso); }
+.medidor-relleno.sobre-umbral { background: var(--texto); }
 
 .medidor-umbral {
   position: absolute;
@@ -926,7 +989,7 @@ input[type="file"] {
 .mic-numeros {
   font-family: var(--mono);
   font-size: 0.625rem;
-  color: var(--gris-tenue);
+  color: var(--texto-tenue);
   margin-top: 5px;
   line-height: 1.6;
   word-break: break-word;
@@ -954,8 +1017,8 @@ input[type="file"] {
   transition: background 0.12s ease;
 }
 
-.fila-cola:hover { background: var(--placa-alta); }
-.fila-cola.activa { background: var(--placa-alta); border-left-color: var(--hueso); }
+.fila-cola:hover { background: var(--superficie-alta); }
+.fila-cola.activa { background: var(--superficie-alta); border-left-color: var(--texto); }
 
 .fila-cola .linea-uno {
   display: flex;
@@ -986,13 +1049,13 @@ input[type="file"] {
 .fila-cola[data-nivel="rojo"] .chip       { color: var(--rojo); }
 .fila-cola[data-nivel="amarillo"] .chip   { color: var(--ambar); }
 .fila-cola[data-nivel="verde"] .chip      { color: var(--verde); }
-.fila-cola[data-nivel="abierta"] .chip    { color: var(--hueso); }
-.fila-cola[data-nivel="incompleta"] .chip { color: var(--gris-tenue); }
-.fila-cola[data-nivel="—"] .chip          { color: var(--gris-tenue); }
+.fila-cola[data-nivel="abierta"] .chip    { color: var(--texto); }
+.fila-cola[data-nivel="incompleta"] .chip { color: var(--texto-tenue); }
+.fila-cola[data-nivel="—"] .chip          { color: var(--texto-tenue); }
 
 /* Una llamada sin cerrar no tiene decision, y la fila entera debe leerse como
  * lo que es: un registro incompleto, no un caso pendiente de atender. */
-.fila-cola[data-nivel="incompleta"] .paciente { color: var(--gris); font-weight: 500; }
+.fila-cola[data-nivel="incompleta"] .paciente { color: var(--texto-medio); font-weight: 500; }
 
 .fila-cola .chip .icono { width: 11px; height: 11px; }
 
@@ -1000,7 +1063,7 @@ input[type="file"] {
  * este paciente esta en la lista, y merece verse sin abrir la llamada. */
 .fila-cola .motivo-cola {
   font-size: var(--t11);
-  color: var(--gris);
+  color: var(--texto-medio);
   margin-top: 3px;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -1011,7 +1074,7 @@ input[type="file"] {
 .fila-cola .detalle {
   font-family: var(--mono);
   font-size: var(--t11);
-  color: var(--gris-tenue);
+  color: var(--texto-tenue);
   margin-top: 2px;
   white-space: nowrap;
   overflow: hidden;
@@ -1023,14 +1086,14 @@ input[type="file"] {
   font-family: var(--mono);
   font-size: 0.5625rem;
   font-weight: 400;
-  color: var(--gris);
+  color: var(--texto-medio);
   letter-spacing: 0.05em;
 }
 
 .contador {
   font-family: var(--mono);
   font-size: var(--t11);
-  color: var(--gris-tenue);
+  color: var(--texto-tenue);
   font-weight: 400;
   letter-spacing: 0;
 }
@@ -1055,7 +1118,7 @@ input[type="file"] {
 .suite {
   border: 1px solid var(--linea);
   border-radius: var(--radio);
-  background: var(--placa-hundida);
+  background: var(--superficie);
   padding: 12px 14px;
   display: flex;
   flex-direction: column;
@@ -1063,7 +1126,7 @@ input[type="file"] {
 }
 
 .suite .titulo { font-size: var(--t13); font-weight: 700; }
-.suite .que { font-size: var(--t11); color: var(--gris); flex: 1 1 auto; }
+.suite .que { font-size: var(--t11); color: var(--texto-medio); flex: 1 1 auto; }
 
 /* El comando se recorta con puntos suspensivos y el completo va en el `title`.
  * Con overflow-x:auto cada tarjeta mostraba su propia barra de scroll, y cuatro
@@ -1071,8 +1134,8 @@ input[type="file"] {
 .suite .comando {
   font-family: var(--mono);
   font-size: 0.625rem;
-  color: var(--gris-tenue);
-  background: var(--tinta);
+  color: var(--texto-tenue);
+  background: var(--fondo);
   border: 1px solid var(--linea);
   border-radius: 1px;
   padding: 4px 6px;
@@ -1096,26 +1159,26 @@ input[type="file"] {
 
 .suite[data-estado="ok"] .veredicto { color: var(--verde); }
 .suite[data-estado="fallo"] .veredicto { color: var(--rojo); }
-.suite[data-estado="corriendo"] .veredicto { color: var(--hueso); }
-.suite[data-estado="pendiente"] .veredicto { color: var(--gris-tenue); }
+.suite[data-estado="corriendo"] .veredicto { color: var(--texto); }
+.suite[data-estado="pendiente"] .veredicto { color: var(--texto-tenue); }
 
 .salida {
   font-family: var(--mono);
   font-size: var(--t11);
   line-height: 1.5;
-  background: var(--tinta);
+  background: var(--fondo);
   border: 1px solid var(--linea);
   border-radius: var(--radio-chico);
   padding: 12px 14px;
   max-height: 460px;
   overflow: auto;
   white-space: pre;
-  color: #b6c0cc;
+  color: var(--texto-suave);
   margin: 0;
   tab-size: 4;
 }
 
-.salida:empty::before { content: "Sin ejecutar todavía."; color: var(--gris-tenue); }
+.salida:empty::before { content: "Sin ejecutar todavía."; color: var(--texto-tenue); }
 
 /* ========================== documentos / auditoria ===================== */
 
@@ -1124,19 +1187,19 @@ input[type="file"] {
 .doc, .ticket, .recibo, .evento {
   border: 1px solid var(--linea);
   border-radius: var(--radio-chico);
-  background: var(--placa-hundida);
+  background: var(--superficie-hundida);
   padding: 9px 11px;
   font-size: var(--t12);
 }
 
 .doc { display: flex; align-items: flex-start; gap: 10px; justify-content: space-between; }
-.doc.subido { border-left: 2px solid var(--hueso); }
+.doc.subido { border-left: 2px solid var(--texto); }
 
 /* Ojo: dentro de `.doc`, `.info` es el CONTENEDOR de la columna izquierda, no la
  * clase de color de texto del mismo nombre. Hay que devolverle el color heredado
  * o la tarjeta entera se apaga a gris. */
 .doc .info { color: inherit; flex: 1 1 auto; min-width: 0; font-size: var(--t12); }
-.doc .info > .nombre { font-family: var(--mono); font-size: var(--t12); word-break: break-word; color: var(--hueso); }
+.doc .info > .nombre { font-family: var(--mono); font-size: var(--t12); word-break: break-word; color: var(--texto); }
 .doc .info > div { margin-top: 3px; }
 /* "procesado y disponible" va en hueso, NO en verde.
  *
@@ -1144,10 +1207,10 @@ input[type="file"] {
  * metadatos grises. Pero verde es un color clinico. Usarlo aqui significaria que
  * verde quiere decir "paciente bien" en una pantalla y "PDF indexado" en otra, y
  * quien opera esto lee las dos. El color se reserva para la criticidad. */
-.doc .meta.disponible { color: var(--hueso); font-weight: 500; }
+.doc .meta.disponible { color: var(--texto); font-weight: 500; }
 .doc .col { min-width: 0; }
 
-.insignia.tema, .insignia.ocr { color: var(--gris); }
+.insignia.tema, .insignia.ocr { color: var(--texto-medio); }
 .insignia.incoherente { color: var(--ambar); border-color: var(--ambar); }
 
 .ticket { border-left: 2px solid var(--linea-viva); }
@@ -1173,32 +1236,32 @@ input[type="file"] {
   font-size: 0.5625rem;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--gris);
+  color: var(--texto-medio);
   flex: 0 0 auto;
 }
 
 .filtro { margin-bottom: 8px; }
-.fila-generacion { font-size: var(--t12); color: var(--gris); margin-bottom: 10px; }
-.fila-generacion strong { font-family: var(--mono); color: var(--hueso); }
+.fila-generacion { font-size: var(--t12); color: var(--texto-medio); margin-bottom: 10px; }
+.fila-generacion strong { font-family: var(--mono); color: var(--texto); }
 
 .tabla-simple { width: 100%; border-collapse: collapse; font-size: var(--t12); }
-.tabla-simple td, .tabla-simple th { padding: 5px 8px 5px 0; border-bottom: 1px solid #191e24; text-align: left; }
-.tabla-simple th { color: var(--gris); font-size: var(--t11); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 700; }
+.tabla-simple td, .tabla-simple th { padding: 5px 8px 5px 0; border-bottom: 1px solid var(--reticula); text-align: left; }
+.tabla-simple th { color: var(--texto-medio); font-size: var(--t11); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 700; }
 .tabla-simple .num { font-family: var(--mono); text-align: right; }
 
 .dato { font-size: var(--t12); }
-.dato .nombre { color: var(--gris); }
+.dato .nombre { color: var(--texto-medio); }
 .dato .valor { font-family: var(--mono); }
 
-.info { color: var(--gris); font-size: var(--t12); }
+.info { color: var(--texto-medio); font-size: var(--t12); }
 .ok { color: var(--verde); }
 .mal { color: var(--rojo); }
-.neutro { color: var(--gris); }
+.neutro { color: var(--texto-medio); }
 .incoherente { color: var(--ambar); }
 
 /* Un boton destructivo se marca con el texto, no con relleno rojo: el rojo de
  * relleno esta reservado para la criticidad del paciente. */
-.boton.peligro { color: var(--rojo); border-color: #4a2a2a; }
+.boton.peligro { color: var(--rojo); border-color: var(--rojo-borde-suave); }
 .boton.peligro:hover:not(:disabled) { background: var(--rojo-fondo); border-color: var(--rojo); }
 
 /* Resultado de una accion de la consola (subida, consulta, borrado). */
@@ -1206,7 +1269,7 @@ input[type="file"] {
   border: 1px solid var(--linea);
   border-left-width: 2px;
   border-radius: var(--radio-chico);
-  background: var(--placa-hundida);
+  background: var(--superficie-hundida);
   padding: 10px 12px;
   margin-top: 10px;
   font-size: var(--t12);
@@ -1222,8 +1285,8 @@ input[type="file"] {
 .aviso pre {
   font-family: var(--mono);
   font-size: var(--t11);
-  color: var(--gris);
-  background: var(--tinta);
+  color: var(--texto-medio);
+  background: var(--fondo);
   border: 1px solid var(--linea);
   border-radius: 1px;
   padding: 8px 10px;
@@ -1236,22 +1299,22 @@ input[type="file"] {
 .ficha {
   font-family: var(--mono);
   font-size: var(--t11);
-  color: var(--gris);
-  background: var(--placa-hundida);
+  color: var(--texto-medio);
+  background: var(--superficie-hundida);
   border: 1px solid var(--linea);
   border-radius: var(--radio-chico);
   padding: 8px 10px;
   line-height: 1.6;
 }
 
-.ficha strong { color: var(--hueso); font-weight: 500; }
+.ficha strong { color: var(--texto); font-weight: 500; }
 
 /* ============================== scrollbars ============================= */
 
 ::-webkit-scrollbar { width: 10px; height: 10px; }
-::-webkit-scrollbar-track { background: var(--tinta); }
-::-webkit-scrollbar-thumb { background: #262e37; border: 2px solid var(--tinta); border-radius: 5px; }
-::-webkit-scrollbar-thumb:hover { background: #333c47; }
+::-webkit-scrollbar-track { background: var(--fondo); }
+::-webkit-scrollbar-thumb { background: var(--barra); border: 2px solid var(--fondo); border-radius: 5px; }
+::-webkit-scrollbar-thumb:hover { background: var(--barra-viva); }
 
 /* ============================== responsive ============================= */
 
