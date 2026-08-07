@@ -67,26 +67,78 @@ auditar.
 | Transcripción (faster-whisper small int8, CPU) | **16–43 ms** por turno |
 | Síntesis de voz, turno de guion (caché pre-renderizado) | **0.001 ms** |
 | Síntesis de voz, turno libre (Piper es_MX-ald-medium) | 598 ms · RTF 0.21–0.33 |
+| **Turno completo resuelto por reglas** | **< 1 ms** |
+| **Turno completo que necesita el modelo** | ~2.2 s |
 
-El truco de latencia: la conversación la conduce una máquina de estados sobre un guion de
-seis dominios, así que **las 35 locuciones que el agente puede decir se conocen antes de
-que suene el teléfono**. Se sintetizan una vez y se sirven desde disco. En un turno de
-guion —la mayoría de la llamada— el TTS deja de estar en el camino crítico.
+Dos decisiones sostienen el presupuesto:
+
+**El guion va en caché.** La conversación la conduce una máquina de estados sobre seis
+dominios, así que las 35 locuciones que el agente puede decir se conocen antes de que
+suene el teléfono. Se sintetizan al arrancar y se sirven desde disco: en la prueba de
+humo, **93 % de los turnos se responden desde caché de audio**.
+
+**El modelo solo cuando hace falta.** Si la regex extrajo el dolor y el léxico resolvió la
+herida, no se invoca. Medido en `eval/probar_tokens.py`: de seis turnos, cuatro se
+resuelven sin tocar el modelo. Consumo por llamada tras afinar la condición: **1359 → 672
+tokens de entrada**.
+
+### Consumo y costo
+
+| Métrica | Valor |
+|---|---:|
+| Invocaciones al modelo por turno (p50) | **0** |
+| Invocaciones al modelo por turno (máx) | 1 |
+| Tokens de entrada por turno, cuando se invoca | ~335 |
+| Tokens de salida por turno, cuando se invoca | ~118 |
+| Consultas RAG por llamada | solo en turnos con pregunta clínica |
+| **Costo por llamada** (extrapolado a precios de API de producción) | **USD 0.0034** |
+
+Centinela corre local: el costo marginal real de una llamada es electricidad. La rúbrica
+pide extrapolar a precios de nube y explicar el cálculo, así que la cifra son los tokens y
+segundos de audio realmente medidos multiplicados por tarifas públicas de referencia. El
+desglose y las fuentes están en `obs/metrics.py::PRECIOS_REFERENCIA`.
 
 ### Suite adversarial
 
-`make redteam` · 43/43 casos pasan.
+`make redteam` corre 32 casos adversariales **contra el sistema completo**, no contra el
+clasificador aislado. Resultado: **32/32**.
 
-| Grupo | Resultado |
-|---|---|
-| Intentos de manipulación de instrucciones detectados | 15/15 |
-| Peticiones fuera de misión | 6/6 |
-| Preguntas clínicas enrutadas al RAG | 6/6 |
-| **Falsos positivos sobre habla real del dataset** | **0/8** |
+| Familia | Pasan |
+|---|---:|
+| Manipulación de instrucciones | 10/10 |
+| Fuera de misión | 5/5 |
+| Audio degradado | 4/4 |
+| Tercero que interrumpe | 3/3 |
+| Jerga regional colombiana | 3/3 |
+| Paciente hostil / asustado | 4/4 |
+| Pide hablar con un humano | 2/2 |
+| Intento de retirar un hallazgo ya detectado | 1/1 |
 
-Ese último grupo importa tanto como el primero: un agente que acusa a un paciente
-asustado de intentar manipularlo es inservible. Los casos son turnos textuales del
-dataset oficial.
+- Intentos de manipulación resistidos: **11/11**
+- Casos donde la criticidad bajó porque el paciente lo pidió: **0**
+
+Más `make test`: **55 tests**, que incluyen cero falsos positivos de manipulación sobre
+turnos textuales del dataset oficial. Ese grupo importa tanto como el primero: un agente
+que acusa a un paciente asustado de intentar manipularlo es inservible.
+
+### Compuerta de arranque (G2)
+
+`scripts/ensayo_g2.ps1` clona el repo en un directorio limpio y cronometra los pasos del
+README, uno por uno.
+
+| Paso | Tiempo |
+|---|---:|
+| Clonar el repositorio | 3.6 s |
+| `make instalar` | 3.3 s |
+| `make piper` (con descargas en caché) | 0.9 s |
+| `make modelos` (con descargas en caché) | 2.9 s |
+| Extraer el índice del corpus | 0.6 s |
+| `make up` hasta la primera respuesta | 8.2 s |
+| Verificación funcional (llamada + caso rojo + consola) | 1.1 s |
+| **Total medido** | **21 s** |
+| **Peor caso estimado en máquina virgen** (+4.6 GB de descargas) | **~5 min** |
+
+El límite del reto son 15 minutos. El margen en el peor caso es de **10 minutos**.
 
 ---
 
@@ -126,10 +178,26 @@ Un RAG que enrute por nombre de carpeta le sirve guías de cérvix a una pacient
 mastectomizada con total confianza. Eso no es un error de recuperación: es la
 **alucinación clínica peligrosa** que la rúbrica penaliza y anota textualmente en el acta.
 
-Centinela clasifica el tema por el texto del documento, no por su ubicación
-(`rag/ingest.py`), y la compuerta de fundamentación se niega a responder cuando el corpus
-no cubre el procedimiento del paciente. El informe de integridad del corpus
-(`docs/informe-corpus.md`) se genera solo y lista todas las incoherencias.
+No es hipotético: nos pasó. Antes de añadir el filtro por tema, la pregunta *"¿cuándo
+puedo volver a hacer ejercicio?"* para una paciente de **colecistectomía** devolvía como
+mejor pasaje una guía de cáncer de cuello uterino, y el modelo respondía citándola con
+total seguridad. Lo encontró `eval/humo.py`.
+
+Centinela clasifica el tema por el texto del documento y no por su ubicación
+(`rag/ingest.py`), filtra la recuperación por el procedimiento del paciente
+(`rag/retriever.py`), y la compuerta de fundamentación se niega a responder cuando el
+corpus no lo cubre. La auditoría del corpus (`make auditar`, resultado en
+`docs/informe-corpus.md`) lo reporta:
+
+| Defecto detectado en el material entregado | Cantidad |
+|---|---:|
+| Documentos cuyo contenido no corresponde a su carpeta | 18 |
+| Duplicados lógicos (mismo artículo, distinto nombre y distintos bytes) | 2 |
+| Documentos sin capa de texto, resueltos con OCR | 17 |
+| Procedimientos de pacientes sin ningún documento que los cubra | 1 |
+
+Los duplicados no los detecta ningún hash de archivo: son el mismo artículo con las
+ligaduras codificadas distinto. Se atrapan comparando términos distintivos del texto.
 
 ### 3. El agente de referencia del dataset nunca escala
 

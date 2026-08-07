@@ -1,4 +1,4 @@
-﻿"""API de Centinela: consola de conocimiento + interfaz de llamada.
+"""API de Centinela: consola de conocimiento + interfaz de llamada.
 
 El reto exige dos superficies con contrato funcional minimo:
 

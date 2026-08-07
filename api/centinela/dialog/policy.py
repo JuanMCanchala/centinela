@@ -1,4 +1,4 @@
-﻿"""Politica de dialogo: la maquina de estados que conduce la llamada.
+"""Politica de dialogo: la maquina de estados que conduce la llamada.
 
 Este modulo es el director de la conversacion. El modelo de lenguaje no lo es, y
 esa es la decision de diseno mas importante de Centinela.

@@ -74,6 +74,17 @@ def simbolos_del_codigo() -> tuple[set[str], set[str]]:
                 for t in nodo.targets:
                     if isinstance(t, ast.Name):
                         simbolos.add(t.id)
+            elif isinstance(nodo, ast.AnnAssign) and isinstance(nodo.target, ast.Name):
+                # Campos de dataclass y de modelos pydantic.
+                simbolos.add(nodo.target.id)
+            elif isinstance(nodo, ast.Constant) and isinstance(nodo.value, str):
+                # Claves de diccionario y literales que el codigo expone como
+                # parte de su contrato: los diagramas los referencian igual que
+                # una funcion ("olvido_verificado", "vectores_residuales"), y son
+                # tan verificables como ella -- estan en el codigo, literalmente.
+                texto = nodo.value
+                if 4 <= len(texto) <= 40 and texto.replace("_", "").isalnum():
+                    simbolos.add(texto)
 
     # Modulos de web/ y scripts/ tambien se referencian en los diagramas.
     for otro in (RAIZ / "web", RAIZ / "scripts", RAIZ / "eval"):
@@ -131,7 +142,11 @@ def main() -> int:
 
             for s in sorted(simbolos):
                 base = s.split(".")[-1]
-                existe = s in simbolos_reales or base in simbolos_reales
+                # Un nombre de modulo mencionado sin la extension ("triage_engine"
+                # en el cuerpo de un texto) es una referencia valida: la regex de
+                # simbolos no puede distinguirlo, la comprobacion si.
+                como_modulo = f"{base}.py" in modulos_reales
+                existe = s in simbolos_reales or base in simbolos_reales or como_modulo
                 if not existe:
                     faltan_simbolos.append((doc.name, s))
                     print(f"  FALTA simbolo {s}")

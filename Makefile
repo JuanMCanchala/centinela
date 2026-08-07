@@ -83,6 +83,18 @@ extraer:
 umbrales:
 	$(PY) scripts/ground_thresholds.py
 
+.PHONY: auditar
+auditar:
+	$(PY) scripts/auditar_corpus.py
+
+.PHONY: diagrama
+diagrama:
+	$(PY) scripts/verificar_diagrama.py
+
+.PHONY: g2
+g2:
+	powershell -ExecutionPolicy Bypass -File scripts/ensayo_g2.ps1
+
 # ---------------------------------------------------------------- evaluacion
 
 .PHONY: eval

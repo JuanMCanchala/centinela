@@ -1,4 +1,4 @@
-﻿"""Sintesis de voz con Piper, y el cache que la saca del camino critico.
+"""Sintesis de voz con Piper, y el cache que la saca del camino critico.
 
 La rubrica mide la latencia "desde que el paciente termina de hablar hasta que
 empieza a sonar el audio del agente". El TTS esta justo en el medio de esa

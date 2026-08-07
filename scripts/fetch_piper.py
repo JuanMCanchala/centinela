@@ -1,4 +1,4 @@
-﻿"""Descarga el binario de Piper y una voz en espanol.
+"""Descarga el binario de Piper y una voz en espanol.
 
 Piper se usa como binario externo, no como wheel de Python: `piper-tts` depende
 de `piper-phonemize`, que no publica wheel para `win_amd64` (solo manylinux y
