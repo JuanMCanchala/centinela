@@ -35,11 +35,22 @@
  * el glifo, la palabra y la posicion. El color solo acelera la lectura de quien
  * puede verlo.
  *
- * Tipografia: Chivo y Chivo Mono, de Omnibus-Type (fundicion argentina). Un
- * producto clinico en espanol compuesto con una grotesca latinoamericana, y con
- * su monoespaciada companera real -- misma esqueleto para la prosa y los datos.
- * Las transcripciones van en mono a proposito: una transcripcion es prueba, se
- * cita literal, y debe verse como registro y no como conversacion de chat.
+ * TIPOGRAFIA: dos familias, las dos latinoamericanas, y con el trabajo repartido
+ * segun para lo que sirve cada una.
+ *
+ *   Montserrat (Julieta Ulanovsky) para la voz de interfaz: marca, rotulos,
+ *   nombres de paciente, botones. Es una geometrica sacada de la carteleria del
+ *   barrio de Montserrat en Buenos Aires.
+ *
+ *   Chivo Mono (Omnibus-Type) para todo lo denso: numeros, sha, horas, umbrales,
+ *   tablas y transcripciones. Las transcripciones van en mono a proposito --
+ *   una transcripcion es prueba, se cita literal, y debe verse como registro y
+ *   no como conversacion de chat.
+ *
+ * El reparto no es capricho. Montserrat es ancha y de x alta: excelente para un
+ * nombre o un titulo, y mala para una tabla de metadatos a 11 px, donde se come
+ * el ancho y pierde legibilidad. La mono se queda con la parte densa, que en esta
+ * consola es la mayoria del texto.
  */
 
 :root {
@@ -89,7 +100,7 @@
   --rojo-fondo:  rgba(196, 42, 28, 0.06);
   --rojo-borde-suave: #e3c2be;
 
-  --display: "Chivo", "Segoe UI", system-ui, sans-serif;
+  --display: "Montserrat", "Segoe UI", system-ui, sans-serif;
   --mono: "Chivo Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
 
   --t11: 0.6875rem;
@@ -190,7 +201,7 @@ a { color: var(--texto); text-decoration-color: var(--texto-tenue); }
 
 .marca strong {
   font-size: var(--t15);
-  font-weight: 900;
+  font-weight: 800;
   letter-spacing: -0.02em;
   text-transform: uppercase;
   display: block;
@@ -426,26 +437,90 @@ a { color: var(--texto); text-decoration-color: var(--texto-tenue); }
 
 select, input[type="text"], input[type="file"] {
   width: 100%;
-  background: var(--superficie-hundida);
-  border: 1px solid var(--linea);
+  background: var(--superficie);
+  border: 1px solid var(--linea-viva);
   border-radius: var(--radio-chico);
   color: var(--texto);
   font-family: var(--display);
   font-size: var(--t12);
   padding: 7px 9px;
+  transition: border-color 0.12s ease;
 }
-
-select { font-family: var(--mono); font-size: var(--t11); }
 
 input[type="text"]::placeholder { color: var(--texto-tenue); }
 
-input[type="text"]:focus, select:focus { border-color: var(--linea-viva); }
+select:hover, input[type="text"]:hover, input[type="file"]:hover { border-color: var(--linea-fuerte); }
+
+/* El foco de un campo se marca con el borde, no solo con el anillo del sistema:
+ * el anillo lo pinta el navegador por fuera y en un formulario denso cuesta ver
+ * cual campo esta activo. */
+input[type="text"]:focus, select:focus, input[type="file"]:focus {
+  border-color: var(--texto);
+  outline-offset: 2px;
+}
+
+/* ------------------------- el desplegable, a mano -------------------------
+ *
+ * `appearance: none` mata el control del sistema operativo -- en Windows el
+ * select nativo trae su propio gris, su propio borde y su propia flecha, y ni uno
+ * de los tres pertenece a este sistema de diseno. La flecha se repone como SVG
+ * embebido: no se puede usar `var(--texto-medio)` dentro de un data URI, asi que
+ * el color va literal (#4c5764) y hay que acordarse de las dos cosas si cambia.
+ *
+ * La LISTA desplegada la sigue dibujando el navegador; de eso solo se puede
+ * gobernar el color de fondo y del texto de las opciones, y es lo que se hace
+ * abajo. Reemplazarla entera exigiria reimplementar el desplegable en JS, con su
+ * navegacion por teclado y su accesibilidad, y en un panel clinico no vale la
+ * pena romper un control que ya funciona bien con teclado y lector de pantalla.
+ */
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  font-family: var(--mono);
+  font-size: var(--t11);
+  padding-right: 30px;
+  cursor: pointer;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234c5764' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 11px 11px;
+}
+
+select option {
+  background: var(--superficie);
+  color: var(--texto);
+}
+
+/* --------------------- el selector de archivo, a mano --------------------- */
 
 input[type="file"] {
   font-family: var(--mono);
   font-size: var(--t11);
-  padding: 6px;
+  padding: 5px 8px 5px 5px;
   color: var(--texto-medio);
+  cursor: pointer;
+}
+
+/* El boton "Examinar" que trae el navegador se repinta igual que los nuestros,
+ * porque si no es el unico boton de toda la consola con la forma de Windows. */
+input[type="file"]::file-selector-button {
+  appearance: none;
+  background: var(--superficie-alta);
+  border: 1px solid var(--linea-viva);
+  border-radius: var(--radio-chico);
+  color: var(--texto);
+  font-family: var(--display);
+  font-size: var(--t11);
+  font-weight: 600;
+  padding: 5px 11px;
+  margin-right: 10px;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+input[type="file"]::file-selector-button:hover {
+  background: var(--superficie-presion);
+  border-color: var(--linea-fuerte);
 }
 
 .fila { display: flex; gap: 6px; align-items: center; }
@@ -506,7 +581,7 @@ input[type="file"] {
 
 .nivel-caja .palabra {
   font-size: var(--t24);
-  font-weight: 900;
+  font-weight: 800;
   letter-spacing: -0.02em;
   text-transform: uppercase;
   line-height: 1;
@@ -1179,6 +1254,26 @@ input[type="file"] {
 }
 
 .salida:empty::before { content: "Sin ejecutar todavía."; color: var(--texto-tenue); }
+
+/* ================================ modal ================================= */
+
+.modal {
+  border: 1px solid var(--linea-viva);
+  border-radius: var(--radio);
+  background: var(--superficie);
+  color: var(--texto);
+  padding: 0;
+  max-width: 460px;
+  width: calc(100% - 32px);
+  box-shadow: 0 16px 40px rgba(17, 24, 32, 0.16);
+}
+
+.modal::backdrop { background: rgba(17, 24, 32, 0.32); }
+
+.modal-caja { padding: 18px 20px 20px; }
+
+.modal-caja .rotulo { margin-bottom: 8px; }
+.modal-caja .ayuda { margin-bottom: 12px; }
 
 /* ========================== documentos / auditoria ===================== */
 

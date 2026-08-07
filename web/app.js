@@ -1282,30 +1282,63 @@ function pintarDocumentos() {
   });
 }
 
-async function borrarDocumento(d) {
-  const consulta = prompt(
-    `Borrar "${d.nombre}".\n\n`
-    + "Para generar un recibo de olvido, escriba una consulta que hoy cite este documento. "
-    + "Se ejecutará antes y después del borrado y se guardará la evidencia.\n\n"
-    + "Dejar vacío para borrar sin recibo.",
-    "",
-  );
-  if (consulta === null) return;
+/** Pide un texto en un modal propio. Devuelve la cadena, o null si se cancela.
+ *
+ * Sustituye a `prompt()`. Al margen del estilo, `prompt()` congela la pagina: con
+ * una llamada abierta eso significa que el VAD deja de procesar tramas y el turno
+ * del paciente se pierde mientras el cuadro esta en pantalla.
+ */
+function pedirTexto({ titulo, explicacion, marcador = "", textoOk = "Aceptar" }) {
+  return new Promise((resolver) => {
+    const dlg = $("#modal-texto");
+    const entrada = $("#modal-entrada");
+    $("#modal-titulo").textContent = titulo;
+    $("#modal-explicacion").textContent = explicacion;
+    $("#modal-ok").textContent = textoOk;
+    entrada.value = "";
+    entrada.placeholder = marcador;
 
-  const url = `/api/documentos/${d.doc_id}` + (consulta ? `?consulta=${encodeURIComponent(consulta)}` : "");
-  try {
-    const r = await api(url, { method: "DELETE" });
-    let msg = `Borrado. ${r.chunks_borrados} fragmentos eliminados. `
-      + `Vectores residuales: ${r.vectores_residuales}. `
-      + `Olvido verificado: ${r.olvido_verificado ? "sí" : "NO"}. Generación ${r.generacion}.`;
-    if (r.recibo_de_olvido) {
-      msg += ` Recibo: la cita ${r.recibo_de_olvido.olvido_probado ? "desapareció" : "SIGUE PRESENTE"}.`;
+    function alCerrar() {
+      dlg.removeEventListener("close", alCerrar);
+      resolver(dlg.returnValue === "ok" ? entrada.value.trim() : null);
     }
-    $("#resultado-subida").innerHTML =
-      `<div class="aviso ${r.olvido_verificado ? "ok" : "mal"}">${msg}</div>`;
-    cargarDocumentos(); cargarAuditoria();
-  } catch (e) {
-    $("#resultado-subida").innerHTML = `<div class="aviso mal">${e.message}</div>`;
+    dlg.addEventListener("close", alCerrar);
+
+    // Esc cierra sin pasar por ningun boton y deja `returnValue` como estaba, asi
+    // que el valor por defecto tiene que ser el de cancelar.
+    dlg.returnValue = "cancelar";
+    dlg.showModal();
+    entrada.focus();
+  });
+}
+
+async function borrarDocumento(d) {
+  const consulta = await pedirTexto({
+    titulo: `Borrar "${d.nombre}"`,
+    explicacion: "Para generar un recibo de olvido, escriba una consulta que hoy cite este "
+      + "documento. Se ejecutará antes y después del borrado, y se guardará la evidencia de "
+      + "que la cita desapareció. Déjelo vacío para borrar sin recibo.",
+    marcador: "Ej: qué hacer si sale secreción purulenta",
+    textoOk: "Borrar documento",
+  });
+
+  if (consulta !== null) {
+    const url = `/api/documentos/${d.doc_id}`
+      + (consulta ? `?consulta=${encodeURIComponent(consulta)}` : "");
+    try {
+      const r = await api(url, { method: "DELETE" });
+      let msg = `Borrado. ${r.chunks_borrados} fragmentos eliminados. `
+        + `Vectores residuales: ${r.vectores_residuales}. `
+        + `Olvido verificado: ${r.olvido_verificado ? "sí" : "NO"}. Generación ${r.generacion}.`;
+      if (r.recibo_de_olvido) {
+        msg += ` Recibo: la cita ${r.recibo_de_olvido.olvido_probado ? "desapareció" : "SIGUE PRESENTE"}.`;
+      }
+      $("#resultado-subida").innerHTML =
+        `<div class="aviso ${r.olvido_verificado ? "ok" : "mal"}">${msg}</div>`;
+      cargarDocumentos(); cargarAuditoria();
+    } catch (e) {
+      $("#resultado-subida").innerHTML = `<div class="aviso mal">${e.message}</div>`;
+    }
   }
 }
 

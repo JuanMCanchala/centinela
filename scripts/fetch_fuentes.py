@@ -10,10 +10,21 @@ Por que vendorizar en vez de enlazar a Google Fonts:
   3. Pedirle la fuente a Google en cada carga filtra la IP del hospital a un
      tercero. En un producto clinico eso hay que justificarlo, y no hace falta.
 
-Las familias son Chivo y Chivo Mono, de Omnibus-Type (fundicion argentina), bajo
-SIL Open Font License 1.1. Un producto clinico en espanol compuesto con una
-grotesca latinoamericana, y con su monoespaciada companera de verdad -- misma
-esqueleto para la prosa y para los datos.
+Las dos familias son latinoamericanas, y no por casualidad: es un producto clinico
+en espanol.
+
+  - Montserrat (Julieta Ulanovsky, Argentina) para la voz de interfaz. Es una
+    geometrica sacada de la carteleria del barrio de Montserrat en Buenos Aires.
+  - Chivo Mono (Omnibus-Type, Argentina) para datos y transcripciones. Casi todo
+    el texto de esta consola es de este tipo: numeros, sha, horas, y las
+    transcripciones, que van en mono a proposito porque una transcripcion es
+    prueba y se cita literal.
+
+Las dos bajo SIL Open Font License 1.1.
+
+Reparto deliberado: Montserrat es geometrica, ancha y de x alta -- excelente en
+titulos y nombres, mala para una tabla de metadatos a 11 px. La mono se queda con
+todo lo denso.
 
 Uso:  python scripts/fetch_fuentes.py
 """
@@ -38,13 +49,21 @@ UA = (
 )
 
 FAMILIAS = (
-    ("Chivo", "https://fonts.googleapis.com/css2?family=Chivo:wght@400;500;700;900"),
+    ("Montserrat", "https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800"),
     ("Chivo Mono", "https://fonts.googleapis.com/css2?family=Chivo+Mono:wght@400;500;700"),
 )
 
+# Google sirve cada familia partida en subconjuntos Unicode. Montserrat trae
+# cirilico y vietnamita, que suman 63 KB que este proyecto no va a usar jamas: el
+# corpus es clinico en espanol y los nombres de paciente tambien. El navegador no
+# los bajaria (el unicode-range se lo impide), pero si quedarian versionados en el
+# repo sin motivo. latin-ext cubre el espanol completo con margen de sobra.
+SUBCONJUNTOS = frozenset({"latin", "latin-ext"})
+
 CABECERA = """/* Tipografias del panel, servidas localmente.
  *
- * Chivo y Chivo Mono -- Omnibus-Type, SIL Open Font License 1.1.
+ * Montserrat -- Julieta Ulanovsky. Chivo Mono -- Omnibus-Type.
+ * Las dos bajo SIL Open Font License 1.1.
  * Generado por scripts/fetch_fuentes.py. No editar a mano.
  *
  * Son fuentes variables: un solo archivo por subconjunto Unicode cubre todo el
@@ -91,29 +110,30 @@ def main() -> int:
 
         for bloque in bloques:
             subconjunto, cuerpo = bloque.group(1), bloque.group(2)
-            url_fuente = re.search(r"url\((https[^)]+)\)", cuerpo).group(1)
-            rango = re.search(r"unicode-range: ([^;]+);", cuerpo)
-            peso = re.search(r"font-weight: (\d+)", cuerpo)
+            if subconjunto in SUBCONJUNTOS:
+                url_fuente = re.search(r"url\((https[^)]+)\)", cuerpo).group(1)
+                rango = re.search(r"unicode-range: ([^;]+);", cuerpo)
+                peso = re.search(r"font-weight: (\d+)", cuerpo)
 
-            if url_fuente not in ya_bajados:
-                nombre = f"{familia.lower().replace(' ', '-')}-{subconjunto}.woff2"
-                archivo = DESTINO / nombre
-                if not archivo.exists():
-                    archivo.write_bytes(_bajar(url_fuente))
-                    total += archivo.stat().st_size
-                ya_bajados[url_fuente] = nombre
-                print(f"    {nombre:34s} {archivo.stat().st_size:>7,d} B  {subconjunto}")
+                if url_fuente not in ya_bajados:
+                    nombre = f"{familia.lower().replace(' ', '-')}-{subconjunto}.woff2"
+                    archivo = DESTINO / nombre
+                    if not archivo.exists():
+                        archivo.write_bytes(_bajar(url_fuente))
+                        total += archivo.stat().st_size
+                    ya_bajados[url_fuente] = nombre
+                    print(f"    {nombre:34s} {archivo.stat().st_size:>7,d} B  {subconjunto}")
 
-            piezas.append(
-                "@font-face {\n"
-                f"  font-family: '{familia}';\n"
-                "  font-style: normal;\n"
-                f"  font-weight: {peso.group(1) if peso else '400'};\n"
-                "  font-display: swap;\n"
-                f"  src: url(/estatico/fuentes/{ya_bajados[url_fuente]}) format('woff2');\n"
-                + (f"  unicode-range: {rango.group(1)};\n" if rango else "")
-                + "}\n"
-            )
+                piezas.append(
+                    "@font-face {\n"
+                    f"  font-family: '{familia}';\n"
+                    "  font-style: normal;\n"
+                    f"  font-weight: {peso.group(1) if peso else '400'};\n"
+                    "  font-display: swap;\n"
+                    f"  src: url(/estatico/fuentes/{ya_bajados[url_fuente]}) format('woff2');\n"
+                    + (f"  unicode-range: {rango.group(1)};\n" if rango else "")
+                    + "}\n"
+                )
 
     (DESTINO / "fuentes.css").write_text("\n".join(piezas), encoding="utf-8")
     print(f"\nweb/fuentes/fuentes.css escrito · {total:,d} B nuevos en disco")

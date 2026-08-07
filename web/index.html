@@ -312,6 +312,24 @@
   </div>
 </div>
 
+<!-- Modal propio, para no usar `prompt()`.
+     `prompt()` dibuja el cuadro del navegador: tipografia del sistema operativo,
+     sin nuestros estilos, y encima bloquea la pagina entera mientras esta abierto.
+     `<dialog>` es DOM normal -- se estiliza completo, incluido ::backdrop -- y ya
+     trae de serie el foco atrapado y el cierre con Esc, que es justo lo que no
+     conviene reimplementar a mano en algo que opera personal clinico. -->
+<dialog class="modal" id="modal-texto" aria-labelledby="modal-titulo">
+  <form method="dialog" class="modal-caja">
+    <p class="rotulo" id="modal-titulo"></p>
+    <p class="ayuda" id="modal-explicacion"></p>
+    <input type="text" id="modal-entrada" autocomplete="off">
+    <div class="acciones">
+      <button class="boton peligro" id="modal-ok" value="ok" type="submit">Aceptar</button>
+      <button class="boton" id="modal-cancelar" value="cancelar" type="submit">Cancelar</button>
+    </div>
+  </form>
+</dialog>
+
 <script src="/estatico/app.js"></script>
 <script src="/estatico/panel.js"></script>
 </body>
