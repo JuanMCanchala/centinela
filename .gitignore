@@ -1,0 +1,37 @@
+# --- entorno ---
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# --- datos generados en ejecucion ---
+data/runtime/
+data/subidas/
+data/muestras_voz/
+
+# --- artefactos pesados que se descargan, no se versionan ---
+# Modelos (2.6 GB): embeddings multilingual-e5-large y faster-whisper.
+# Los baja `make modelos` o el propio arranque la primera vez.
+data/modelos/
+
+# Binario y voces de Piper (427 MB). Los baja `make piper`.
+data/piper/
+
+# --- indice del corpus ---
+# El indice se versiona COMPRIMIDO (data/index.zip) y se extrae al arrancar.
+# Motivo: la compuerta G2 del reto da 15 minutos para levantar la solucion, y
+# re-embeber 2.098 paginas se lleva una hora. El directorio descomprimido no se
+# versiona para no duplicar 90 MB en cada commit.
+data/index/
+
+# El cache de audio se versiona (10 MB, 35 locuciones) para que el primer
+# arranque no gaste tres minutos sintetizando el guion.
+!data/audio_cache/
+data/audio_cache/_tmp/
+
+# --- sistema ---
+.DS_Store
+Thumbs.db
+*.log

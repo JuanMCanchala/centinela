@@ -1,0 +1,185 @@
+{
+  "binario": "C:\\Programacion\\sourcemeridian\\centinela\\data\\piper\\piper\\piper.exe",
+  "frases": [
+    "Entendido, gracias.",
+    "Ha tenido fiebre o se ha sentido caliente o con escalofrios?",
+    "Lo que me describe es un signo de alarma despues de su cirugia. Ya deje una alerta al equipo clinico con sus datos."
+  ],
+  "voces": {
+    "es_AR-daniela-high": {
+      "mb": 108.9,
+      "rtf_mediana": 0.983,
+      "medidas": [
+        {
+          "caracteres": 19,
+          "ms": 1968.1,
+          "audio_s": 1.5,
+          "rtf": 1.312
+        },
+        {
+          "caracteres": 60,
+          "ms": 3095.3,
+          "audio_s": 3.15,
+          "rtf": 0.983
+        },
+        {
+          "caracteres": 115,
+          "ms": 5108.6,
+          "audio_s": 5.98,
+          "rtf": 0.854
+        }
+      ],
+      "muestras": [
+        "data/muestras_voz/es_AR-daniela-high__0.wav",
+        "data/muestras_voz/es_AR-daniela-high__1.wav",
+        "data/muestras_voz/es_AR-daniela-high__2.wav"
+      ]
+    },
+    "es_ES-carlfm-x_low": {
+      "mb": 26.8,
+      "rtf_mediana": 0.334,
+      "medidas": [
+        {
+          "caracteres": 19,
+          "ms": 862.3,
+          "audio_s": 1.62,
+          "rtf": 0.531
+        },
+        {
+          "caracteres": 60,
+          "ms": 1140.3,
+          "audio_s": 3.42,
+          "rtf": 0.334
+        },
+        {
+          "caracteres": 115,
+          "ms": 1381.2,
+          "audio_s": 6.74,
+          "rtf": 0.205
+        }
+      ],
+      "muestras": [
+        "data/muestras_voz/es_ES-carlfm-x_low__0.wav",
+        "data/muestras_voz/es_ES-carlfm-x_low__1.wav",
+        "data/muestras_voz/es_ES-carlfm-x_low__2.wav"
+      ]
+    },
+    "es_ES-davefx-medium": {
+      "mb": 60.3,
+      "rtf_mediana": 0.35,
+      "medidas": [
+        {
+          "caracteres": 19,
+          "ms": 924.5,
+          "audio_s": 1.71,
+          "rtf": 0.541
+        },
+        {
+          "caracteres": 60,
+          "ms": 1159.6,
+          "audio_s": 3.31,
+          "rtf": 0.35
+        },
+        {
+          "caracteres": 115,
+          "ms": 1978.8,
+          "audio_s": 6.68,
+          "rtf": 0.296
+        }
+      ],
+      "muestras": [
+        "data/muestras_voz/es_ES-davefx-medium__0.wav",
+        "data/muestras_voz/es_ES-davefx-medium__1.wav",
+        "data/muestras_voz/es_ES-davefx-medium__2.wav"
+      ]
+    },
+    "es_ES-sharvard-medium": {
+      "mb": 73.2,
+      "rtf_mediana": 0.345,
+      "medidas": [
+        {
+          "caracteres": 19,
+          "ms": 882.4,
+          "audio_s": 1.71,
+          "rtf": 0.516
+        },
+        {
+          "caracteres": 60,
+          "ms": 1177.1,
+          "audio_s": 3.42,
+          "rtf": 0.345
+        },
+        {
+          "caracteres": 115,
+          "ms": 1576.4,
+          "audio_s": 7.08,
+          "rtf": 0.223
+        }
+      ],
+      "muestras": [
+        "data/muestras_voz/es_ES-sharvard-medium__0.wav",
+        "data/muestras_voz/es_ES-sharvard-medium__1.wav",
+        "data/muestras_voz/es_ES-sharvard-medium__2.wav"
+      ]
+    },
+    "es_MX-ald-medium": {
+      "mb": 60.3,
+      "rtf_mediana": 0.352,
+      "medidas": [
+        {
+          "caracteres": 19,
+          "ms": 937.9,
+          "audio_s": 1.85,
+          "rtf": 0.507
+        },
+        {
+          "caracteres": 60,
+          "ms": 1447.5,
+          "audio_s": 4.11,
+          "rtf": 0.352
+        },
+        {
+          "caracteres": 115,
+          "ms": 2155.5,
+          "audio_s": 7.85,
+          "rtf": 0.274
+        }
+      ],
+      "muestras": [
+        "data/muestras_voz/es_MX-ald-medium__0.wav",
+        "data/muestras_voz/es_MX-ald-medium__1.wav",
+        "data/muestras_voz/es_MX-ald-medium__2.wav"
+      ]
+    },
+    "es_MX-claude-high": {
+      "mb": 60.2,
+      "rtf_mediana": 0.403,
+      "medidas": [
+        {
+          "caracteres": 19,
+          "ms": 1267.6,
+          "audio_s": 1.57,
+          "rtf": 0.807
+        },
+        {
+          "caracteres": 60,
+          "ms": 1559.1,
+          "audio_s": 3.87,
+          "rtf": 0.403
+        },
+        {
+          "caracteres": 115,
+          "ms": 2523.6,
+          "audio_s": 7.91,
+          "rtf": 0.319
+        }
+      ],
+      "muestras": [
+        "data/muestras_voz/es_MX-claude-high__0.wav",
+        "data/muestras_voz/es_MX-claude-high__1.wav",
+        "data/muestras_voz/es_MX-claude-high__2.wav"
+      ]
+    }
+  },
+  "elegida_por_latencia": "es_ES-carlfm-x_low"
+}

@@ -1,0 +1,19 @@
+# Normalizacion de fin de linea: el repo guarda LF, el checkout usa lo nativo.
+* text=auto eol=lf
+
+*.py    text eol=lf
+*.md    text eol=lf
+*.toml  text eol=lf
+*.js    text eol=lf
+*.css   text eol=lf
+*.html  text eol=lf
+Makefile text eol=lf
+
+# Binarios: nunca tocar.
+*.zip   binary
+*.wav   binary
+*.onnx  binary
+*.pdf   binary
+*.xlsx  binary
+*.db    binary
+*.sqlite3 binary

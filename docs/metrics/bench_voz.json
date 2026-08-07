@@ -1,0 +1,73 @@
+{
+  "tts": {
+    "disponible": true,
+    "estado": {
+      "motor": "piper",
+      "disponible": true,
+      "binario": "C:\\Programacion\\sourcemeridian\\centinela\\data\\piper\\piper\\piper.exe",
+      "voz": "es_MX-ald-medium",
+      "locuciones_en_cache": 0,
+      "respaldo": "SpeechSynthesis del navegador si el motor no esta disponible"
+    },
+    "pre_renderizado": {
+      "generadas": 35,
+      "reutilizadas": 0,
+      "fallidas": [],
+      "segundos": 53.02,
+      "total_en_cache": 35
+    },
+    "sintesis_en_caliente": {
+      "Entendido, gracias.": {
+        "ms_p50": 598.4,
+        "duracion_audio_s": 1.8,
+        "factor_tiempo_real": 0.332,
+        "caracteres": 19
+      },
+      "Ha tenido fiebre o se ha sentido calient": {
+        "ms_p50": 904.0,
+        "duracion_audio_s": 4.24,
+        "factor_tiempo_real": 0.213,
+        "caracteres": 60
+      },
+      "Voy a detener las preguntas aqui, porque": {
+        "ms_p50": 1307.3,
+        "duracion_audio_s": 5.1,
+        "factor_tiempo_real": 0.256,
+        "caracteres": 81
+      },
+      "Lo que me describe es un signo de alarma": {
+        "ms_p50": 2011.1,
+        "duracion_audio_s": 8.34,
+        "factor_tiempo_real": 0.241,
+        "caracteres": 123
+      }
+    },
+    "cache_ms_p50": 0.0014,
+    "cache_ms_max": 0.0068,
+    "streaming": {
+      "ms_respuesta_completa": 1544.6,
+      "ms_primera_frase": 957.7,
+      "n_frases": 2
+    }
+  },
+  "stt": {
+    "disponible": true,
+    "modelo": "small",
+    "dispositivo": "cpu/int8",
+    "ms_carga": 3095.5,
+    "por_duracion": {
+      "2s": {
+        "ms_p50": 16.0,
+        "factor_tiempo_real": 0.008
+      },
+      "4s": {
+        "ms_p50": 24.0,
+        "factor_tiempo_real": 0.006
+      },
+      "8s": {
+        "ms_p50": 42.6,
+        "factor_tiempo_real": 0.005
+      }
+    }
+  }
+}

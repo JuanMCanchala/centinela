@@ -1,0 +1,52 @@
+{
+  "version_reglas": "centinela-triage-1.0.0",
+  "n_casos": 160,
+  "distribucion_real": {
+    "verde": 123,
+    "amarillo": 25,
+    "rojo": 12
+  },
+  "matriz_confusion": {
+    "verde": {
+      "verde": 115,
+      "amarillo": 8,
+      "rojo": 0
+    },
+    "amarillo": {
+      "verde": 0,
+      "amarillo": 25,
+      "rojo": 0
+    },
+    "rojo": {
+      "verde": 0,
+      "amarillo": 0,
+      "rojo": 12
+    }
+  },
+  "por_clase": {
+    "verde": {
+      "recall": 0.935,
+      "precision": 1.0,
+      "n_real": 123,
+      "n_predicho": 115
+    },
+    "amarillo": {
+      "recall": 1.0,
+      "precision": 0.7576,
+      "n_real": 25,
+      "n_predicho": 33
+    },
+    "rojo": {
+      "recall": 1.0,
+      "precision": 1.0,
+      "n_real": 12,
+      "n_predicho": 12
+    }
+  },
+  "exactitud_global": 0.95,
+  "falsos_negativos_clinicos": 0,
+  "rojos_subescalados": 0,
+  "sobre_escalamientos": 8,
+  "detalle_falsos_negativos": [],
+  "detalle_subescalados": []
+}

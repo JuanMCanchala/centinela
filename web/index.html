@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Centinela — seguimiento postoperatorio</title>
+<link rel="stylesheet" href="/estatico/estilo.css">
+</head>
+<body>
+
+<header class="barra">
+  <div class="marca">
+    <svg viewBox="0 0 24 24" class="icono icono-marca" aria-hidden="true">
+      <path d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5l-8-3Z"/>
+      <path d="m9 12 2 2 4-4"/>
+    </svg>
+    <div>
+      <strong>Centinela</strong>
+      <span class="sub">seguimiento postoperatorio por voz</span>
+    </div>
+  </div>
+  <nav class="pestanas" id="pestanas">
+    <button class="pestana activa" data-vista="llamada">Llamada</button>
+    <button class="pestana" data-vista="consola">Consola de conocimiento</button>
+    <button class="pestana" data-vista="observabilidad">Trazabilidad</button>
+  </nav>
+  <div class="estado-sistema" id="estado-sistema">
+    <span class="punto" id="punto-salud"></span>
+    <span id="texto-salud">verificando…</span>
+  </div>
+</header>
+
+<!-- ================= LLAMADA ================= -->
+<main class="vista activa" id="vista-llamada">
+  <section class="panel">
+    <h2>
+      <svg viewBox="0 0 24 24" class="icono" aria-hidden="true"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.3 1.8.6 2.7a2 2 0 0 1-.5 2.1L8.1 9.6a16 16 0 0 0 6 6l1.1-1.1a2 2 0 0 1 2.1-.5c.9.3 1.8.5 2.7.6a2 2 0 0 1 1.7 2Z"/></svg>
+      Iniciar llamada
+    </h2>
+    <label class="campo">
+      <span>Paciente</span>
+      <select id="selector-paciente"></select>
+    </label>
+    <div class="ficha" id="ficha-paciente"></div>
+    <div class="acciones">
+      <button class="boton primario" id="btn-iniciar">Iniciar llamada</button>
+      <button class="boton" id="btn-cerrar" disabled>Cerrar llamada</button>
+    </div>
+
+    <div class="microfono" id="zona-microfono" hidden>
+      <button class="boton-mic" id="btn-mic" title="Mantener presionado para hablar">
+        <svg viewBox="0 0 24 24" class="icono icono-mic" aria-hidden="true"><path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v1a7 7 0 0 1-14 0v-1"/><path d="M12 18v4"/></svg>
+      </button>
+      <div class="mic-info">
+        <div id="mic-estado">Mantener presionado para hablar</div>
+        <div class="medidor"><div class="medidor-relleno" id="medidor-nivel"></div></div>
+      </div>
+    </div>
+
+    <div class="respaldo">
+      <label class="campo">
+        <span>Turno por texto <em>(respaldo y pruebas)</em></span>
+        <div class="fila">
+          <input type="text" id="entrada-texto" placeholder="Escribir lo que diría el paciente…">
+          <button class="boton" id="btn-enviar-texto">Enviar</button>
+        </div>
+      </label>
+      <div class="atajos" id="atajos-prueba"></div>
+    </div>
+  </section>
+
+  <section class="panel conversacion">
+    <h2>Conversación</h2>
+    <div class="transcripcion" id="transcripcion">
+      <p class="vacio">La conversación aparecerá acá.</p>
+    </div>
+    <audio id="reproductor" hidden></audio>
+  </section>
+
+  <section class="panel decision">
+    <h2>Decisión clínica en vivo</h2>
+    <div class="semaforo" id="semaforo">
+      <div class="luz verde" data-nivel="verde">verde</div>
+      <div class="luz amarillo" data-nivel="amarillo">amarillo</div>
+      <div class="luz rojo" data-nivel="rojo">rojo</div>
+    </div>
+    <p class="motivo" id="motivo-decision">Sin datos todavía.</p>
+
+    <h3>Estado clínico reconstruido</h3>
+    <table class="tabla-estado" id="tabla-estado"></table>
+
+    <h3>Reglas disparadas</h3>
+    <div id="reglas-disparadas" class="lista-reglas"><p class="vacio">Ninguna.</p></div>
+
+    <h3>Documentos que sustentan la respuesta</h3>
+    <div id="citas" class="lista-citas"><p class="vacio">Sin citas todavía.</p></div>
+
+    <h3>Latencia del último turno</h3>
+    <div id="latencia" class="etapas"><p class="vacio">—</p></div>
+  </section>
+</main>
+
+<!-- ================= CONSOLA ================= -->
+<main class="vista" id="vista-consola">
+  <section class="panel">
+    <h2>
+      <svg viewBox="0 0 24 24" class="icono" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5-5 5 5"/><path d="M12 5v12"/></svg>
+      Subir documento clínico
+    </h2>
+    <p class="ayuda">
+      PDF. Se extrae el texto, se aplica OCR a las páginas que no tienen capa de texto,
+      se detecta el tema por contenido y se rechaza si el contenido ya está indexado con
+      otro nombre de archivo.
+    </p>
+    <input type="file" id="archivo" accept="application/pdf">
+    <button class="boton primario" id="btn-subir">Subir e indexar</button>
+    <div id="resultado-subida"></div>
+
+    <h2 style="margin-top:1.6rem">Verificar conocimiento vivo</h2>
+    <p class="ayuda">
+      Consulta directa al RAG. Sirve para comprobar la compuerta de conocimiento vivo:
+      pregunte antes de subir, después de subir, y otra vez después de borrar.
+    </p>
+    <div class="fila">
+      <input type="text" id="consulta-rag" placeholder="Ej: qué hacer si sale secreción purulenta">
+      <button class="boton" id="btn-consultar">Consultar</button>
+    </div>
+    <div id="resultado-consulta"></div>
+  </section>
+
+  <section class="panel">
+    <h2>Documentos indexados <span class="contador" id="contador-docs"></span></h2>
+    <div class="fila-generacion">
+      Generación del corpus: <strong id="generacion-corpus">—</strong>
+      <span class="ayuda-inline">cambia con cada ingesta o borrado; invalida el índice léxico</span>
+    </div>
+    <div class="filtro">
+      <input type="text" id="filtro-docs" placeholder="Filtrar por nombre o tema…">
+    </div>
+    <div class="lista-docs" id="lista-docs"></div>
+  </section>
+
+  <section class="panel">
+    <h2>Auditoría y recibos de olvido</h2>
+    <p class="ayuda">
+      Cada ingesta y cada borrado deja registro. Un recibo de olvido guarda la misma
+      consulta ejecutada antes y después de un borrado, con las citas de cada momento.
+    </p>
+    <div id="auditoria"></div>
+    <h3>Alertas generadas</h3>
+    <div id="tickets"></div>
+  </section>
+</main>
+
+<!-- ================= OBSERVABILIDAD ================= -->
+<main class="vista" id="vista-observabilidad">
+  <section class="panel">
+    <h2>Motor de decisión vigente</h2>
+    <p class="ayuda">
+      Ninguna de estas decisiones pasa por el modelo de lenguaje: son comparaciones en
+      <code>clinical/triage_engine.py</code>. Cada umbral muestra el documento del corpus
+      que lo sustenta.
+    </p>
+    <div id="reglas-motor"></div>
+  </section>
+
+  <section class="panel">
+    <h2>Métricas medidas</h2>
+    <p class="ayuda">
+      Estas cifras las produce <code>obs/metrics.py</code> durante la ejecución, no se
+      escriben a mano. Son las mismas que reporta el README.
+    </p>
+    <button class="boton" id="btn-refrescar-metricas">Refrescar</button>
+    <div id="metricas"></div>
+  </section>
+
+  <section class="panel">
+    <h2>Estado del sistema</h2>
+    <div id="salud-detalle"></div>
+  </section>
+</main>
+
+<script src="/estatico/app.js"></script>
+</body>
+</html>
