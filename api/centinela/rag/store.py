@@ -197,6 +197,20 @@ class KnowledgeStore:
     # Escritura
     # ------------------------------------------------------------------
 
+    def existe_archivo(self, sha256: str) -> DocumentoRegistrado | None:
+        """Dedup por bytes del archivo, antes de extraer.
+
+        Es la comprobacion barata: permite reanudar una ingesta interrumpida sin
+        volver a extraer y OCR-ear documentos ya indexados, que es donde se va
+        casi todo el tiempo.
+        """
+
+        fila = self._conn.execute(
+            "SELECT * FROM documentos WHERE sha256 = ?", (sha256,)
+        ).fetchone()
+        resultado = self._a_documento(fila) if fila else None
+        return resultado
+
     def existe_contenido(self, huella_texto: str) -> DocumentoRegistrado | None:
         """Dedup logico: mismo contenido con otro nombre de archivo.
 

@@ -19,10 +19,21 @@ from __future__ import annotations
 
 import os
 from functools import lru_cache
+from pathlib import Path
 from typing import Iterable, Sequence
 
 MODELO_POR_DEFECTO = "intfloat/multilingual-e5-large"
 DIM_POR_DEFECTO = 1024
+
+# Cache de modelos dentro del proyecto.
+#
+# Por defecto fastembed usa el directorio temporal del sistema, que Windows y
+# muchos CI limpian sin avisar. La consecuencia practica es una re-descarga de
+# 1.3 GB en el peor momento posible: el arranque cronometrado de la compuerta G2.
+# Se fija antes de que se importe fastembed, que lee la variable al cargarse.
+_CACHE = Path(__file__).resolve().parents[3] / "data" / "modelos"
+os.environ.setdefault("FASTEMBED_CACHE_PATH", str(_CACHE))
+os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
 
 
 class Embedder:

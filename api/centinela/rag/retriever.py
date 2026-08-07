@@ -75,6 +75,7 @@ class ResultadoRecuperacion:
     generacion: int
     cobertura_procedimiento: bool = True
     tema_esperado: str | None = None
+    tema_filtrado: str | None = None
 
     @property
     def citas(self) -> list[dict]:
@@ -124,17 +125,33 @@ class Retriever:
         self._asegurar_bm25()
         generacion = self.store.generacion
 
-        densos = self._buscar_denso(consulta)
-        lexicos = self._buscar_lexico(consulta)
+        # Filtro por tema cuando se conoce el procedimiento del paciente.
+        #
+        # Sin este filtro la recuperacion cruza procedimientos y el resultado es
+        # peligroso, no solo impreciso: en una prueba real, la pregunta "cuando
+        # puedo volver a hacer ejercicio despues de la cirugia" para una paciente
+        # de COLECISTECTOMIA devolvio como mejor pasaje una guia de cancer de
+        # cuello uterino, y el modelo respondio con total seguridad citandola.
+        # Esa es la alucinacion clinica por recuperacion que la rubrica penaliza.
+        #
+        # Se prefiere abstenerse a responder con material de otro procedimiento:
+        # un "no lo se" cuesta un punto, una indicacion equivocada cuesta un
+        # paciente.
+        tema_esperado = TEMA_POR_PROCEDIMIENTO.get(procedimiento or "", None)
+        cobertura = self._hay_cobertura(tema_esperado)
+        tema_filtro = tema_esperado if (tema_esperado and cobertura) else None
+
+        densos = self._buscar_denso(consulta, tema_filtro)
+        lexicos = self._buscar_lexico(consulta, tema_filtro)
         fusionados = self._fusionar(densos, lexicos)
         seleccionados = self._mmr(consulta, fusionados, n_final)
 
         for p in seleccionados:
             p.solape_lexico = solape_lexico(consulta, p.texto)
 
-        tema_esperado = TEMA_POR_PROCEDIMIENTO.get(procedimiento or "", None)
-        cobertura = self._hay_cobertura(tema_esperado)
-        fundamentado, razon = self._evaluar_fundamentacion(seleccionados, cobertura, tema_esperado)
+        fundamentado, razon = self._evaluar_fundamentacion(
+            seleccionados, cobertura, tema_esperado, tema_filtro
+        )
 
         resultado = ResultadoRecuperacion(
             consulta=consulta,
@@ -144,17 +161,20 @@ class Retriever:
             generacion=generacion,
             cobertura_procedimiento=cobertura,
             tema_esperado=tema_esperado,
+            tema_filtrado=tema_filtro,
         )
         return resultado
 
     # ------------------------------------------------------------------
 
-    def _buscar_denso(self, consulta: str) -> list[Pasaje]:
+    def _buscar_denso(self, consulta: str, tema: str | None = None) -> list[Pasaje]:
         vector = self.embedder.embed_consulta(consulta)
+        filtro = {"tema": tema} if tema else None
         try:
             crudo = self.store.coleccion.query(
                 query_embeddings=[vector],
                 n_results=N_CANDIDATOS,
+                where=filtro,
                 include=["documents", "metadatas", "distances"],
             )
         except Exception:
@@ -181,11 +201,16 @@ class Retriever:
             )
         return pasajes
 
-    def _buscar_lexico(self, consulta: str) -> list[Pasaje]:
+    def _buscar_lexico(self, consulta: str, tema: str | None = None) -> list[Pasaje]:
         pasajes: list[Pasaje] = []
         if self._bm25 is not None:
             puntajes = self._bm25.get_scores(tokenizar(consulta))
             mejores = sorted(range(len(puntajes)), key=lambda i: puntajes[i], reverse=True)
+            # El filtro de tema se aplica despues de puntuar: BM25 puntua sobre el
+            # corpus completo y aqui se descarta lo que no corresponde al
+            # procedimiento, manteniendo el ranking relativo de lo que queda.
+            if tema:
+                mejores = [i for i in mejores if self._chunks_bm25[i].get("tema") == tema]
             for rango, idx in enumerate(mejores[:N_CANDIDATOS]):
                 if puntajes[idx] > 0:
                     c = self._chunks_bm25[idx]
@@ -271,9 +296,14 @@ class Retriever:
         pasajes: list[Pasaje],
         cobertura: bool,
         tema_esperado: str | None,
+        tema_filtrado: str | None = None,
     ) -> tuple[bool, str]:
         if not pasajes:
-            veredicto = (False, "El corpus no devolvio ningun pasaje para esta consulta.")
+            veredicto = (
+                False,
+                "El corpus no devolvio ningun pasaje para esta consulta"
+                + (f" dentro del tema {tema_filtrado}." if tema_filtrado else "."),
+            )
         elif not cobertura:
             veredicto = (
                 False,

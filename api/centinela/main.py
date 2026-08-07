@@ -1,4 +1,4 @@
-"""API de Centinela: consola de conocimiento + interfaz de llamada.
+﻿"""API de Centinela: consola de conocimiento + interfaz de llamada.
 
 El reto exige dos superficies con contrato funcional minimo:
 
@@ -9,8 +9,8 @@ El reto exige dos superficies con contrato funcional minimo:
 
 Este modulo expone las dos, mas una tercera que no se pide y que existe para que
 el jurado pueda ver por dentro: `/api/llamadas/{id}/traza` y `/api/metricas`
-muestran en vivo qué documento sustenta cada respuesta, qué regla disparó cada
-decisión y cuánto costó cada etapa del turno. La rúbrica dice que "solo cuenta lo
+muestran en vivo que documento sustenta cada respuesta, que regla disparo cada
+decision y cuanto costo cada etapa del turno. La rubrica dice que "solo cuenta lo
 observable"; esto hace observable el razonamiento.
 """
 
@@ -487,6 +487,9 @@ async def _empaquetar_turno(llamada_id, policy, accion, crono, audio) -> dict:
     medicion.intencion = accion.intencion_detectada
     medicion.nivel = accion.decision.nivel.value if accion.decision else None
     medicion.consultas_rag = accion.consultas_rag
+    medicion.tokens_entrada = accion.uso.tokens_entrada
+    medicion.tokens_salida = accion.uso.tokens_salida
+    medicion.invocaciones_llm = accion.uso.invocaciones
     medicion.tts_desde_cache = all(f.clave for f in accion.fragmentos)
     E["metrics"].registrar(medicion)
 
@@ -771,6 +774,6 @@ else:
         return HTMLResponse(
             "<h1>Centinela</h1>"
             "<p>Falta <code>web/index.html</code>.</p>"
-            "<p>La API si esta viva: <a href='/docs'>/docs</a> · "
+            "<p>La API si esta viva: <a href='/docs'>/docs</a> - "
             "<a href='/api/salud'>/api/salud</a></p>"
         )

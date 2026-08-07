@@ -24,6 +24,7 @@ import shutil
 import sys
 import time
 from collections import Counter, defaultdict
+from dataclasses import dataclass
 from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parents[1]
@@ -40,7 +41,7 @@ from centinela.rag.ingest import (  # noqa: E402
     chunkear,
     extraer_documento,
 )
-from centinela.rag.store import KnowledgeStore  # noqa: E402
+from centinela.rag.store import KnowledgeStore, sha256_bytes  # noqa: E402
 
 LOTE_EMBED = 64
 
@@ -54,6 +55,135 @@ def descubrir_pdfs(base: Path) -> list[tuple[Path, str | None]]:
         declarado = TEMA_DECLARADO_POR_CARPETA.get(carpeta)
         encontrados.append((ruta, declarado))
     return encontrados
+
+
+@dataclass
+class ResultadoDocumento:
+    """Desenlace del procesamiento de un PDF.
+
+    El bucle principal no toma decisiones: solo acumula estos resultados. Toda la
+    ramificacion vive aqui dentro, con un unico punto de salida.
+    """
+
+    estado: str  # ingerido | ya_estaba | duplicado | sin_texto | vacio | error
+    mensaje: str = ""
+    paginas: int = 0
+    chunks: int = 0
+    paginas_ocr: int = 0
+    tema: str | None = None
+    nombre: str = ""
+    duplicado_de: str | None = None
+    huella: str | None = None
+    incoherencia: dict | None = None
+    error: str | None = None
+
+
+def procesar_pdf(
+    ruta: Path,
+    declarado: str | None,
+    store: KnowledgeStore,
+    embedder: Embedder,
+    con_ocr: bool,
+) -> ResultadoDocumento:
+    """Extrae, deduplica, chunkea, embebe e indexa un PDF."""
+
+    sha = sha256_bytes(ruta.read_bytes())
+    previo_archivo = store.existe_archivo(sha)
+
+    if previo_archivo is not None:
+        # Reanudacion: el archivo ya esta indexado. No se extrae de nuevo, que es
+        # donde se va casi todo el tiempo por culpa del OCR.
+        resultado = ResultadoDocumento(
+            estado="ya_estaba",
+            mensaje="ya indexado, se omite",
+            paginas=previo_archivo.n_paginas,
+            chunks=previo_archivo.n_chunks,
+            paginas_ocr=previo_archivo.paginas_ocr,
+            tema=previo_archivo.tema,
+            nombre=previo_archivo.nombre,
+        )
+    else:
+        try:
+            doc = extraer_documento(ruta, tema_declarado=declarado, con_ocr=con_ocr)
+        except Exception as e:  # noqa: BLE001
+            resultado = ResultadoDocumento(
+                estado="error",
+                mensaje=f"ERROR extraccion: {type(e).__name__}: {e}",
+                nombre=ruta.name,
+                error=f"{type(e).__name__}: {e}",
+            )
+        else:
+            if len(doc.texto_completo.strip()) < 200:
+                resultado = ResultadoDocumento(
+                    estado="sin_texto",
+                    mensaje="SIN TEXTO UTIL, se omite",
+                    paginas=len(doc.paginas),
+                    paginas_ocr=doc.paginas_ocr,
+                    nombre=doc.nombre,
+                    error="sin capa de texto y OCR sin resultado",
+                )
+            else:
+                previo = store.existe_contenido(doc.huella_texto)
+                if previo is not None:
+                    resultado = ResultadoDocumento(
+                        estado="duplicado",
+                        mensaje=f"DUPLICADO de {previo.nombre[:40]}, se omite",
+                        paginas=len(doc.paginas),
+                        paginas_ocr=doc.paginas_ocr,
+                        nombre=doc.nombre,
+                        duplicado_de=previo.nombre,
+                        huella=doc.huella_texto[:16],
+                    )
+                else:
+                    doc_id = doc.sha256[:32]
+                    chunks = chunkear(doc, doc_id)
+                    if not chunks:
+                        resultado = ResultadoDocumento(
+                            estado="vacio",
+                            mensaje="0 chunks, se omite",
+                            paginas=len(doc.paginas),
+                            nombre=doc.nombre,
+                        )
+                    else:
+                        vectores: list[list[float]] = []
+                        for j in range(0, len(chunks), LOTE_EMBED):
+                            lote = chunks[j:j + LOTE_EMBED]
+                            vectores.extend(embedder.embed_pasajes([c.texto for c in lote]))
+
+                        store.registrar_documento(
+                            nombre=doc.nombre,
+                            titulo=doc.titulo,
+                            sha256=doc.sha256,
+                            huella_texto=doc.huella_texto,
+                            origen=f"corpus_oficial/{ruta.parent.name}",
+                            categoria=ruta.parent.name,
+                            tema=doc.tema_detectado,
+                            n_paginas=len(doc.paginas),
+                            paginas_ocr=doc.paginas_ocr,
+                            chunks=chunks,
+                            embeddings=vectores,
+                        )
+                        marca = " [OCR]" if doc.paginas_ocr else ""
+                        alerta = " [TEMA INCOHERENTE]" if doc.incoherencia_tema else ""
+                        resultado = ResultadoDocumento(
+                            estado="ingerido",
+                            mensaje=f"{len(doc.paginas):3d} pags  "
+                                    f"{len(chunks):4d} chunks{marca}{alerta}",
+                            paginas=len(doc.paginas),
+                            chunks=len(chunks),
+                            paginas_ocr=doc.paginas_ocr,
+                            tema=doc.tema_detectado,
+                            nombre=doc.nombre,
+                            incoherencia={
+                                "nombre": doc.nombre,
+                                "carpeta": ruta.parent.name,
+                                "tema_declarado_por_carpeta": doc.tema_declarado,
+                                "tema_detectado_en_el_texto": doc.tema_detectado,
+                                "puntajes": {k: v for k, v in doc.puntajes_tema.items() if v > 0},
+                            } if doc.incoherencia_tema else None,
+                        )
+
+    return resultado
 
 
 def main() -> int:
@@ -98,80 +228,42 @@ def main() -> int:
     por_carpeta_tema: dict[str, Counter] = defaultdict(Counter)
     t_inicio = time.perf_counter()
 
+    ya_estaban = 0
+
+    # El bucle solo acumula: toda la ramificacion vive en procesar_pdf(), que
+    # tiene un unico punto de salida.
     for i, (ruta, declarado) in enumerate(pdfs, start=1):
         etiqueta = f"[{i:3d}/{len(pdfs)}] {ruta.parent.name}/{ruta.name[:58]}"
-        try:
-            doc = extraer_documento(ruta, tema_declarado=declarado, con_ocr=not args.sin_ocr)
-        except Exception as e:
-            print(f"{etiqueta}  ERROR extraccion: {type(e).__name__}: {e}")
-            sin_texto.append({"nombre": ruta.name, "carpeta": ruta.parent.name,
-                              "error": f"{type(e).__name__}: {e}"})
-            continue
+        r = procesar_pdf(ruta, declarado, store, embedder, con_ocr=not args.sin_ocr)
+        print(f"{etiqueta}  {r.mensaje}")
 
-        total_paginas += len(doc.paginas)
+        total_paginas += r.paginas
+        total_chunks += r.chunks
 
-        if doc.paginas_ocr:
+        if r.paginas_ocr:
             con_ocr.append({
-                "nombre": doc.nombre, "carpeta": ruta.parent.name,
-                "paginas_ocr": doc.paginas_ocr, "paginas": len(doc.paginas),
+                "nombre": r.nombre, "carpeta": ruta.parent.name,
+                "paginas_ocr": r.paginas_ocr, "paginas": r.paginas,
             })
 
-        if len(doc.texto_completo.strip()) < 200:
-            print(f"{etiqueta}  SIN TEXTO UTIL, se omite")
-            sin_texto.append({"nombre": doc.nombre, "carpeta": ruta.parent.name,
-                              "error": "sin capa de texto y OCR sin resultado"})
-            continue
-
-        previo = store.existe_contenido(doc.huella_texto)
-        if previo is not None:
-            print(f"{etiqueta}  DUPLICADO de {previo.nombre[:40]}, se omite")
+        if r.estado in ("ingerido", "ya_estaba"):
+            ingeridos += 1
+            clave_tema = r.tema or "sin_clasificar"
+            por_tema[clave_tema] += 1
+            por_carpeta_tema[ruta.parent.name][clave_tema] += 1
+            if r.estado == "ya_estaba":
+                ya_estaban += 1
+            if r.incoherencia:
+                incoherencias.append(r.incoherencia)
+        elif r.estado == "duplicado":
             duplicados.append({
-                "nombre": doc.nombre, "carpeta": ruta.parent.name,
-                "duplicado_de": previo.nombre, "huella": doc.huella_texto[:16],
+                "nombre": r.nombre, "carpeta": ruta.parent.name,
+                "duplicado_de": r.duplicado_de, "huella": r.huella,
             })
-            continue
-
-        if doc.incoherencia_tema:
-            incoherencias.append({
-                "nombre": doc.nombre,
-                "carpeta": ruta.parent.name,
-                "tema_declarado_por_carpeta": doc.tema_declarado,
-                "tema_detectado_en_el_texto": doc.tema_detectado,
-                "puntajes": {k: v for k, v in doc.puntajes_tema.items() if v > 0},
+        elif r.estado in ("sin_texto", "error"):
+            sin_texto.append({
+                "nombre": r.nombre, "carpeta": ruta.parent.name, "error": r.error,
             })
-
-        doc_id = doc.sha256[:32]
-        chunks = chunkear(doc, doc_id)
-        if not chunks:
-            print(f"{etiqueta}   0 chunks, se omite")
-            continue
-
-        vectores: list[list[float]] = []
-        for j in range(0, len(chunks), LOTE_EMBED):
-            lote = chunks[j:j + LOTE_EMBED]
-            vectores.extend(embedder.embed_pasajes([c.texto for c in lote]))
-
-        store.registrar_documento(
-            nombre=doc.nombre,
-            titulo=doc.titulo,
-            sha256=doc.sha256,
-            huella_texto=doc.huella_texto,
-            origen=f"corpus_oficial/{ruta.parent.name}",
-            categoria=ruta.parent.name,
-            tema=doc.tema_detectado,
-            n_paginas=len(doc.paginas),
-            paginas_ocr=doc.paginas_ocr,
-            chunks=chunks,
-            embeddings=vectores,
-        )
-
-        ingeridos += 1
-        total_chunks += len(chunks)
-        por_tema[doc.tema_detectado or "sin_clasificar"] += 1
-        por_carpeta_tema[ruta.parent.name][doc.tema_detectado or "sin_clasificar"] += 1
-        marca = " [OCR]" if doc.paginas_ocr else ""
-        alerta = " [TEMA INCOHERENTE]" if doc.incoherencia_tema else ""
-        print(f"{etiqueta}  {len(doc.paginas):3d} pags  {len(chunks):4d} chunks{marca}{alerta}")
 
     duracion = time.perf_counter() - t_inicio
 

@@ -1,4 +1,4 @@
-"""Politica de dialogo: la maquina de estados que conduce la llamada.
+﻿"""Politica de dialogo: la maquina de estados que conduce la llamada.
 
 Este modulo es el director de la conversacion. El modelo de lenguaje no lo es, y
 esa es la decision de diseno mas importante de Centinela.
@@ -32,6 +32,7 @@ from enum import Enum
 
 from ..clinical.extractor import Extractor, ResultadoExtraccion
 from ..clinical.triage_engine import TriageEngine
+from ..llm.backend import UsoTokens
 from ..models import ClinicalState, Nivel, TriageDecision
 from . import script as S
 from .guardrails import Clasificacion, Intencion, clasificar
@@ -97,6 +98,10 @@ class AccionAgente:
     ms_procesamiento: float = 0.0
     consultas_rag: int = 0
     correcciones_de_seguridad: list[str] = field(default_factory=list)
+    # Consumo del turno. Se acumula aqui porque el modelo puede invocarse hasta
+    # dos veces en un mismo turno (extraccion y respuesta clinica) y la rubrica
+    # pide reportar tokens e invocaciones por turno, no por invocacion.
+    uso: UsoTokens = field(default_factory=UsoTokens)
 
     @property
     def texto_completo(self) -> str:
@@ -140,6 +145,7 @@ class DialogPolicy:
         self.consultas_rag = 0
         self.iniciada_en = datetime.now(timezone.utc)
         self._acuse = 0
+        self._uso_rag = UsoTokens()
 
     # ------------------------------------------------------------------
     # Apertura
@@ -171,6 +177,7 @@ class DialogPolicy:
     async def procesar(self, texto_paciente: str) -> AccionAgente:
         t0 = time.perf_counter()
         turno_idx = len(self.turnos)
+        self._uso_rag = UsoTokens()
 
         extraccion = await self.extractor.extraer(
             texto_paciente=texto_paciente,
@@ -206,6 +213,8 @@ class DialogPolicy:
 
         accion.ms_procesamiento = (time.perf_counter() - t0) * 1000
         accion.intencion_detectada = cls.intencion.value
+        accion.uso.acumular(extraccion.uso)
+        accion.uso.acumular(self._uso_rag)
         accion.correcciones_de_seguridad = extraccion.correcciones_de_seguridad
         accion.consultas_rag = self.consultas_rag
         self._registrar_agente(accion.texto_completo)
@@ -348,6 +357,7 @@ class DialogPolicy:
                 procedimiento=self.paciente.procedimiento,
                 dia_postop=self.paciente.dia_postop,
             )
+            self._uso_rag.acumular(respuesta.uso)
             if respuesta.fundamentado:
                 fragmentos.append(Fragmento(respuesta.texto, None, citas=respuesta.citas))
             else:
