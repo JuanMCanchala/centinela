@@ -165,25 +165,36 @@ async def reglas() -> dict:
     """
 
     citas = _cargar_citas_umbrales()
+
+    def describir(u) -> dict:
+        cita = citas.get(u.codigo)
+        return {
+            "codigo": u.codigo,
+            "dominio": u.dominio,
+            "descripcion": u.descripcion,
+            "umbral": u.umbral_legible,
+            "cita": cita.model_dump() if cita else None,
+            # Se distingue explicitamente el umbral con respaldo documental del
+            # que solo esta ajustado a los datos. Es informacion que el jurado
+            # merece tener sin tener que preguntarla, y esconderla seria peor:
+            # una cita debil descubierta en la verificacion cuesta mas que un
+            # hueco declarado de frente.
+            "respaldo": "cita verificable en el corpus" if cita else (
+                "sin cita en el corpus entregado; el umbral se sostiene en la "
+                "literatura clinica estandar y en su ajuste a los 160 casos oficiales"
+            ),
+        }
+
+    con_cita = sum(1 for u in list(UMBRALES_ROJOS) + list(BANDERAS_AMARILLAS)
+                   if u.codigo in citas)
+    total = len(UMBRALES_ROJOS) + len(BANDERAS_AMARILLAS)
+
     return {
         "version": E["motor"].config.version,
-        "rojas": [
-            {
-                "codigo": u.codigo, "dominio": u.dominio, "descripcion": u.descripcion,
-                "umbral": u.umbral_legible,
-                "cita": citas[u.codigo].model_dump() if u.codigo in citas else None,
-            }
-            for u in UMBRALES_ROJOS
-        ],
-        "amarillas": [
-            {
-                "codigo": b.codigo, "dominio": b.dominio, "descripcion": b.descripcion,
-                "umbral": b.umbral_legible,
-                "cita": citas[b.codigo].model_dump() if b.codigo in citas else None,
-            }
-            for b in BANDERAS_AMARILLAS
-        ],
+        "rojas": [describir(u) for u in UMBRALES_ROJOS],
+        "amarillas": [describir(b) for b in BANDERAS_AMARILLAS],
         "banderas_minimas_para_amarillo": E["motor"].config.banderas_minimas,
+        "umbrales_con_respaldo_documental": f"{con_cita}/{total}",
         "nota": (
             "Ninguna de estas decisiones pasa por el modelo de lenguaje. "
             "Son comparaciones en clinical/triage_engine.py."
@@ -245,15 +256,26 @@ async def subir_documento(archivo: UploadFile = File(...)) -> dict:
         )
 
     previo = E["store"].existe_contenido(doc.huella_texto)
-    if previo is not None:
+    casi = None if previo else E["store"].existe_casi_igual(doc.firma_bolsa)
+
+    if previo is not None or casi is not None:
+        if previo is not None:
+            parecido, como = previo, "el texto normalizado es identico"
+        else:
+            parecido, similitud = casi
+            como = (
+                f"el solape de terminos distintivos es de {similitud:.1%}, "
+                f"asi que es el mismo documento con otra codificacion del PDF"
+            )
         return {
             "ingerido": False,
             "razon": "duplicado_logico",
             "mensaje": (
-                f"El contenido de este PDF ya esta indexado como '{previo.nombre}'. "
-                f"Se detecto comparando el texto normalizado, no los bytes."
+                f"El contenido de este PDF ya esta indexado como '{parecido.nombre}'. "
+                f"Se detecto porque {como} -- no por los bytes del archivo, que son "
+                f"distintos."
             ),
-            "duplicado_de": {"doc_id": previo.doc_id, "nombre": previo.nombre},
+            "duplicado_de": {"doc_id": parecido.doc_id, "nombre": parecido.nombre},
         }
 
     doc_id = doc.sha256[:32]
@@ -269,6 +291,7 @@ async def subir_documento(archivo: UploadFile = File(...)) -> dict:
         titulo=doc.titulo,
         sha256=doc.sha256,
         huella_texto=doc.huella_texto,
+        firma_bolsa=doc.firma_bolsa,
         origen="consola",
         categoria="subido_por_consola",
         tema=doc.tema_detectado,

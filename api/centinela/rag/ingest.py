@@ -55,7 +55,12 @@ LEXICOS_TEMA: dict[str, tuple[str, ...]] = {
     ),
     "cancer_colorrectal": (
         "colorrectal", "colorectal", "colectomia", "colectomy", "cancer de colon",
-        "colon cancer", "recto", "rectal", "colostomia", "colostomy", "eras",
+        "colon cancer", "recto", "rectal", "colostomia", "colostomy",
+        # "eras" NO va aqui. Enhanced Recovery After Surgery es un protocolo
+        # transversal: el corpus lo usa tanto en cirugia colorrectal como en
+        # artroplastia. Tenerlo en este lexico hacia que dos guias de reemplazo
+        # articular se clasificaran como cancer colorrectal, y eso rompe el
+        # filtro de tema de la recuperacion justo donde mas importa.
     ),
     "cancer_mama": (
         "cancer de mama", "breast cancer", "mastectomia", "mastectomy",
@@ -155,11 +160,43 @@ class DocumentoExtraido:
 
     @property
     def huella_texto(self) -> str:
-        """Huella del contenido, insensible a formato y a bytes del archivo."""
+        """Huella exacta del contenido, insensible a formato y a bytes."""
 
         base = normalizar(self.texto_completo)
         solo_letras = re.sub(r"[^a-z0-9 ]", "", base)
         return sha256_texto(solo_letras[:60000])
+
+    @property
+    def firma_bolsa(self) -> str:
+        """Firma para duplicados *casi* identicos.
+
+        La huella exacta no basta y esto se descubrio auditando el corpus del
+        reto. Hay dos pares de documentos que son el mismo articulo con nombre de
+        archivo distinto:
+
+          - "Orthopaedic Surgery - 2019 - Li - Postoperative Pain Management in
+            Total Knee Arthroplasty.pdf" y "Postoperative Pain Management in
+            Total Knee Arthroplasty.pdf"  (similitud 1.000)
+          - "Recommendations for follow-up of colorectal cancer survivors.pdf" y
+            "ecommendations for follow-up of colorectal cancer survivors.pdf"
+            (mismo DOI 10.1007/s12094-019-02059-1, similitud 0.998)
+
+        Ninguno de los dos pares tiene el mismo sha256 de archivo NI la misma
+        huella de texto exacta, porque los dos PDFs codifican ligaduras y
+        guionado de forma distinta. Lo que si comparten es el vocabulario. Esta
+        firma guarda los terminos distintivos ordenados para poder comparar por
+        solape de conjuntos.
+        """
+
+        palabras = [p for p in normalizar(self.texto_completo).split() if len(p) > 4]
+        # Los terminos mas frecuentes de un documento largo son su tema; son los
+        # que mejor lo identifican y los mas estables frente a errores de
+        # extraccion puntuales.
+        frecuencias: dict[str, int] = {}
+        for p in palabras[:40000]:
+            frecuencias[p] = frecuencias.get(p, 0) + 1
+        distintivos = sorted(frecuencias, key=lambda w: (-frecuencias[w], w))[:300]
+        return " ".join(sorted(distintivos))
 
     @property
     def incoherencia_tema(self) -> bool:

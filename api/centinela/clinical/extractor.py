@@ -165,13 +165,22 @@ class Extractor:
             res.campos_por_lexico.append(dominio)
 
         # ---------- capa 3: modelo, solo si hace falta ----------
-        # Si el turno degradado no tiene contenido util, no se gasta una
-        # invocacion: se pide repetir.
+        #
+        # La condicion es "este turno no aporto nada", no "falta el dominio que
+        # yo pregunte". La diferencia importa y costo una invocacion inutil por
+        # turno hasta que la prueba de `eval/probar_tokens.py` la expuso: si el
+        # agente pregunta por el dolor y el paciente contesta "la herida se ve
+        # rojita", las reglas resuelven la herida perfectamente. Comparar contra
+        # el dominio preguntado hacia que el turno pareciera irresuelto y
+        # disparaba el modelo para nada -- unos 330 tokens y dos segundos.
+        #
+        # El paciente contesta lo que quiere, no lo que se le pregunta; el guion
+        # ya se encarga de volver al dominio pendiente en el siguiente turno.
         resueltos = set(res.campos_por_regla) | set(res.campos_por_lexico)
-        falta_objetivo = dominio_objetivo and dominio_objetivo not in resueltos
         hay_texto = len(norm.texto) >= 12
+        aporto_algo = bool(resueltos) or norm.numeros.fiebre_subjetiva
 
-        if hay_texto and (falta_objetivo or not resueltos):
+        if hay_texto and not aporto_algo:
             crudo = await self._preguntar_al_modelo(norm.texto, pregunta_agente, dominio_objetivo)
             res.uso.acumular(crudo["uso"])
             res.llamo_al_modelo = True

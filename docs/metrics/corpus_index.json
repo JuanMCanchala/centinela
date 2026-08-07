@@ -1,0 +1,288 @@
+{
+  "documentos_indexados": 106,
+  "total_paginas": 2084,
+  "total_chunks": 6667,
+  "documentos_con_ocr": [
+    {
+      "nombre": "Acute Appendicitis Evidence Based Medicine Guideline.pdf",
+      "carpeta": "Appendicitis",
+      "paginas_ocr": 1,
+      "paginas": 7
+    },
+    {
+      "nombre": "Apendicitis.pdf",
+      "carpeta": "Appendicitis",
+      "paginas_ocr": 1,
+      "paginas": 12
+    },
+    {
+      "nombre": "BOG303-Raul-Murillo.pdf",
+      "carpeta": "breast_cancer",
+      "paginas_ocr": 6,
+      "paginas": 23
+    },
+    {
+      "nombre": "Colelitiasis y colecistitis aguda.pdf",
+      "carpeta": "cholecystitis",
+      "paginas_ocr": 1,
+      "paginas": 15
+    },
+    {
+      "nombre": "Colon Cancer Surgery and Recovery.pdf",
+      "carpeta": "colorectal cancer",
+      "paginas_ocr": 2,
+      "paginas": 24
+    },
+    {
+      "nombre": "Diagnóstico y tratamiento del paciente con colecistitis aguda calculosa en el Hospital Universitario Nacional de Colombia .pdf",
+      "carpeta": "cholecystitis",
+      "paginas_ocr": 2,
+      "paginas": 110
+    },
+    {
+      "nombre": "Diagnóstico, estadificación, tratamiento y seguimiento del paciente adulto con cáncer de colon en el Hospital Universitario Nacional de Colombia.pdf",
+      "carpeta": "colorectal cancer",
+      "paginas_ocr": 1,
+      "paginas": 85
+    },
+    {
+      "nombre": "GUÍA DE MANEJO PARA EL DIAGNÓSTICO, TRATAMIENTO, SEGUIMIENTO Y PALIACIÓN DEL CÁNCER DE COLON Y RECTO.pdf",
+      "carpeta": "colorectal cancer",
+      "paginas_ocr": 14,
+      "paginas": 269
+    },
+    {
+      "nombre": "Identificación de microorganismos intrabdominales asociados a colección intrabdominal postoperatoria en niños con apendicitis perforada.pdf",
+      "carpeta": "Appendicitis",
+      "paginas_ocr": 1,
+      "paginas": 53
+    },
+    {
+      "nombre": "PLAN CASERO REEMPLAZO TOTAL DE RODILLA.pdf",
+      "carpeta": "total joint replacement",
+      "paginas_ocr": 1,
+      "paginas": 8
+    },
+    {
+      "nombre": "PLAN DE CUIDADO COLECISTECTOMIA.pdf",
+      "carpeta": "cholecystitis",
+      "paginas_ocr": 1,
+      "paginas": 5
+    },
+    {
+      "nombre": "PROGRAMA DE PROFUNDIZACIÓN Y ENTRENAMIENTO AVANZADO EN REEMPLAZO ARTICULAR.pdf",
+      "carpeta": "total joint replacement",
+      "paginas_ocr": 1,
+      "paginas": 9
+    },
+    {
+      "nombre": "Post-operative Surveillance Following Curative Resection of Colorectal Cancer in the Elderly Population in the United Kingdom- An Observational Study.pdf",
+      "carpeta": "colorectal cancer",
+      "paginas_ocr": 1,
+      "paginas": 10
+    },
+    {
+      "nombre": "REVISIÓN DE LA LITERATURA SOBRE LAAPENDICITIS AGUDA PEDIATRICA NO ESPECIFICADA EN EL PERI000 2000-2021.pdf",
+      "carpeta": "Appendicitis",
+      "paginas_ocr": 1,
+      "paginas": 1
+    },
+    {
+      "nombre": "Reemplazo total de Cadera Guía para pacientes y cuidadores El camino hacia su recuperación.pdf",
+      "carpeta": "total joint replacement",
+      "paginas_ocr": 1,
+      "paginas": 55
+    },
+    {
+      "nombre": "Reemplazo total de cadera Guía para el paciente .pdf",
+      "carpeta": "total joint replacement",
+      "paginas_ocr": 2,
+      "paginas": 28
+    },
+    {
+      "nombre": "cervix16nov-full.pdf",
+      "carpeta": "breast_cancer",
+      "paginas_ocr": 7,
+      "paginas": 86
+    }
+  ],
+  "incoherencias_de_tema": [
+    {
+      "nombre": "002-GUIA-DE-CANCER-DE-CUELLO-UTERINO.pdf",
+      "carpeta": "breast_cancer",
+      "tema_declarado_por_carpeta": "cancer_mama",
+      "tema_detectado_en_el_texto": "cancer_cuello_uterino"
+    },
+    {
+      "nombre": "1-s2.0-S0360301625060390-main.pdf",
+      "carpeta": "breast_cancer",
+      "tema_declarado_por_carpeta": "cancer_mama",
+      "tema_detectado_en_el_texto": "cancer_cuello_uterino"
+    },
+    {
+      "nombre": "1-s2.0-S1048891X24221824-main.pdf",
+      "carpeta": "breast_cancer",
+      "tema_declarado_por_carpeta": "cancer_mama",
+      "tema_detectado_en_el_texto": "cancer_cuello_uterino"
+    },
+    {
+      "nombre": "BOG303-Raul-Murillo.pdf",
+      "carpeta": "breast_cancer",
+      "tema_declarado_por_carpeta": "cancer_mama",
+      "tema_detectado_en_el_texto": "cancer_cuello_uterino"
+    },
+    {
+      "nombre": "Cáncer-de-Cuello-Uterino-mar_2022.pdf",
+      "carpeta": "breast_cancer",
+      "tema_declarado_por_carpeta": "cancer_mama",
+      "tema_detectado_en_el_texto": "cancer_cuello_uterino"
+    },
+    {
+      "nombre": "Documento.pdf",
+      "carpeta": "breast_cancer",
+      "tema_declarado_por_carpeta": "cancer_mama",
+      "tema_detectado_en_el_texto": "cancer_cuello_uterino"
+    },
+    {
+      "nombre": "Factors-associated-with-delays-in-time-to-treatment-initiation-in-Colombian-women-with-cervical-cancer.pdf",
+      "carpeta": "breast_cancer",
+      "tema_declarado_por_carpeta": "cancer_mama",
+      "tema_detectado_en_el_texto": "cancer_cuello_uterino"
+    },
+    {
+      "nombre": "Intl J Gynecology   Obste - 2025 - Bhatla - Cancer of the cervix uteri  2025 update.pdf",
+      "carpeta": "breast_cancer",
+      "tema_declarado_por_carpeta": "cancer_mama",
+      "tema_detectado_en_el_texto": "cancer_cuello_uterino"
+    },
+    {
+      "nombre": "Terapéutica+del+cáncer+de+cuello+uterino,+una+revisión+de+la+literatura.pdf",
+      "carpeta": "breast_cancer",
+      "tema_declarado_por_carpeta": "cancer_mama",
+      "tema_detectado_en_el_texto": "cancer_cuello_uterino"
+    },
+    {
+      "nombre": "cervical-es-patient.pdf",
+      "carpeta": "breast_cancer",
+      "tema_declarado_por_carpeta": "cancer_mama",
+      "tema_detectado_en_el_texto": "cancer_cuello_uterino"
+    },
+    {
+      "nombre": "cervix16nov-full.pdf",
+      "carpeta": "breast_cancer",
+      "tema_declarado_por_carpeta": "cancer_mama",
+      "tema_detectado_en_el_texto": "cancer_cuello_uterino"
+    },
+    {
+      "nombre": "curroncol-29-00755.pdf",
+      "carpeta": "breast_cancer",
+      "tema_declarado_por_carpeta": "cancer_mama",
+      "tema_detectado_en_el_texto": "cancer_cuello_uterino"
+    },
+    {
+      "nombre": "fonc-14-1461296.pdf",
+      "carpeta": "breast_cancer",
+      "tema_declarado_por_carpeta": "cancer_mama",
+      "tema_detectado_en_el_texto": "cancer_cuello_uterino"
+    },
+    {
+      "nombre": "fsurg-12-1588558.pdf",
+      "carpeta": "breast_cancer",
+      "tema_declarado_por_carpeta": "cancer_mama",
+      "tema_detectado_en_el_texto": "cancer_cuello_uterino"
+    },
+    {
+      "nombre": "gom226c.pdf",
+      "carpeta": "breast_cancer",
+      "tema_declarado_por_carpeta": "cancer_mama",
+      "tema_detectado_en_el_texto": "cancer_cuello_uterino"
+    },
+    {
+      "nombre": "ijgm-18-6073.pdf",
+      "carpeta": "breast_cancer",
+      "tema_declarado_por_carpeta": "cancer_mama",
+      "tema_detectado_en_el_texto": "cancer_cuello_uterino"
+    },
+    {
+      "nombre": "main.pdf",
+      "carpeta": "breast_cancer",
+      "tema_declarado_por_carpeta": "cancer_mama",
+      "tema_detectado_en_el_texto": "cancer_cuello_uterino"
+    },
+    {
+      "nombre": "prevencion-cancer-cuello-uterino.pdf",
+      "carpeta": "breast_cancer",
+      "tema_declarado_por_carpeta": "cancer_mama",
+      "tema_detectado_en_el_texto": "cancer_cuello_uterino"
+    }
+  ],
+  "duplicados_logicos": [
+    {
+      "documento_a": "Orthopaedic Surgery - 2019 - Li - Postoperative Pain Management in Total Knee Arthroplasty.pdf",
+      "documento_b": "Postoperative Pain Management in Total Knee Arthroplasty.pdf",
+      "carpeta_a": "total joint replacement",
+      "carpeta_b": "total joint replacement",
+      "similitud": 1.0
+    },
+    {
+      "documento_a": "Recommendations for follow‑up of colorectal cancer survivors.pdf",
+      "documento_b": "ecommendations for follow‑up of colorectal cancer survivors.pdf",
+      "carpeta_a": "colorectal cancer",
+      "carpeta_b": "colorectal cancer",
+      "similitud": 0.9979
+    }
+  ],
+  "por_tema": {
+    "cancer_cuello_uterino": 18,
+    "cancer_colorrectal": 25,
+    "apendicitis": 23,
+    "colecistitis": 17,
+    "artroplastia": 22,
+    "sin_clasificar": 1
+  },
+  "por_carpeta_y_tema": {
+    "breast_cancer": {
+      "cancer_cuello_uterino": 18
+    },
+    "colorectal cancer": {
+      "cancer_colorrectal": 25
+    },
+    "Appendicitis": {
+      "apendicitis": 23,
+      "sin_clasificar": 1
+    },
+    "cholecystitis": {
+      "colecistitis": 17
+    },
+    "total joint replacement": {
+      "artroplastia": 22
+    }
+  },
+  "cobertura_por_procedimiento": {
+    "Apendicectomia": {
+      "tema_requerido": "apendicitis",
+      "documentos_disponibles": 23,
+      "cubierto": true
+    },
+    "Colecistectomia": {
+      "tema_requerido": "colecistitis",
+      "documentos_disponibles": 17,
+      "cubierto": true
+    },
+    "Colectomia": {
+      "tema_requerido": "cancer_colorrectal",
+      "documentos_disponibles": 25,
+      "cubierto": true
+    },
+    "Mastectomia": {
+      "tema_requerido": "cancer_mama",
+      "documentos_disponibles": 0,
+      "cubierto": false
+    },
+    "Reemplazo de cadera/rodilla": {
+      "tema_requerido": "artroplastia",
+      "documentos_disponibles": 22,
+      "cubierto": true
+    }
+  }
+}

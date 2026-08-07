@@ -29,6 +29,18 @@ class UmbralRojo:
     descripcion: str
     umbral_legible: str
     consulta_evidencia: str
+    # Terminos que la frase citada DEBE contener para valer como respaldo.
+    #
+    # Sin esta exigencia, la busqueda semantica devuelve pasajes con similitud
+    # alta que no dicen nada del umbral: en la primera corrida, el respaldo de
+    # "fiebre >= 38" acabo apuntando a la portada de un PDF y el de "movilidad
+    # incapacitante" al aviso de licencia Creative Commons. Una cita que no
+    # sostiene lo que dice citar es peor que ninguna cita, porque el jurado la
+    # va a verificar contra la fuente real y va a encontrar el hueco.
+    #
+    # Se aceptan alternativas: basta que la frase contenga uno de los grupos, y
+    # dentro de un grupo todos sus terminos.
+    terminos_requeridos: tuple[tuple[str, ...], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -38,6 +50,7 @@ class BanderaAmarilla:
     descripcion: str
     umbral_legible: str
     consulta_evidencia: str
+    terminos_requeridos: tuple[tuple[str, ...], ...] = ()
 
 
 # --------------------------------------------------------------------------
@@ -59,6 +72,12 @@ UMBRALES_ROJOS: tuple[UmbralRojo, ...] = (
             "fiebre mayor de 38 grados signo de infeccion del sitio operatorio "
             "criterio para consultar urgencias postoperatorio"
         ),
+        terminos_requeridos=(
+            ("fiebre", "38"),
+            ("temperatura", "38"),
+            ("fever", "38"),
+            ("fiebre", "urgencias"),
+        ),
     ),
     UmbralRojo(
         codigo="R2_DOLOR",
@@ -68,6 +87,12 @@ UMBRALES_ROJOS: tuple[UmbralRojo, ...] = (
         consulta_evidencia=(
             "dolor postoperatorio severo que no cede con analgesia signo de alarma "
             "escala numerica del dolor"
+        ),
+        terminos_requeridos=(
+            ("dolor", "severo"),
+            ("dolor", "intenso"),
+            ("dolor", "no cede"),
+            ("severe pain",),
         ),
     ),
     UmbralRojo(
@@ -79,6 +104,17 @@ UMBRALES_ROJOS: tuple[UmbralRojo, ...] = (
             "secrecion purulenta herida quirurgica infeccion del sitio operatorio "
             "signos de alarma drenaje purulento"
         ),
+        # Las guias del corpus hablan de "purulent discharge" y de "salida de
+        # material purulento" mas que de "secrecion purulenta" literal, asi que
+        # se aceptan las dos formas y el termino en ingles.
+        terminos_requeridos=(
+            ("purulent discharge",),
+            ("purulent", "wound"),
+            ("secrecion", "purulenta"),
+            ("material", "purulento"),
+            ("supuracion",),
+            ("purulento", "olor"),
+        ),
     ),
     UmbralRojo(
         codigo="R4_MOVILIDAD",
@@ -88,6 +124,27 @@ UMBRALES_ROJOS: tuple[UmbralRojo, ...] = (
         consulta_evidencia=(
             "incapacidad subita para apoyar el peso despues de artroplastia "
             "signo de alarma complicacion postoperatoria movilidad"
+        ),
+        # Este umbral NO tiene respaldo en el corpus entregado, y se deja
+        # documentado en vez de forzar una cita.
+        #
+        # Se busco exhaustivamente: el corpus de artroplastia (22 documentos)
+        # describe rangos de movilidad esperados y protocolos de rehabilitacion,
+        # pero no enuncia la incapacidad subita para apoyar el peso como criterio
+        # de consulta urgente. Las dos unicas frases con "weight-bearing" son de
+        # un estudio radiologico en pacientes obesos, que no sustenta nada de esto.
+        #
+        # El criterio se mantiene en el motor porque los 4 casos del dataset con
+        # `movilidad = incapacitante_nueva` son todos rojos (4/4), y porque una
+        # incapacidad nueva para apoyar el peso tras artroplastia es un signo de
+        # alarma reconocido. Pero /api/reglas lo reporta como "sin cita en el
+        # corpus entregado", no como respaldado.
+        terminos_requeridos=(
+            ("no puede", "apoyar"),
+            ("incapacidad", "caminar"),
+            ("imposibilidad", "marcha"),
+            ("no soportar", "peso"),
+            ("perdida subita", "movilidad"),
         ),
     ),
 )
@@ -110,6 +167,12 @@ BANDERAS_AMARILLAS: tuple[BanderaAmarilla, ...] = (
         descripcion="Dolor moderado, igual o mayor a 5 en escala de 0 a 10",
         umbral_legible=">= 5/10",
         consulta_evidencia="control del dolor postoperatorio moderado seguimiento analgesia",
+        terminos_requeridos=(
+            ("dolor", "moderado"),
+            ("dolor", "analgesia"),
+            ("moderate pain",),
+            ("escala", "dolor"),
+        ),
     ),
     BanderaAmarilla(
         codigo="A2_FEBRICULA",
@@ -117,20 +180,43 @@ BANDERAS_AMARILLAS: tuple[BanderaAmarilla, ...] = (
         descripcion="Febricula, temperatura igual o mayor a 37.4 grados",
         umbral_legible=">= 37.4 C",
         consulta_evidencia="febricula postoperatoria temperatura 37.5 vigilancia seguimiento",
+        terminos_requeridos=(
+            ("febricula",),
+            ("temperatura", "37"),
+            ("fiebre", "37"),
+            ("low-grade fever",),
+        ),
     ),
     BanderaAmarilla(
         codigo="A3_ERITEMA",
         dominio="herida",
         descripcion="Eritema o enrojecimiento leve alrededor de la herida",
         umbral_legible="eritema leve presente",
-        consulta_evidencia="eritema perilesional enrojecimiento herida quirurgica vigilancia infeccion",
+        consulta_evidencia=(
+            "eritema perilesional enrojecimiento herida quirurgica vigilancia infeccion"
+        ),
+        terminos_requeridos=(
+            ("eritema",),
+            ("enrojecimiento",),
+            ("erythema",),
+            ("rubor", "herida"),
+        ),
     ),
     BanderaAmarilla(
         codigo="A4_APETITO",
         dominio="apetito",
         descripcion="Apetito muy disminuido",
         umbral_legible="apetito muy disminuido",
-        consulta_evidencia="intolerancia a la via oral apetito disminuido postoperatorio recuperacion ERAS",
+        consulta_evidencia=(
+            "intolerancia a la via oral apetito disminuido postoperatorio recuperacion"
+        ),
+        terminos_requeridos=(
+            ("via oral",),
+            ("apetito",),
+            ("intolerancia",),
+            ("oral intake",),
+            ("nausea",),
+        ),
     ),
     BanderaAmarilla(
         codigo="A5_SUENO",
@@ -138,6 +224,23 @@ BANDERAS_AMARILLAS: tuple[BanderaAmarilla, ...] = (
         descripcion="Sueno muy alterado",
         umbral_legible="sueno muy alterado",
         consulta_evidencia="alteracion del sueno postoperatoria dolor nocturno recuperacion",
+        # Sin respaldo en el corpus entregado, y es la ausencia mas llamativa del
+        # material: ninguno de los 106 documentos enuncia la alteracion del sueno
+        # como bandera de vigilancia postoperatoria. La unica mencion cercana es
+        # "insomnio" dentro de una lista de efectos adversos de radioterapia en
+        # una guia de cuello uterino, que no sustenta esto.
+        #
+        # El criterio se mantiene porque el dato del dataset es contundente: de
+        # los 160 casos, TODOS los 12 rojos y 16 de los 25 amarillos tienen
+        # `sueno = muy_alterado`, y solo 4 de 123 verdes. Como bandera aislada no
+        # escala; como una de dos, si. Se reporta como no respaldado.
+        terminos_requeridos=(
+            ("alteracion", "sueno"),
+            ("trastorno", "sueno"),
+            ("calidad", "sueno"),
+            ("dificultad", "dormir"),
+            ("insomnio", "postoperatorio"),
+        ),
     ),
 )
 

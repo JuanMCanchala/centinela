@@ -123,15 +123,28 @@ def procesar_pdf(
                     error="sin capa de texto y OCR sin resultado",
                 )
             else:
+                # Dos niveles de dedup: huella exacta del texto y, si esa no
+                # dispara, solape de terminos distintivos. El corpus del reto
+                # necesita el segundo: sus dos pares de duplicados codifican el
+                # mismo articulo con ligaduras distintas y la huella exacta no
+                # los ve.
                 previo = store.existe_contenido(doc.huella_texto)
-                if previo is not None:
+                casi = None if previo else store.existe_casi_igual(doc.firma_bolsa)
+
+                if previo is not None or casi is not None:
+                    if previo is not None:
+                        parecido = previo
+                        detalle = "texto identico"
+                    else:
+                        parecido, similitud = casi
+                        detalle = f"similitud {similitud:.3f}"
                     resultado = ResultadoDocumento(
                         estado="duplicado",
-                        mensaje=f"DUPLICADO de {previo.nombre[:40]}, se omite",
+                        mensaje=f"DUPLICADO de {parecido.nombre[:40]} ({detalle}), se omite",
                         paginas=len(doc.paginas),
                         paginas_ocr=doc.paginas_ocr,
                         nombre=doc.nombre,
-                        duplicado_de=previo.nombre,
+                        duplicado_de=parecido.nombre,
                         huella=doc.huella_texto[:16],
                     )
                 else:
@@ -155,6 +168,7 @@ def procesar_pdf(
                             titulo=doc.titulo,
                             sha256=doc.sha256,
                             huella_texto=doc.huella_texto,
+                            firma_bolsa=doc.firma_bolsa,
                             origen=f"corpus_oficial/{ruta.parent.name}",
                             categoria=ruta.parent.name,
                             tema=doc.tema_detectado,

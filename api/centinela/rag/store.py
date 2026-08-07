@@ -31,12 +31,20 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import sqlite3
 import threading
 from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable, Sequence
+
+# Chroma intenta enviar telemetria y, con esta combinacion de versiones, falla
+# ruidosamente por cada operacion ("capture() takes 1 positional argument").
+# El ajuste de Settings no basta porque el cliente de telemetria se inicializa
+# antes; la variable de entorno si lo apaga.
+os.environ.setdefault("ANONYMIZED_TELEMETRY", "False")
+os.environ.setdefault("CHROMA_TELEMETRY_IMPL", "chromadb.telemetry.product.posthog.Posthog")
 
 ESQUEMA = """
 CREATE TABLE IF NOT EXISTS documentos (
@@ -45,6 +53,7 @@ CREATE TABLE IF NOT EXISTS documentos (
     titulo       TEXT,
     sha256       TEXT NOT NULL,
     huella_texto TEXT,
+    firma_bolsa  TEXT,
     origen       TEXT NOT NULL,
     categoria    TEXT,
     tema         TEXT,
@@ -149,8 +158,26 @@ class KnowledgeStore:
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA foreign_keys=ON")
         self._conn.executescript(ESQUEMA)
+        self._migrar()
         self._conn.commit()
         self._coleccion = None
+
+    def _migrar(self) -> None:
+        """Anade columnas que falten en un indice creado con un esquema anterior.
+
+        `CREATE TABLE IF NOT EXISTS` no agrega columnas nuevas, asi que un indice
+        ya construido -- y el del corpus tarda siete minutos en construirse --
+        se queda sin ellas y falla al escribir. Esto lo evita sin reindexar.
+        """
+
+        columnas = {
+            fila["name"]
+            for fila in self._conn.execute("PRAGMA table_info(documentos)")
+        }
+        nuevas = {"firma_bolsa": "TEXT"}
+        for nombre, tipo in nuevas.items():
+            if nombre not in columnas:
+                self._conn.execute(f"ALTER TABLE documentos ADD COLUMN {nombre} {tipo}")
 
     # ------------------------------------------------------------------
     # Chroma perezoso: no se toca hasta que hace falta, para que arrancar
@@ -211,6 +238,37 @@ class KnowledgeStore:
         resultado = self._a_documento(fila) if fila else None
         return resultado
 
+    def existe_casi_igual(
+        self, firma_bolsa: str, umbral: float = 0.86
+    ) -> tuple[DocumentoRegistrado, float] | None:
+        """Duplicado casi identico: mismo articulo, otra codificacion del PDF.
+
+        Compara el solape de terminos distintivos contra los documentos ya
+        indexados. Es O(n) sobre el numero de documentos, con n en el orden de
+        cientos, asi que el costo es irrelevante frente a la extraccion del PDF.
+
+        Detecta los dos pares de duplicados del corpus del reto que ni el sha256
+        del archivo ni la huella exacta del texto atrapan (ver
+        `ingest.DocumentoExtraido.firma_bolsa`).
+        """
+
+        nueva = set(firma_bolsa.split())
+        mejor: tuple[DocumentoRegistrado, float] | None = None
+
+        if nueva:
+            filas = self._conn.execute(
+                "SELECT * FROM documentos WHERE firma_bolsa IS NOT NULL"
+            ).fetchall()
+            for fila in filas:
+                otra = set((fila["firma_bolsa"] or "").split())
+                if otra:
+                    menor = min(len(nueva), len(otra))
+                    similitud = len(nueva & otra) / menor if menor else 0.0
+                    if similitud >= umbral and (mejor is None or similitud > mejor[1]):
+                        mejor = (self._a_documento(fila), similitud)
+
+        return mejor
+
     def existe_contenido(self, huella_texto: str) -> DocumentoRegistrado | None:
         """Dedup logico: mismo contenido con otro nombre de archivo.
 
@@ -233,6 +291,7 @@ class KnowledgeStore:
         titulo: str | None,
         sha256: str,
         huella_texto: str,
+        firma_bolsa: str,
         origen: str,
         categoria: str | None,
         tema: str | None,
@@ -248,12 +307,12 @@ class KnowledgeStore:
 
             self._conn.execute("DELETE FROM documentos WHERE doc_id = ?", (doc_id,))
             self._conn.execute(
-                "INSERT INTO documentos(doc_id, nombre, titulo, sha256, huella_texto, origen,"
-                " categoria, tema, n_paginas, n_chunks, paginas_ocr, ingerido_en, generacion)"
-                " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "INSERT INTO documentos(doc_id, nombre, titulo, sha256, huella_texto,"
+                " firma_bolsa, origen, categoria, tema, n_paginas, n_chunks, paginas_ocr,"
+                " ingerido_en, generacion) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
-                    doc_id, nombre, titulo, sha256, huella_texto, origen, categoria, tema,
-                    n_paginas, len(chunks), paginas_ocr, ahora, generacion,
+                    doc_id, nombre, titulo, sha256, huella_texto, firma_bolsa, origen,
+                    categoria, tema, n_paginas, len(chunks), paginas_ocr, ahora, generacion,
                 ),
             )
             self._conn.executemany(

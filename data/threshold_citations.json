@@ -1,0 +1,60 @@
+{
+  "version_reglas": "centinela-triage-1.0.0",
+  "generacion_corpus": 108,
+  "nota": "Citas resueltas automaticamente por scripts/ground_thresholds.py contra el corpus indexado. Cada una apunta a documento, pagina y frase textual para que sea verificable abriendo el PDF.",
+  "umbrales_sin_respaldo": [
+    "R4_MOVILIDAD",
+    "A5_SUENO"
+  ],
+  "citas": {
+    "R1_FIEBRE": {
+      "documento": "diagnóstico, tratamiento y seguimiento del paciente adulto con apendicitis aguda en el Hospital Universitario Nacional de Colombia.pdf",
+      "documento_sha256": "d7828b687c816102699f3f1b0a6aa014934b2c11128b875455cd0f2eff922c35",
+      "pagina": 33,
+      "cita_textual": "de dolor abdominal, vómito, fiebre con temperatura > 38 ° C).",
+      "puntaje": 11.89
+    },
+    "R2_DOLOR": {
+      "documento": "Eficacia de diferentes técnicas de analgesiamultimodal para la prevención de dolormoderado a severo en reemplazo totalprimario de rodilla.pdf",
+      "documento_sha256": "985ec45a76171db6dfdfdbf930093167b14c841b70c19d9012d69a4c657c99f5",
+      "pagina": 4,
+      "cita_textual": "de dolor moderado a severo postoperatorio inmediato y a",
+      "puntaje": 3.45
+    },
+    "R3_HERIDA": {
+      "documento": "PLAN DE CUIDADO COLECISTECTOMIA.pdf",
+      "documento_sha256": "2b018dd856f7dfb54508552782466cf7c09cb0e5d7680ca1109bd8be444f0c9f",
+      "pagina": 4,
+      "cita_textual": "Enrojecimiento osupuración por lasheridas",
+      "puntaje": 9.59
+    },
+    "A1_DOLOR": {
+      "documento": "Eficacia de diferentes técnicas de analgesiamultimodal para la prevención de dolormoderado a severo en reemplazo totalprimario de rodilla.pdf",
+      "documento_sha256": "985ec45a76171db6dfdfdbf930093167b14c841b70c19d9012d69a4c657c99f5",
+      "pagina": 4,
+      "cita_textual": "de dolor moderado a severo postoperatorio inmediato y a",
+      "puntaje": 3.45
+    },
+    "A2_FEBRICULA": {
+      "documento": "Apendicitis aguda- Hallazgos radiológicos y enfoque actual de las imágenes diagnósticas.pdf",
+      "documento_sha256": "e4c511934471567bc7eef40789dd147d6b7445e1a869cf920563ba5479949aa2",
+      "pagina": 2,
+      "cita_textual": "fiebre ( > 37,3 ºc de temperatura oral) 1",
+      "puntaje": 2.59
+    },
+    "A3_ERITEMA": {
+      "documento": "Recom endaciones Programa Reemplazo Articular de Rodilla.pdf",
+      "documento_sha256": "1d0003b99f06cfc29af3ec75d92d58c109d9a85cdda1c700564c1e93268c70e0",
+      "pagina": 6,
+      "cita_textual": "aumento del dolor y enrojecimiento en la herida",
+      "puntaje": 12.03
+    },
+    "A4_APETITO": {
+      "documento": "diagnóstico, tratamiento y seguimiento del paciente adulto con apendicitis aguda en el Hospital Universitario Nacional de Colombia.pdf",
+      "documento_sha256": "d7828b687c816102699f3f1b0a6aa014934b2c11128b875455cd0f2eff922c35",
+      "pagina": 40,
+      "cita_textual": "sangrado, signos de irritación peritoneal, tolerancia a vía oral) durante primeras 6 horas",
+      "puntaje": 7.1
+    }
+  }
+}

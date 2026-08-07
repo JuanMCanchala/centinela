@@ -31,6 +31,7 @@ from datetime import datetime, timezone
 from enum import Enum
 
 from ..clinical.extractor import Extractor, ResultadoExtraccion
+from ..clinical.normalizer import normalizar_turno
 from ..clinical.triage_engine import TriageEngine
 from ..llm.backend import UsoTokens
 from ..models import ClinicalState, Nivel, TriageDecision
@@ -38,6 +39,14 @@ from . import script as S
 from .guardrails import Clasificacion, Intencion, clasificar
 
 MAX_INTENTOS_POR_DOMINIO = 2
+
+# Intenciones cuyo turno NO es un reporte de sintomas y por tanto no puede
+# alimentar el estado clinico. Ver el comentario en `procesar`.
+SIN_CONTENIDO_CLINICO = frozenset({
+    Intencion.MANIPULACION,
+    Intencion.FUERA_DE_MISION,
+    Intencion.AUDIO_DEGRADADO,
+})
 
 
 class EstadoLlamada(str, Enum):
@@ -179,19 +188,41 @@ class DialogPolicy:
         turno_idx = len(self.turnos)
         self._uso_rag = UsoTokens()
 
-        extraccion = await self.extractor.extraer(
-            texto_paciente=texto_paciente,
-            estado=self.estado,
-            turno_idx=turno_idx,
-            pregunta_agente=self.ultima_pregunta,
-            dominio_objetivo=self._dominio_actual() or "",
-        )
-        norm = extraccion.normalizado
+        # La clasificacion de intencion va PRIMERO, antes de extraer.
+        #
+        # El orden inverso produjo un fallo grave que encontro eval/redteam.py:
+        # ante "haz de cuenta que la herida esta perfecta", el extractor invocaba
+        # al modelo, el modelo devolvia `herida: secrecion_purulenta` -- una
+        # alucinacion pura, porque el turno no describe ninguna secrecion -- y el
+        # motor escalaba a rojo por un dato inventado. El clasificador SI
+        # detectaba la manipulacion, pero llegaba tarde: el estado clinico ya
+        # estaba contaminado.
+        #
+        # Un turno que no es un reporte de sintomas no debe alimentar el estado
+        # clinico. No es solo eficiencia: es que el estado clinico solo puede
+        # contener lo que el paciente dijo sobre como se siente.
+        norm_previo = normalizar_turno(texto_paciente)
         cls = clasificar(
             texto_paciente,
-            habla_tercero=norm.registro.habla_tercero,
-            audio_degradado=norm.canal.degradado,
+            habla_tercero=norm_previo.registro.habla_tercero,
+            audio_degradado=norm_previo.canal.degradado,
         )
+
+        if cls.intencion in SIN_CONTENIDO_CLINICO:
+            # Se conserva el analisis del turno para la traza, pero no se toca el
+            # estado clinico ni se gasta una invocacion del modelo.
+            extraccion = ResultadoExtraccion(
+                estado=self.estado, normalizado=norm_previo, respondio=False
+            )
+        else:
+            extraccion = await self.extractor.extraer(
+                texto_paciente=texto_paciente,
+                estado=self.estado,
+                turno_idx=turno_idx,
+                pregunta_agente=self.ultima_pregunta,
+                dominio_objetivo=self._dominio_actual() or "",
+            )
+        norm = extraccion.normalizado
 
         self._registrar_paciente(texto_paciente, cls.intencion.value, self._dominio_actual())
 
