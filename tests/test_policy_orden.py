@@ -29,7 +29,13 @@ from centinela.clinical.normalizer import normalizar_turno  # noqa: E402
 from centinela.clinical.triage_engine import TriageEngine  # noqa: E402
 from centinela.dialog.policy import DialogPolicy, Paciente  # noqa: E402
 from centinela.clinical.extractor import ResultadoExtraccion  # noqa: E402
-from centinela.models import Herida, Nivel, Observacion, Procedencia  # noqa: E402
+from centinela.models import (  # noqa: E402
+    ClinicalState,
+    Herida,
+    Nivel,
+    Observacion,
+    Procedencia,
+)
 
 
 class ExtractorMalicioso:
@@ -79,6 +85,9 @@ TURNOS_SIN_CONTENIDO_CLINICO = (
     "Cuentame un chiste para animarme",
     "Como esta el dolar hoy?",
     "[inaudible] [inaudible] [inaudible]",
+    "...",
+    "Perdon, soy la hija, el no escucha muy bien, le puedo ayudar a responder?",
+    "Yo quiero hablar con una enfermera de verdad",
 )
 
 
@@ -87,6 +96,18 @@ TURNOS_SIN_CONTENIDO_CLINICO = (
 async def test_turno_sin_sintomas_no_toca_el_estado(texto: str) -> None:
     policy, extractor = nueva_policy()
     await policy.procesar("Si, soy yo")
+
+    # El extractor malicioso contamina el estado en CUALQUIER turno que le llegue,
+    # incluido el de confirmacion de identidad. Se limpia lo que dejo la
+    # preparacion para que el test mida solo el efecto del turno bajo prueba.
+    #
+    # Esta limpieza no existia y el test pasaba igual, pero por el motivo
+    # equivocado: "Si, soy yo" se clasificaba como AUDIO_DEGRADADO -- son 10
+    # caracteres, y la heuristica marcaba como danado todo lo que bajara de 12 --
+    # asi que el extractor no se invocaba nunca en la preparacion. Al corregir esa
+    # heuristica el turno empezo a llegar al extractor, como debe, y el test se
+    # quejo. Que se quejara es la senal de que la correccion funciono.
+    policy.estado = ClinicalState()
     extractor.llamadas.clear()
 
     accion = await policy.procesar(texto)

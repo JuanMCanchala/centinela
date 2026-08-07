@@ -396,7 +396,13 @@ const VAD = {
   // una segunda puerta, independiente del umbral: filtra el caso en que el ruido
   // ambiente sube lo justo para cruzar el umbral pero nunca hay voz de verdad.
   picoMinimoParaEnviar: 0.035,
-  umbralBargeIn: 0.14,      // hablar por encima de esto interrumpe al agente
+  /* Interrumpir al agente exige un umbral mas alto que hablar normalmente: el eco
+     residual que deja la cancelacion del navegador queda por debajo de este
+     nivel, y la voz del paciente por encima. */
+  umbralBargeIn: 0.075,
+  /* Y exige una racha sostenida: un pico aislado del eco, un golpe en la mesa o
+     una tos no bastan para cortarle la palabra al agente. */
+  tramasParaBargeIn: 3,     // ~190 ms de voz sostenida
 };
 
 const voz = {
@@ -421,8 +427,8 @@ const voz = {
   picoTurno: 0,
   yaEspeculo: false,
   esperandoRelleno: false,
+  tramasSobreBargeIn: 0,
   enviadasWs: 0,
-  bargeInHabilitado: true,
   temporizadorRespuesta: null,
   transporte: "-",          // ws | http | -
 };
@@ -500,10 +506,11 @@ function conectarWS() {
 const ETIQUETA_FASE = {
   inactivo: "Micrófono apagado",
   calibrando: "Midiendo el ruido de la sala…",
-  escuchando: "Escuchando. Hable cuando quiera.",
+  escuchando: "Micrófono abierto. Hable cuando quiera.",
   hablando: "Le escucho…",
-  procesando: "Procesando lo que dijo…",
-  agente: "El agente está hablando",
+  // El microfono sigue abierto en estas dos fases: se puede hablar encima.
+  procesando: "Procesando… (puede seguir hablando)",
+  agente: "El agente habla — puede interrumpirlo",
 };
 
 function fase(nueva) {
@@ -620,18 +627,51 @@ function procesarTrama(evento) {
     return;
   }
 
-  // Mientras el agente habla, el microfono sigue midiendo pero no envia. Es
-  // half-duplex a proposito: aunque el navegador cancele el eco, dejar el canal
-  // abierto haria que el agente se transcriba a si mismo. La excepcion es el
-  // barge-in, mas abajo.
+  // El microfono NUNCA se cierra: escucha tambien mientras el agente habla y
+  // mientras el pipeline procesa. Es lo que hace que la llamada se sienta como
+  // una llamada y no como un walkie-talkie.
+  //
+  // El riesgo de dejarlo abierto es que el agente se transcriba a si mismo. Se
+  // controla con tres cosas a la vez, no con una:
+  //   1. `echoCancellation` del navegador, que resta el audio que esta saliendo.
+  //   2. Un umbral de barge-in mas alto que el umbral normal de voz: el eco
+  //      residual queda por debajo, la voz del paciente por encima.
+  //   3. Una racha minima de tramas por encima de ese umbral, para que un pico
+  //      aislado del eco o un golpe no cuenten como interrupcion.
   if (voz.fase === "agente") {
-    if (voz.bargeInHabilitado && rms > VAD.umbralBargeIn) {
-      interrumpirAgente();
+    if (rms > VAD.umbralBargeIn) {
+      voz.tramasSobreBargeIn++;
+      if (voz.tramasSobreBargeIn >= VAD.tramasParaBargeIn) {
+        interrumpirAgente();
+        // Se arranca el turno aqui mismo, sin pasar por "escuchando": el paciente
+        // ya empezo a hablar y esas primeras silabas no se pueden perder.
+        fase("hablando");
+        voz.msHablando = 0;
+        voz.msSilencio = 0;
+        voz.picoTurno = rms;
+        voz.enviadasWs = 0;
+        voz.turnoPcm = [];
+        for (const trama of voz.preRoll) enviarAudio(trama);
+        voz.preRoll = [];
+      }
+    } else {
+      voz.tramasSobreBargeIn = 0;
     }
+    // Aunque no haya interrumpido, se guarda el pre-roll: si interrumpe en la
+    // trama siguiente, las anteriores ya estan disponibles.
+    voz.preRoll.push(pcm);
+    if (voz.preRoll.length > VAD.preRollTramas) voz.preRoll.shift();
     return;
   }
 
-  if (voz.fase === "procesando") return;
+  // Mientras el pipeline procesa el turno anterior, el microfono sigue abierto y
+  // guardando pre-roll. Si el paciente anade algo -- "ah, y tambien..." -- no se
+  // pierde el arranque de esa frase.
+  if (voz.fase === "procesando") {
+    voz.preRoll.push(pcm);
+    if (voz.preRoll.length > VAD.preRollTramas) voz.preRoll.shift();
+    return;
+  }
 
   const pcm = remuestrearA16k(entrada, voz.frecuenciaReal);
   const hayVoz = rms > voz.umbral;

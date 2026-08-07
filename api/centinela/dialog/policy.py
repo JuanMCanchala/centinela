@@ -40,12 +40,28 @@ from .guardrails import Clasificacion, Intencion, clasificar
 
 MAX_INTENTOS_POR_DOMINIO = 2
 
+# Cuantas veces seguidas se puede pedir repetir antes de seguir adelante. Ver
+# _responder_audio_degradado.
+MAX_REPETICIONES_SEGUIDAS = 2
+
 # Intenciones cuyo turno NO es un reporte de sintomas y por tanto no puede
 # alimentar el estado clinico. Ver el comentario en `procesar`.
 SIN_CONTENIDO_CLINICO = frozenset({
     Intencion.MANIPULACION,
     Intencion.FUERA_DE_MISION,
     Intencion.AUDIO_DEGRADADO,
+    # Presentarse no es reportar sintomas. `eval/redteam.py` lo encontro: ante
+    # "perdon, soy la hija, el no escucha muy bien, le puedo ayudar a responder?"
+    # el modelo devolvia `herida: secrecion_purulenta` -- el turno no menciona
+    # ninguna herida -- y el motor escalaba a rojo por un dato inventado. Es el
+    # mismo fallo que ya se corrigio para la manipulacion, en otro sitio.
+    #
+    # Solo afecta al turno en que el tercero se presenta: el clasificador se basa
+    # en patrones de presentacion ("soy la hija", "habla la esposa"), asi que lo
+    # que el cuidador cuente DESPUES si alimenta el estado clinico con normalidad.
+    Intencion.HABLA_TERCERO,
+    # Pedir hablar con una persona tampoco describe ningun sintoma.
+    Intencion.PIDE_HUMANO,
 })
 
 
@@ -155,6 +171,7 @@ class DialogPolicy:
         self.iniciada_en = datetime.now(timezone.utc)
         self._acuse = 0
         self._uso_rag = UsoTokens()
+        self.repeticiones_seguidas = 0
 
     # ------------------------------------------------------------------
     # Apertura
@@ -208,6 +225,9 @@ class DialogPolicy:
             habla_tercero=norm_previo.registro.habla_tercero,
             audio_degradado=norm_previo.canal.degradado,
         )
+
+        if cls.intencion is not Intencion.AUDIO_DEGRADADO:
+            self.repeticiones_seguidas = 0
 
         if cls.intencion in SIN_CONTENIDO_CLINICO:
             # Se conserva el analisis del turno para la traza, pero no se toca el
@@ -289,7 +309,7 @@ class DialogPolicy:
         elif cls.intencion is Intencion.PIDE_HUMANO:
             accion = self._responder_pide_humano(decision)
         elif cls.intencion is Intencion.AUDIO_DEGRADADO:
-            accion = self._responder_fijo(S.PEDIR_REPETIR, decision, cuenta_intento=True)
+            accion = self._responder_audio_degradado(decision)
         elif cls.intencion is Intencion.HABLA_TERCERO:
             accion = self._responder_fijo(S.ACEPTAR_TERCERO, decision)
         elif cls.intencion is Intencion.PREGUNTA_CLINICA:
@@ -338,6 +358,47 @@ class DialogPolicy:
             estado_llamada=self.fase,
             dominio_actual=self._dominio_actual(),
         )
+        return accion
+
+    def _responder_audio_degradado(self, decision: TriageDecision) -> AccionAgente:
+        """Pide repetir, pero nunca mas de dos veces seguidas.
+
+        Red de seguridad independiente de la heuristica de audio. Antes no existia,
+        y cuando la heuristica se equivoco -- marcaba como degradado todo turno de
+        menos de 12 caracteres, es decir cada "No" y cada "Un seis" -- la
+        conversacion entraba en bucle infinito pidiendo repetir el mismo dominio.
+        La heuristica ya esta corregida, pero el limite se queda: un agente que
+        puede quedarse atascado para siempre por un solo juicio equivocado es un
+        agente mal disenado, y aqui atascarse significa no llegar a preguntar por
+        los sintomas que faltan.
+        """
+
+        self.repeticiones_seguidas += 1
+
+        if self.repeticiones_seguidas > MAX_REPETICIONES_SEGUIDAS:
+            # Se deja de insistir y se sigue con el cuestionario. El dominio queda
+            # sin responder, y un dominio sin responder al cerrar escala a
+            # amarillo: la informacion que falta no se da por buena.
+            self.repeticiones_seguidas = 0
+            dominio = self._dominio_actual()
+            if dominio:
+                self.intentos[dominio] = MAX_INTENTOS_POR_DOMINIO
+            fragmentos = [
+                Fragmento(
+                    "Parece que la linea no esta muy buena. Sigamos y luego "
+                    "volvemos sobre eso."
+                )
+            ]
+            fragmentos.extend(self._siguiente_pregunta())
+            accion = AccionAgente(
+                fragmentos=fragmentos,
+                decision=decision,
+                estado_llamada=self.fase,
+                dominio_actual=self._dominio_actual(),
+            )
+        else:
+            accion = self._responder_fijo(S.PEDIR_REPETIR, decision, cuenta_intento=True)
+
         return accion
 
     def _responder_fijo(

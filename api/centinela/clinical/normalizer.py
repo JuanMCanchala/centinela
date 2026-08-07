@@ -56,21 +56,55 @@ class SenalCanal:
     silencios: int = 0
     truncamientos: int = 0
     caracteres_utiles: int = 0
+    # Cuantos caracteres tenia el turno antes de quitarle los marcadores de ruido.
+    # Es lo que permite distinguir "corto porque el paciente fue breve" de "corto
+    # porque el ruido se comio la frase".
+    caracteres_originales: int = 0
+
+    @property
+    def proporcion_perdida(self) -> float:
+        if self.caracteres_originales <= 0:
+            valor = 0.0
+        else:
+            perdidos = max(0, self.caracteres_originales - self.caracteres_utiles)
+            valor = perdidos / self.caracteres_originales
+        return valor
 
     @property
     def degradado(self) -> bool:
-        """Turno demasiado dañado para interpretarlo con seguridad."""
+        """El turno esta demasiado danado para interpretarlo con seguridad.
 
-        if self.caracteres_utiles < 12:
+        La version anterior de esta propiedad tenia un fallo que rompia la
+        conversacion entera: consideraba degradado todo turno con menos de 12
+        caracteres utiles. En un cuestionario clinico, las respuestas mas
+        frecuentes son *"No"*, *"Un seis"*, *"Normal"*, *"Si senora"* -- todas por
+        debajo de ese umbral. El agente marcaba cada una como audio degradado,
+        respondia "perdone, no le escuche bien", y no avanzaba nunca: bucle
+        infinito en el primer dominio.
+
+        Lo corto no es lo mismo que lo danado. Ahora la decision se toma sobre las
+        senales de dano de verdad -- marcadores de inaudible, silencio, y cuanto
+        texto se perdio al limpiarlos -- y no sobre la longitud de la respuesta.
+        """
+
+        if not self.caracteres_utiles:
+            # No quedo nada que interpretar. Da igual si lo que habia eran
+            # marcadores de inaudible o solo puntos suspensivos: en los dos casos
+            # el turno esta vacio y hay que pedir que repita.
+            malo = True
+        elif self.inaudibles >= 2 and self.proporcion_perdida > 0.35:
+            # Varios tramos inaudibles y se perdio buena parte del turno.
+            malo = True
+        elif self.inaudibles >= 4:
+            # Muchos cortes, aunque quede texto: no es fiable.
             malo = True
         else:
-            proporcion = self.inaudibles / max(1, self.caracteres_utiles / 40)
-            malo = self.inaudibles >= 3 and proporcion > 0.8
+            malo = False
         return malo
 
 
 def limpiar_ruido(texto: str) -> tuple[str, SenalCanal]:
-    senal = SenalCanal()
+    senal = SenalCanal(caracteres_originales=len(texto.strip()))
     limpio = texto
 
     for marcador, clase in MARCADORES_RUIDO:
@@ -204,9 +238,24 @@ def detectar_registro(texto: str) -> RegistroHabla:
 # --------------------------------------------------------------------------
 
 PALABRA_A_NUMERO = {
-    "cero": 0, "uno": 1, "una": 1, "dos": 2, "tres": 3, "cuatro": 4, "cinco": 5,
-    "seis": 6, "siete": 7, "ocho": 8, "nueve": 9, "diez": 10,
+    "cero": 0, "uno": 1, "una": 1, "dos": 2, "tres": 3, "cuatro": 4,
+    "cinco": 5, "seis": 6, "siete": 7, "ocho": 8, "nueve": 9, "diez": 10,
 }
+# "un" NO esta en el mapa a proposito. Es el articulo indefinido antes que el
+# numero, y meterlo hacia que "como en un tres" se leyera como dolor 1: la regex
+# capturaba el articulo y se detenia antes de llegar al numero de verdad. Un
+# paciente que quiere decir el numero uno dice "uno".
+
+# Decenas y treintas, para las temperaturas dichas en palabras. Whisper escribe
+# los numeros en letra a menudo, y mucho mas en turnos cortos: "treinta y siete
+# cinco" es exactamente como un paciente colombiano dice 37.5.
+DECENAS = {"treinta": 30, "cuarenta": 40}
+
+RE_TEMP_PALABRAS = re.compile(
+    r"\b(treinta|cuarenta)"
+    r"(?:\s+y\s+(uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve))?"
+    r"(?:\s+(?:punto\s+|coma\s+)?(cero|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve))?"
+)
 
 # "un 6", "como un 6", "en 5", "6 de 10", "6/10", "seis"
 RE_DOLOR_NUM = re.compile(
@@ -214,7 +263,24 @@ RE_DOLOR_NUM = re.compile(
     r"\b(10|[0-9])\b(?:\s*(?:/|de|sobre)\s*10)?"
 )
 RE_DOLOR_PALABRA = re.compile(
-    r"\b(?:un|en|como un)\s+(" + "|".join(PALABRA_A_NUMERO) + r")\b"
+    r"\b(?:un|en|como un|como en|de)\s+(" + "|".join(PALABRA_A_NUMERO) + r")\b"
+)
+# Un numero solo, con las muletillas que lo suelen acompanar: "Seis", "Un seis.",
+# "Como un cuatro", "Pues como en un tres", "Yo diria unos cinco".
+# Solo se usa cuando se sabe que dominio se pregunto -- ver `extraer_numeros`.
+#
+# Las muletillas se permiten en cualquier combinacion y numero porque nadie
+# responde con el numero pelado: siempre viene envuelto en dos o tres palabras de
+# relleno, y exigir una forma concreta era lo que hacia fallar "como en un tres".
+_MULETILLAS_NUMERO = (
+    r"(?:pues|bueno|este|yo\s+diria|diria|creo\s+que|seria|es|esta|"
+    r"como|en|un|unos|de|el|mas\s+o\s+menos|ahi|por\s+ahi)"
+)
+RE_NUMERO_SUELTO = re.compile(
+    r"^\W*(?:" + _MULETILLAS_NUMERO + r"\s+){0,4}"
+    r"(10|[0-9]|" + "|".join(PALABRA_A_NUMERO) + r")\b"
+    r"(?:\s*(?:/|de|sobre)\s*(?:10|diez))?"
+    r"(?:\s+(?:mas\s+o\s+menos|creo|diria|por\s+ahi|de\s+diez))?\W*$"
 )
 
 # "37.5", "37,5", "38 grados", "37 y pico", "treinta y ocho"
@@ -251,12 +317,54 @@ class NumerosClinicos:
     evidencia_temperatura: str = ""
 
 
-def extraer_numeros(texto: str) -> NumerosClinicos:
-    """Extraccion numerica por reglas, sensible al contexto de la frase.
+def temperatura_en_palabras(base: str) -> tuple[float, str] | None:
+    """Interpreta una temperatura dicha en letra.
 
-    Sensible al contexto porque en "me operaron el 7 y el dolor es un 3" hay dos
-    numeros y solo uno es dolor. Se busca el numero en la vecindad de una
-    palabra del dominio, no en cualquier parte del turno.
+    Whisper escribe los numeros en palabras con frecuencia, y casi siempre en los
+    turnos cortos. Un paciente colombiano dice la temperatura asi:
+
+        "treinta y siete cinco"        -> 37.5
+        "treinta y ocho"               -> 38.0
+        "treinta y siete punto cinco"  -> 37.5
+
+    Sin esto, el turno "me tome la temperatura y estaba en treinta y siete cinco"
+    no producia ningun dato y el agente volvia a preguntar lo mismo.
+    """
+
+    resultado: tuple[float, str] | None = None
+    m = RE_TEMP_PALABRAS.search(base)
+
+    if m:
+        valor = float(DECENAS[m.group(1)])
+        if m.group(2):
+            valor += PALABRA_A_NUMERO[m.group(2)]
+        if m.group(3):
+            # El decimal se dice suelto tras el entero: "treinta y siete cinco".
+            valor += PALABRA_A_NUMERO[m.group(3)] / 10
+        if 34.0 <= valor <= 43.0:
+            resultado = (valor, m.group(0))
+
+    return resultado
+
+
+def extraer_numeros(texto: str, dominio_objetivo: str = "") -> NumerosClinicos:
+    """Extraccion numerica por reglas, sensible al contexto.
+
+    Dos fuentes de contexto, y la segunda tardo en aparecer:
+
+    **El texto del turno.** En "me operaron el 7 y el dolor es un 3" hay dos
+    numeros y solo uno es el dolor, asi que el numero se busca en la vecindad de
+    una palabra del dominio.
+
+    **La pregunta que se acaba de hacer.** Esta faltaba, y su ausencia rompia la
+    conversacion en el caso mas comun de todos. Si el agente pregunta *"en que
+    numero pondria el dolor, de cero a diez?"* y el paciente responde *"Un seis"*,
+    el turno no contiene ninguna palabra del dominio -- el contexto esta en la
+    pregunta, no en la respuesta. El sistema no extraia nada, el dominio se
+    quedaba sin resolver, y el agente volvia a preguntar lo mismo indefinidamente.
+
+    Un numero suelto solo se acepta cuando se sabe que dominio se pregunto: sin
+    ese dato, "seis" en mitad de una frase puede ser cualquier cosa.
     """
 
     base = sin_tildes(texto)
@@ -264,30 +372,38 @@ def extraer_numeros(texto: str) -> NumerosClinicos:
 
     # --- temperatura ---
     hay_contexto_temp = any(t in base for t in CONTEXTO_TEMPERATURA)
-    if hay_contexto_temp:
+    pregunta_por_fiebre = dominio_objetivo == "fiebre"
+
+    if hay_contexto_temp or pregunta_por_fiebre:
         m = RE_TEMP_DECIMAL.search(base)
         if m:
             n.temperatura_c = float(f"{m.group(1)}.{m.group(2)}")
             n.evidencia_temperatura = m.group(0)
         else:
-            m = RE_TEMP_Y_PICO.search(base)
-            if m:
-                # "37 y pico" se interpreta como 37.5: es el punto medio del
-                # intervalo que el paciente esta describiendo.
-                n.temperatura_c = float(m.group(1)) + 0.5
-                n.evidencia_temperatura = m.group(0)
+            en_palabras = temperatura_en_palabras(base)
+            if en_palabras:
+                n.temperatura_c, n.evidencia_temperatura = en_palabras
             else:
-                m = RE_TEMP_ENTERA.search(base)
+                m = RE_TEMP_Y_PICO.search(base)
                 if m:
-                    n.temperatura_c = float(m.group(1))
+                    # "37 y pico" se interpreta como 37.5: es el punto medio del
+                    # intervalo que el paciente esta describiendo.
+                    n.temperatura_c = float(m.group(1)) + 0.5
                     n.evidencia_temperatura = m.group(0)
+                else:
+                    m = RE_TEMP_ENTERA.search(base)
+                    if m:
+                        n.temperatura_c = float(m.group(1))
+                        n.evidencia_temperatura = m.group(0)
 
     n.fiebre_subjetiva = any(t in base for t in SINONIMOS_FIEBRE_SUBJETIVA)
     n.sin_termometro = any(t in base for t in SIN_TERMOMETRO)
 
     # --- dolor ---
     hay_contexto_dolor = any(t in base for t in CONTEXTO_DOLOR)
-    if hay_contexto_dolor:
+    pregunta_por_dolor = dominio_objetivo == "dolor"
+
+    if hay_contexto_dolor or pregunta_por_dolor:
         # Se excluye el fragmento que ya se interpreto como temperatura para no
         # leer "37" como un dolor de 7.
         limpio = base
@@ -295,12 +411,25 @@ def extraer_numeros(texto: str) -> NumerosClinicos:
             limpio = limpio.replace(n.evidencia_temperatura, " ")
         limpio = re.sub(r"\b(3[5-9]|4[0-2])\b", " ", limpio)
 
-        m = RE_DOLOR_NUM.search(limpio)
-        if m:
-            valor = int(m.group(1))
-            if 0 <= valor <= 10:
-                n.dolor_nrs = valor
-                n.evidencia_dolor = m.group(0).strip()
+        # Si se pregunto por el dolor y el turno es solo un numero, ese numero es
+        # la respuesta. Se comprueba primero porque es el caso mas claro.
+        if pregunta_por_dolor:
+            m = RE_NUMERO_SUELTO.match(limpio.strip())
+            if m:
+                bruto = m.group(1)
+                valor = int(bruto) if bruto.isdigit() else PALABRA_A_NUMERO[bruto]
+                if 0 <= valor <= 10:
+                    n.dolor_nrs = valor
+                    n.evidencia_dolor = texto.strip()
+
+        if n.dolor_nrs is None:
+            m = RE_DOLOR_NUM.search(limpio)
+            if m:
+                valor = int(m.group(1))
+                if 0 <= valor <= 10:
+                    n.dolor_nrs = valor
+                    n.evidencia_dolor = m.group(0).strip()
+
         if n.dolor_nrs is None:
             m = RE_DOLOR_PALABRA.search(limpio)
             if m:
@@ -489,7 +618,7 @@ def normalizar_turno(texto: str, dominio_objetivo: str = "") -> TurnoNormalizado
         texto=limpio,
         canal=canal,
         registro=detectar_registro(limpio),
-        numeros=extraer_numeros(limpio),
+        numeros=extraer_numeros(limpio, dominio_objetivo),
         pistas=pistas_cualitativas(limpio, dominio_objetivo),
     )
     return normalizado
