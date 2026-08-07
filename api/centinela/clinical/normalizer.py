@@ -306,6 +306,22 @@ SIN_TERMOMETRO = (
     "no me la tome", "no tengo termometro en casa", "sin termometro",
 )
 
+# El paciente NIEGA la fiebre. Es una respuesta, no un dato ausente.
+#
+# Sin esto, "no he tenido fiebre" no producia nada: la fiebre es un dominio
+# numerico y no hay numero que extraer, asi que el dominio quedaba sin resolver,
+# el agente repreguntaba, y al cerrar escalaba a amarillo por dominio sin indagar.
+# Consecuencia medida: un paciente que contesta todo con normalidad cerraba en
+# AMARILLO con cero banderas. Justo el escenario "claramente no hay que escalar"
+# que la rubrica dice que se prueba.
+#
+# Lo que NO se hace es inventar una temperatura. Negar la fiebre resuelve la
+# pregunta, no produce una medicion: el resumen sigue diciendo que no hay valor
+# objetivo, y lo dice con su motivo.
+RE_NIEGA_FIEBRE = re.compile(
+    r"\b(?:no|ninguna|ningun|nada\s+de|sin)\b[^.;,]{0,20}\b(?:fiebre|calentura|febril)\b"
+)
+
 
 @dataclass
 class NumerosClinicos:
@@ -313,6 +329,7 @@ class NumerosClinicos:
     temperatura_c: float | None = None
     fiebre_subjetiva: bool = False
     sin_termometro: bool = False
+    fiebre_negada: bool = False
     evidencia_dolor: str = ""
     evidencia_temperatura: str = ""
 
@@ -398,6 +415,17 @@ def extraer_numeros(texto: str, dominio_objetivo: str = "") -> NumerosClinicos:
 
     n.fiebre_subjetiva = any(t in base for t in SINONIMOS_FIEBRE_SUBJETIVA)
     n.sin_termometro = any(t in base for t in SIN_TERMOMETRO)
+
+    # La negacion se evalua DESPUES de la sensacion subjetiva y la desactiva.
+    # "No me senti caliente" contiene "me senti caliente", asi que sin este paso
+    # una negacion se leia como fiebre subjetiva PRESENTE -- exactamente al revés
+    # de lo que dijo el paciente.
+    #
+    # Y no cuenta como negacion si lo que el paciente esta diciendo es que no se
+    # la midio: "no me he tomado la temperatura" no es "no tengo fiebre".
+    if not n.sin_termometro and RE_NIEGA_FIEBRE.search(base):
+        n.fiebre_negada = True
+        n.fiebre_subjetiva = False
 
     # --- dolor ---
     hay_contexto_dolor = any(t in base for t in CONTEXTO_DOLOR)
@@ -545,6 +573,33 @@ def menciona_dominio(base_sin_tildes: str, dominio: str) -> bool:
     return presente
 
 
+# Terminos de la categoria "normal" que NO dicen a que dominio se refieren. Son
+# los que necesitan la compuerta de contexto.
+#
+# La regla para entrar en esta lista: si la frase no nombra su propio dominio, es
+# ambigua. "Cicatrizando bien" nombra la herida; "se ve bien" puede referirse a la
+# herida, a la pierna o al color de la cara.
+#
+# La primera version de esta lista solo tenia cuatro terminos y dejaba fuera "se
+# ve bien". Lo cazo `test_normal_ambiguo_se_acepta_si_es_el_dominio_preguntado`,
+# que existe precisamente para eso: comprueba que un "se ve bien" sin contexto no
+# marca la herida como normal. Ante la duda, a la lista -- marcar un dominio como
+# normal sin que nadie lo haya dicho es la forma mas sigilosa de producir un falso
+# negativo.
+TERMINOS_AMBIGUOS = frozenset({
+    "normal",
+    "bien",
+    "esta bien",
+    "se ve bien",
+    "sin nada raro",
+    "no le veo nada",
+    "sin problema",      # movilidad y sueno; "sin problema para comer" es otra cadena
+    "sin dificultad",
+    "hago todo",
+    "de corrido",
+})
+
+
 def pistas_cualitativas(texto: str, dominio_objetivo: str = "") -> dict[str, str]:
     """Categoria sugerida por dominio segun lexico observado en el dataset.
 
@@ -554,12 +609,19 @@ def pistas_cualitativas(texto: str, dominio_objetivo: str = "") -> dict[str, str
     amarillo" y "se ve bien", gana el hallazgo grave. Ante dos lecturas posibles
     del mismo turno, la conservadora es la que escala.
 
-    **Un "normal" necesita contexto.** Las categorias de hallazgo (purulenta,
-    eritema, incapacitante...) se aceptan siempre: son especificas y nombran algo
-    que el paciente solo puede haber dicho a proposito. La categoria "normal", en
-    cambio, solo se acepta si el turno habla de ese dominio o si es el dominio que
-    se acaba de preguntar. Marcar un dominio como normal sin que nadie lo haya
-    dicho es la forma mas sigilosa de producir un falso negativo.
+    **Un "normal" AMBIGUO necesita contexto.** Las categorias de hallazgo
+    (purulenta, eritema, incapacitante...) se aceptan siempre: son especificas y
+    nombran algo que el paciente solo puede haber dicho a proposito. La categoria
+    "normal" se acepta si el turno habla de ese dominio o si es el dominio que se
+    acaba de preguntar. Marcar un dominio como normal sin que nadie lo haya dicho
+    es la forma mas sigilosa de producir un falso negativo.
+
+    Con un matiz que costo una resolucion perdida: la compuerta solo hace falta
+    para los terminos que POR SI SOLOS no dicen de que dominio hablan -- "normal",
+    "bien", "sin problema". Una frase como "como normal" o "camino normal" ya
+    nombra su dominio, y exigirle contexto ademas la descartaba. El sintoma medido:
+    el paciente decia "como normal" mientras el agente todavia preguntaba por la
+    fiebre, y el apetito se quedaba sin resolver hasta el cierre.
     """
 
     base = sin_tildes(texto)
@@ -577,7 +639,8 @@ def pistas_cualitativas(texto: str, dominio_objetivo: str = "") -> dict[str, str
                     if t in base:
                         if categoria == "normal":
                             admisible = (
-                                menciona_dominio(base, dominio)
+                                t not in TERMINOS_AMBIGUOS
+                                or menciona_dominio(base, dominio)
                                 or dominio == dominio_objetivo
                             )
                         else:

@@ -105,6 +105,13 @@ class ClinicalState(BaseModel):
         description="El paciente refiere sensacion febril o escalofrios sin haberse medido",
     )
     tiene_termometro: bool | None = None
+    fiebre_negada: bool = Field(
+        default=False,
+        description=(
+            "El paciente respondio explicitamente que no ha tenido fiebre. Es una "
+            "respuesta, no una medicion: `fiebre_c` sigue vacia a proposito."
+        ),
+    )
     sintomas_libres: list[str] = Field(
         default_factory=list,
         description="Sintomas mencionados fuera de los seis dominios del protocolo",
@@ -114,7 +121,26 @@ class ClinicalState(BaseModel):
         return getattr(self, "sueno" if dominio == "sueno" else _CAMPO_POR_DOMINIO[dominio])
 
     def dominios_faltantes(self) -> list[str]:
-        faltan = [d for d in DOMINIOS if self.observacion(d).falta]
+        """Dominios sobre los que todavia no hay respuesta del paciente.
+
+        La fiebre tiene una excepcion, y es deliberada. Es el unico dominio
+        numerico cuya respuesta normal no produce un numero: cuando el paciente
+        dice "no he tenido fiebre" no hay temperatura que guardar, pero SI hay
+        respuesta. Contarla como ausente hacia que toda llamada normal cerrara en
+        amarillo por "dominio sin indagar", con cero banderas -- un falso positivo
+        en el caso mas comun de todos.
+
+        Ojo con lo que esto NO hace: no inventa una temperatura. `fiebre_c` sigue
+        vacia y el resumen lo declara con su motivo. Lo unico que cambia es que la
+        pregunta cuenta como hecha y respondida.
+        """
+
+        faltan = []
+        for dominio in DOMINIOS:
+            if self.observacion(dominio).falta:
+                negada = dominio == "fiebre" and self.fiebre_negada
+                if not negada:
+                    faltan.append(dominio)
         return faltan
 
 

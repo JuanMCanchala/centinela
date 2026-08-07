@@ -41,6 +41,15 @@ def _voz_sync(texto: str) -> bytes | None:
 
     Corre en su propio bucle de eventos porque `PiperTTS.sintetizar` es asincrono
     y este helper se invoca desde `asyncio.to_thread`.
+
+    OJO con el ciclo de vida del proceso de Piper. `PiperTTS` mantiene un proceso
+    residente -- es lo que baja la sintesis de 2.7 s a 0.4 s por frase -- y hay que
+    cerrarlo DENTRO del mismo bucle que lo abrio. La primera version llamaba a
+    `asyncio.run(tts.sintetizar(...))` y no cerraba nada: cada turno sintetizado
+    dejaba un proceso de Piper huerfano, y al destruirse el bucle con los
+    transportes todavia vivos, Python escupia una pared de ResourceWarning y
+    "Event loop is closed" al terminar. La prueba pasaba con codigo 0 y parecia
+    haber reventado. Cinco turnos, cinco procesos colgados.
     """
 
     import io as _io
@@ -51,33 +60,46 @@ def _voz_sync(texto: str) -> bytes | None:
     _sys.path.insert(0, str(_Path(__file__).resolve().parents[1] / "api"))
     from centinela.tts.piper import PiperTTS  # noqa: PLC0415
 
-    tts = PiperTTS()
-    if not tts.disponible:
-        return None
+    async def _sintetizar() -> bytes | None:
+        tts = PiperTTS()
+        if tts.disponible:
+            try:
+                audio = await tts.sintetizar(texto)
+                wav = audio.wav or None
+            finally:
+                # En el finally a proposito: si la sintesis falla, el proceso
+                # residente tiene que morir igual.
+                await tts.cerrar()
+        else:
+            wav = None
+        return wav
 
-    audio = asyncio.run(tts.sintetizar(texto))
-    if not audio.wav:
-        return None
+    wav = asyncio.run(_sintetizar())
 
-    with _wave.open(_io.BytesIO(audio.wav), "rb") as w:
-        origen = w.getframerate()
-        marcos = w.readframes(w.getnframes())
+    if wav is None:
+        pcm = None
+    else:
+        with _wave.open(_io.BytesIO(wav), "rb") as w:
+            origen = w.getframerate()
+            marcos = w.readframes(w.getnframes())
 
-    muestras = list(struct.unpack(f"<{len(marcos)//2}h", marcos))
+        muestras = list(struct.unpack(f"<{len(marcos)//2}h", marcos))
 
-    # Piper entrega a 22.05 kHz; se remuestrea a 16 kHz promediando la ventana,
-    # exactamente el mismo algoritmo que `remuestrearA16k` en web/app.js.
-    if origen != 16000:
-        razon = origen / 16000
-        salida = []
-        for i in range(int(len(muestras) / razon)):
-            desde = int(i * razon)
-            hasta = min(len(muestras), int((i + 1) * razon))
-            ventana = muestras[desde:hasta] or [0]
-            salida.append(int(sum(ventana) / len(ventana)))
-        muestras = salida
+        # Piper entrega a 22.05 kHz; se remuestrea a 16 kHz promediando la ventana,
+        # exactamente el mismo algoritmo que `remuestrearA16k` en web/app.js.
+        if origen != 16000:
+            razon = origen / 16000
+            salida = []
+            for i in range(int(len(muestras) / razon)):
+                desde = int(i * razon)
+                hasta = min(len(muestras), int((i + 1) * razon))
+                ventana = muestras[desde:hasta] or [0]
+                salida.append(int(sum(ventana) / len(ventana)))
+            muestras = salida
 
-    return struct.pack(f"<{len(muestras)}h", *muestras)
+        pcm = struct.pack(f"<{len(muestras)}h", *muestras)
+
+    return pcm
 
 
 def tono_pcm16(segundos: float, frecuencia: int = 16000) -> bytes:

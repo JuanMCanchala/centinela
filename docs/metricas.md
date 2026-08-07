@@ -2,7 +2,70 @@
 
 > Generado por `scripts/render_metricas.py` a partir de los informes que
 > producen los arneses de evaluación. Ninguna cifra se escribe a mano.
-> Última generación: 2026-08-07T17:02:42+00:00
+> Última generación: 2026-08-07T23:18:09+00:00
+
+## Métricas exigidas por la rúbrica (§5)
+
+Muestra: **21 turnos** en **4 llamadas**, medidos por `obs/metrics.py` durante la ejecución real de la API.
+
+### Latencia de respuesta
+
+> desde que se cierra el VAD (fin de habla del paciente) hasta que el primer byte de audio del agente sale hacia el navegador
+
+| Percentil | Latencia |
+|---|---:|
+| **P50** | **0.6 ms** |
+| **P95** | **385.3 ms** |
+| P99 | 5062.9 ms |
+| mínimo | 0.4 ms |
+| máximo | 6232.4 ms |
+
+El P50 es de milisegundos porque **90 %** de los turnos se responden desde el caché de audio pre-renderizado (19 de 21): la conversación la conduce una máquina de estados, así que las locuciones del guion se conocen antes de que suene el teléfono. El P95 y el P99 son los turnos que sí necesitan sintetizar voz nueva o invocar al modelo.
+
+### Consumo
+
+| Métrica | Valor |
+|---|---:|
+| Tokens de entrada por turno (P50) | 0.0 |
+| Tokens de salida por turno (P50) | 0.0 |
+| Tokens de entrada por turno (media) | 133.2 |
+| Tokens de salida por turno (media) | 4.1 |
+| Tokens de entrada por llamada (media) | **699.5** |
+| Tokens de salida por llamada (media) | **21.8** |
+| Turnos por llamada (media) | 5.2 |
+| Invocaciones al modelo por turno (P50) | **0.0** |
+| Invocaciones al modelo por turno (máx) | 1 |
+| Consultas al RAG por llamada (media) | **0.25** |
+| Consultas al RAG por llamada (máx) | 1 |
+
+Dos cifras se leen mal si no se explican, así que van explicadas.
+
+**El P50 de tokens y de invocaciones al modelo es 0** porque la mayoría de los
+turnos no llegan al modelo: si la expresión regular ya extrajo el dolor y el
+léxico resolvió el estado de la herida, no hay nada que preguntarle. El modelo
+se invoca cuando el turno es ambiguo, y ahí sube a 1. Es la consecuencia de que
+la decisión clínica la tome el motor de reglas y no el modelo.
+
+**Las consultas al RAG por llamada (0.25 de media) son bajas** porque el
+cuestionario no consulta el corpus: recorre seis dominios con preguntas fijas. El
+RAG entra cuando el paciente pregunta algo clínico —*«¿puedo ducharme?»*,
+*«¿esto es normal?»*— y entonces la respuesta va fundamentada y con su cita. Una
+media alta acá significaría que el agente consulta documentos para preguntar la
+temperatura, que sería gasto sin ganancia.
+
+### Costo estimado por llamada
+
+> Centinela corre local; el costo marginal real por llamada es electricidad. Estas cifras son lo que costaria el mismo trafico medido si se sirviera desde APIs comerciales.
+
+| Concepto | USD por llamada |
+|---|---:|
+| Modelo de lenguaje | 7.2e-05 |
+| Transcripción | 0.001283 |
+| Síntesis de voz | 0.001872 |
+| **Total** | **0.003227** |
+| Total en pesos colombianos | $12.9 |
+
+Insumos medidos que entran en el cálculo: tokens entrada por llamada = 699.5 · tokens salida por llamada = 21.8 · turnos por llamada = 5.2 · segundos audio entrada = 41.6 · caracteres tts = 468.0. Las tarifas de referencia están en `obs/metrics.py::PRECIOS_REFERENCIA`.
 
 ## Decisión clínica sobre los 160 casos oficiales
 
@@ -33,7 +96,7 @@ Matriz de confusión (filas = etiqueta oficial, columnas = decisión del motor):
 
 ## Suite adversarial
 
-`make redteam` · 32/32 casos (100.0%) en 33.4 s.
+`make redteam` · 32/32 casos (100.0%) en 23.5 s.
 
 | Familia | Pasan |
 |---|---:|
@@ -136,7 +199,21 @@ reto es colombiano.
 ```bash
 make eval        # decisión clínica sobre los 160 casos
 make redteam     # suite adversarial (requiere la API levantada)
+make humo        # extremo a extremo (requiere la API levantada)
 make bench       # latencia de modelo y voz
 make test        # tests unitarios y de regresión
 make metricas    # regenera este documento
+```
+
+Las métricas exigidas por la rúbrica (§5) se miden sobre la API en marcha,
+así que llevan su propia secuencia. El servidor tiene que estar **recién
+arrancado**: si se mide sobre uno donde alguien estuvo probando a mano, la
+muestra queda llena de llamadas abiertas y abandonadas de dos turnos y las
+medias por llamada salen más bajas de lo que corresponde a una llamada real.
+
+```bash
+make up                      # servidor limpio, en otra terminal
+make humo                    # 6 llamadas completas, ~30 turnos
+make runtime                 # congela /api/metricas en docs/metrics/
+make metricas                # las escribe acá arriba
 ```

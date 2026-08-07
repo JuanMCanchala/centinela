@@ -158,6 +158,11 @@ class Extractor:
             estado.fiebre_subjetiva = True
         if norm.numeros.sin_termometro:
             estado.tiene_termometro = False
+        if norm.numeros.fiebre_negada:
+            # Cuenta como dominio respondido sin inventar temperatura. El porque
+            # esta en `ClinicalState.dominios_faltantes`.
+            estado.fiebre_negada = True
+            res.campos_por_regla.append("fiebre")
 
         # ---------- capa 2: lexico cualitativo ----------
         for dominio, categoria in norm.pistas.items():

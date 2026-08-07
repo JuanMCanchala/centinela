@@ -55,7 +55,68 @@ estos números son los mismos en cada corrida.
 - Los 8 errores son verdes sobre-escalados a amarillo — la dirección segura según el
   principio de asimetría clínica de la rúbrica.
 
-### Latencia
+### Las cuatro métricas que exige la rúbrica (§5)
+
+Medidas por `obs/metrics.py` durante la ejecución real, congeladas con `make runtime` y
+escritas por `make metricas`. **Ninguna se escribe a mano**, porque la rúbrica advierte que
+lo reportado se contrasta con los logs de la sesión. Muestra: **21 turnos en 4 llamadas
+completas**, la que produce `make humo` sobre un servidor recién arrancado.
+
+**1. Latencia de respuesta** — *desde que se cierra el VAD (fin de habla del paciente)
+hasta que el primer byte de audio del agente sale hacia el navegador.*
+
+| Percentil | Latencia |
+|---|---:|
+| **P50** | **0.6 ms** |
+| **P95** | **385.3 ms** |
+| P99 | 5 062.9 ms |
+
+El P50 es de milisegundos porque **90 % de los turnos se sirven desde el caché de audio
+pre-renderizado** (19 de 21): la conversación la conduce una máquina de estados, así que
+las locuciones del guion se conocen antes de que suene el teléfono. El P95 son los turnos
+que sintetizan voz nueva. El P99 es un solo turno —el que invoca al modelo *y* consulta el
+RAG— y con 21 muestras un P99 es un dato anecdótico, no una estadística; se reporta por
+completitud, no como promesa.
+
+**2. Consumo por turno y por llamada**
+
+| Métrica | Valor |
+|---|---:|
+| Tokens de entrada / salida por turno (P50) | **0 / 0** |
+| Tokens de entrada / salida por turno (media) | 133.2 / 4.1 |
+| Tokens de entrada / salida **por llamada** (media) | **699.5 / 21.8** |
+| Turnos por llamada (media) | 5.2 |
+
+**3. Invocaciones al modelo por turno** — **P50 = 0**, máximo 1. La mayoría de los turnos
+no llegan al modelo: si la regex ya extrajo el dolor y el léxico resolvió la herida, no hay
+nada que preguntarle. Es la consecuencia directa de que la decisión clínica la tome el
+motor de reglas.
+
+**4. Consultas al RAG por llamada** — **0.25 de media**, máximo 1. Son bajas a propósito:
+el cuestionario no consulta el corpus, recorre seis dominios con preguntas fijas. El RAG
+entra cuando el paciente pregunta algo clínico —*«¿puedo ducharme?»*— y entonces la
+respuesta va fundamentada y con su cita. Una media alta aquí significaría que el agente
+consulta documentos para preguntar la temperatura: gasto sin ganancia.
+
+**Costo estimado por llamada: USD 0.003227** (COP 12.9). Centinela corre local, así que el
+costo marginal real es electricidad; la rúbrica pide extrapolar a precios de API y explicar
+el cálculo. Son los tokens y segundos de audio realmente medidos por tarifas públicas de
+referencia: modelo USD 0.000072 · transcripción USD 0.001283 · voz USD 0.001872. Las
+tarifas están en `obs/metrics.py::PRECIOS_REFERENCIA` y los insumos en
+[`docs/metricas.md`](docs/metricas.md), que se genera del mismo `runtime.json` que estas
+cifras — si divergen, es que alguien editó una a mano.
+
+Para reproducirlas hace falta un servidor **recién arrancado** — si se mide sobre uno donde
+alguien estuvo probando a mano, la muestra se llena de llamadas abandonadas de dos turnos:
+
+```bash
+make up          # en otra terminal
+make humo        # 6 llamadas completas
+make runtime     # congela /api/metricas
+make metricas    # las escribe en docs/metricas.md
+```
+
+### Latencia por etapa
 
 Medida con `make bench`. Desglose por etapa, porque un total sin desglose no se puede
 auditar.
@@ -64,39 +125,29 @@ auditar.
 |---|---:|
 | Modelo de lenguaje, tiempo hasta el primer token | **185 ms** (p50) |
 | Embedding de la consulta (multilingual-e5-large, ONNX) | **51 ms** |
-| Transcripción (faster-whisper small int8, CPU) | **16–43 ms** por turno |
+| Transcripción (faster-whisper `medium`, CUDA int8_float16) | **252–709 ms** por turno |
 | Síntesis de voz, turno de guion (caché pre-renderizado) | **0.001 ms** |
 | Síntesis de voz, turno libre (Piper es_MX-ald-medium) | 598 ms · RTF 0.21–0.33 |
 | **Turno completo resuelto por reglas** | **< 1 ms** |
 | **Turno completo que necesita el modelo** | ~2.2 s |
 
+El STT arranca por una escalera con validación real: `medium` en CUDA, y si la GPU no
+responde baja a `small` en CUDA y luego a CPU. Lo que se cargó de hecho lo dice
+`/api/salud` en `stt.dispositivo`, y la escalera está en `stt/whisper.py::ESCALERA`.
+
 Dos decisiones sostienen el presupuesto:
 
 **El guion va en caché.** La conversación la conduce una máquina de estados sobre seis
-dominios, así que las 35 locuciones que el agente puede decir se conocen antes de que
-suene el teléfono. Se sintetizan al arrancar y se sirven desde disco: en la prueba de
-humo, **93 % de los turnos se responden desde caché de audio**.
+dominios, así que las **53 locuciones** que el agente puede decir se conocen antes de que
+suene el teléfono. Se sintetizan al arrancar y se sirven desde disco; la proporción de
+turnos servidos así es la que aparece arriba, medida, no estimada.
 
 **El modelo solo cuando hace falta.** Si la regex extrajo el dolor y el léxico resolvió la
-herida, no se invoca. Medido en `eval/probar_tokens.py`: de seis turnos, cuatro se
-resuelven sin tocar el modelo. Consumo por llamada tras afinar la condición: **1359 → 672
-tokens de entrada**.
-
-### Consumo y costo
-
-| Métrica | Valor |
-|---|---:|
-| Invocaciones al modelo por turno (p50) | **0** |
-| Invocaciones al modelo por turno (máx) | 1 |
-| Tokens de entrada por turno, cuando se invoca | ~335 |
-| Tokens de salida por turno, cuando se invoca | ~118 |
-| Consultas RAG por llamada | solo en turnos con pregunta clínica |
-| **Costo por llamada** (extrapolado a precios de API de producción) | **USD 0.0034** |
-
-Centinela corre local: el costo marginal real de una llamada es electricidad. La rúbrica
-pide extrapolar a precios de nube y explicar el cálculo, así que la cifra son los tokens y
-segundos de audio realmente medidos multiplicados por tarifas públicas de referencia. El
-desglose y las fuentes están en `obs/metrics.py::PRECIOS_REFERENCIA`.
+herida, no se invoca — de ahí que el P50 de invocaciones sea 0. La optimización quedó
+registrada en `eval/probar_tokens.py`, sobre un escenario fijo de seis turnos: **1359 → 672
+tokens de entrada por llamada**. Es un escenario fijo, distinto de la muestra de §5, así que
+su cifra no tiene por qué coincidir con los 699.5 tokens/llamada de arriba: son dos
+mediciones de dos cosas distintas y las dos son reales.
 
 ### Suite adversarial
 

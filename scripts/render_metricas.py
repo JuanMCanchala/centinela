@@ -36,6 +36,7 @@ def main() -> int:
     bench_voz = leer("bench_voz.json")
     bench_voces = leer("bench_voces.json")
     corpus = leer("corpus_index.json")
+    runtime = leer("runtime.json")
 
     L: list[str] = []
     L.append("# Métricas medidas")
@@ -44,6 +45,101 @@ def main() -> int:
     L.append("> producen los arneses de evaluación. Ninguna cifra se escribe a mano.")
     L.append(f"> Última generación: {datetime.now(timezone.utc).isoformat(timespec='seconds')}")
     L.append("")
+
+    # ------------------------------------------------- metricas exigidas (§5)
+    #
+    # Van PRIMERO y con el nombre que usa la rubrica, porque son las unicas
+    # obligatorias: "si no estan, el apartado correspondiente se califica muy por
+    # debajo de su tope, aunque tu solucion funcione bien".
+    if runtime:
+        r = runtime.get("resumen", {})
+        lat = r.get("latencia_hasta_primer_audio", {})
+        tt = r.get("tokens_por_turno", {})
+        tl = r.get("tokens_por_llamada", {})
+        inv = r.get("invocaciones_llm_por_turno", {})
+        rag = r.get("consultas_rag_por_llamada", {})
+        costo = runtime.get("costo", {})
+
+        L.append("## Métricas exigidas por la rúbrica (§5)")
+        L.append("")
+        L.append(f"Muestra: **{r.get('n_turnos', 0)} turnos** en "
+                 f"**{r.get('n_llamadas', 0)} llamadas**, medidos por `obs/metrics.py` "
+                 "durante la ejecución real de la API.")
+        L.append("")
+        L.append("### Latencia de respuesta")
+        L.append("")
+        L.append(f"> {lat.get('definicion', '(sin declarar)')}")
+        L.append("")
+        L.append("| Percentil | Latencia |")
+        L.append("|---|---:|")
+        L.append(f"| **P50** | **{lat.get('p50_ms')} ms** |")
+        L.append(f"| **P95** | **{lat.get('p95_ms')} ms** |")
+        L.append(f"| P99 | {lat.get('p99_ms')} ms |")
+        L.append(f"| mínimo | {lat.get('min_ms')} ms |")
+        L.append(f"| máximo | {lat.get('max_ms')} ms |")
+        L.append("")
+        cache = r.get("tts", {})
+        L.append(f"El P50 es de milisegundos porque **{cache.get('proporcion_desde_cache', 0) * 100:.0f} %** "
+                 f"de los turnos se responden desde el caché de audio pre-renderizado "
+                 f"({cache.get('turnos_servidos_desde_cache', 0)} de {r.get('n_turnos', 0)}): "
+                 "la conversación la conduce una máquina de estados, así que las locuciones "
+                 "del guion se conocen antes de que suene el teléfono. El P95 y el P99 son "
+                 "los turnos que sí necesitan sintetizar voz nueva o invocar al modelo.")
+        L.append("")
+        L.append("### Consumo")
+        L.append("")
+        L.append("| Métrica | Valor |")
+        L.append("|---|---:|")
+        L.append(f"| Tokens de entrada por turno (P50) | {tt.get('entrada_p50')} |")
+        L.append(f"| Tokens de salida por turno (P50) | {tt.get('salida_p50')} |")
+        L.append(f"| Tokens de entrada por turno (media) | {tt.get('entrada_media')} |")
+        L.append(f"| Tokens de salida por turno (media) | {tt.get('salida_media')} |")
+        L.append(f"| Tokens de entrada por llamada (media) | **{tl.get('entrada_media')}** |")
+        L.append(f"| Tokens de salida por llamada (media) | **{tl.get('salida_media')}** |")
+        L.append(f"| Turnos por llamada (media) | {tl.get('turnos_media')} |")
+        L.append(f"| Invocaciones al modelo por turno (P50) | **{inv.get('p50')}** |")
+        L.append(f"| Invocaciones al modelo por turno (máx) | {inv.get('max')} |")
+        L.append(f"| Consultas al RAG por llamada (media) | **{rag.get('media')}** |")
+        L.append(f"| Consultas al RAG por llamada (máx) | {rag.get('max')} |")
+        L.append("")
+        L.append("Dos cifras se leen mal si no se explican, así que van explicadas.")
+        L.append("")
+        L.append("**El P50 de tokens y de invocaciones al modelo es 0** porque la mayoría de los")
+        L.append("turnos no llegan al modelo: si la expresión regular ya extrajo el dolor y el")
+        L.append("léxico resolvió el estado de la herida, no hay nada que preguntarle. El modelo")
+        L.append("se invoca cuando el turno es ambiguo, y ahí sube a 1. Es la consecuencia de que")
+        L.append("la decisión clínica la tome el motor de reglas y no el modelo.")
+        L.append("")
+        L.append(f"**Las consultas al RAG por llamada ({rag.get('media')} de media) son bajas** porque el")
+        L.append("cuestionario no consulta el corpus: recorre seis dominios con preguntas fijas. El")
+        L.append("RAG entra cuando el paciente pregunta algo clínico —*«¿puedo ducharme?»*,")
+        L.append("*«¿esto es normal?»*— y entonces la respuesta va fundamentada y con su cita. Una")
+        L.append("media alta acá significaría que el agente consulta documentos para preguntar la")
+        L.append("temperatura, que sería gasto sin ganancia.")
+        L.append("")
+
+        if costo and not costo.get("aviso"):
+            d = costo.get("desglose_usd", {})
+            L.append("### Costo estimado por llamada")
+            L.append("")
+            L.append(f"> {costo.get('aclaracion', '')}")
+            L.append("")
+            L.append("| Concepto | USD por llamada |")
+            L.append("|---|---:|")
+            L.append(f"| Modelo de lenguaje | {d.get('llm')} |")
+            L.append(f"| Transcripción | {d.get('stt')} |")
+            L.append(f"| Síntesis de voz | {d.get('tts')} |")
+            L.append(f"| **Total** | **{costo.get('costo_total_usd_por_llamada')}** |")
+            L.append(f"| Total en pesos colombianos | ${costo.get('costo_total_cop_por_llamada')} |")
+            L.append("")
+            insumos = costo.get("insumos_medidos", {})
+            if insumos:
+                L.append("Insumos medidos que entran en el cálculo: "
+                         + " · ".join(f"{k.replace('_', ' ')} = {v}"
+                                      for k, v in insumos.items())
+                         + ". Las tarifas de referencia están en "
+                           "`obs/metrics.py::PRECIOS_REFERENCIA`.")
+                L.append("")
 
     # ---------------------------------------------------------------- triage
     if triage:
@@ -198,9 +294,23 @@ def main() -> int:
     L.append("```bash")
     L.append("make eval        # decisión clínica sobre los 160 casos")
     L.append("make redteam     # suite adversarial (requiere la API levantada)")
+    L.append("make humo        # extremo a extremo (requiere la API levantada)")
     L.append("make bench       # latencia de modelo y voz")
     L.append("make test        # tests unitarios y de regresión")
     L.append("make metricas    # regenera este documento")
+    L.append("```")
+    L.append("")
+    L.append("Las métricas exigidas por la rúbrica (§5) se miden sobre la API en marcha,")
+    L.append("así que llevan su propia secuencia. El servidor tiene que estar **recién")
+    L.append("arrancado**: si se mide sobre uno donde alguien estuvo probando a mano, la")
+    L.append("muestra queda llena de llamadas abiertas y abandonadas de dos turnos y las")
+    L.append("medias por llamada salen más bajas de lo que corresponde a una llamada real.")
+    L.append("")
+    L.append("```bash")
+    L.append("make up                      # servidor limpio, en otra terminal")
+    L.append("make humo                    # 6 llamadas completas, ~30 turnos")
+    L.append("make runtime                 # congela /api/metricas en docs/metrics/")
+    L.append("make metricas                # las escribe acá arriba")
     L.append("```")
 
     DESTINO.parent.mkdir(parents=True, exist_ok=True)

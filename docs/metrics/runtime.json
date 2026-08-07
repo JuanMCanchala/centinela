@@ -1,0 +1,79 @@
+{
+  "resumen": {
+    "n_turnos": 21,
+    "n_llamadas": 4,
+    "latencia_hasta_primer_audio": {
+      "p50_ms": 0.6,
+      "p95_ms": 385.3,
+      "p99_ms": 5062.9,
+      "min_ms": 0.4,
+      "max_ms": 6232.4,
+      "definicion": "desde que se cierra el VAD (fin de habla del paciente) hasta que el primer byte de audio del agente sale hacia el navegador"
+    },
+    "por_etapa": {
+      "extraccion": {
+        "p50_ms": 0.2,
+        "p95_ms": 1.1,
+        "n": 21
+      },
+      "tts": {
+        "p50_ms": 0.3,
+        "p95_ms": 385.0,
+        "n": 21
+      }
+    },
+    "tokens_por_turno": {
+      "entrada_p50": 0.0,
+      "salida_p50": 0.0,
+      "entrada_media": 133.2,
+      "salida_media": 4.1
+    },
+    "tokens_por_llamada": {
+      "entrada_media": 699.5,
+      "salida_media": 21.8,
+      "turnos_media": 5.2
+    },
+    "invocaciones_llm_por_turno": {
+      "p50": 0.0,
+      "max": 1,
+      "media": 0.05
+    },
+    "consultas_rag_por_llamada": {
+      "media": 0.25,
+      "max": 1
+    },
+    "tts": {
+      "turnos_servidos_desde_cache": 19,
+      "proporcion_desde_cache": 0.905
+    }
+  },
+  "costo": {
+    "modelo_de_costo": "extrapolacion a precios de API de produccion",
+    "aclaracion": "Centinela corre local; el costo marginal real por llamada es electricidad. Estas cifras son lo que costaria el mismo trafico medido si se sirviera desde APIs comerciales.",
+    "insumos_medidos": {
+      "tokens_entrada_por_llamada": 699.5,
+      "tokens_salida_por_llamada": 21.8,
+      "turnos_por_llamada": 5.2,
+      "segundos_audio_entrada": 41.6,
+      "caracteres_tts": 468.0
+    },
+    "tarifas_referencia": {
+      "llm_entrada_usd_por_mtok": 0.1,
+      "llm_salida_usd_por_mtok": 0.1,
+      "llm_referencia": "modelo abierto de 3-4B servido por proveedor comercial; se usa 0.10 USD/Mtok en ambos sentidos como tarifa conservadora de gama baja",
+      "stt_usd_por_hora": 0.111,
+      "stt_referencia": "whisper-large-v3-turbo en Groq, tarifa publicada por hora de audio",
+      "tts_usd_por_mcaracter": 4.0,
+      "tts_referencia": "TTS neuronal estandar de nube, ~4 USD por millon de caracteres",
+      "usd_cop": 4000.0,
+      "usd_cop_referencia": "tasa redondeada de referencia, agosto 2026"
+    },
+    "desglose_usd": {
+      "llm": 7.2e-05,
+      "stt": 0.001283,
+      "tts": 0.001872
+    },
+    "costo_total_usd_por_llamada": 0.003227,
+    "costo_total_cop_por_llamada": 12.9
+  }
+}

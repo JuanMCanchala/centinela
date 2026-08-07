@@ -116,6 +116,13 @@ redteam:
 humo:
 	$(PY) -m eval.humo
 
+# Congela las metricas de ejecucion (§5 de la rubrica) desde la API en marcha.
+# Correr DESPUES de `make humo` y sobre un servidor recien arrancado; el porque
+# esta en scripts/medir_runtime.py.
+.PHONY: runtime
+runtime:
+	$(PY) scripts/medir_runtime.py
+
 .PHONY: bench
 bench:
 	$(PY) scripts/bench_llm.py
