@@ -16,13 +16,9 @@ const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 const estado = {
   llamadaId: null,
   ws: null,
-  grabando: false,
-  contexto: null,
-  stream: null,
-  procesador: null,
-  buffer: [],
-  frecuencia: 16000,
 };
+// El estado del microfono vive en su propio objeto `voz`, mas abajo, junto a la
+// maquina de estados del VAD que lo gobierna.
 
 /* ============================ pacientes de prueba ============================
  * Tomados del dataset oficial del reto. Los tres primeros estan elegidos para
@@ -248,9 +244,9 @@ $("#btn-cerrar").addEventListener("click", async () => {
 });
 
 function finalizar() {
+  detenerVoz();
   estado.ws?.close();
   estado.ws = null;
-  detenerMicrofono();
   $("#btn-iniciar").disabled = false;
   $("#btn-cerrar").disabled = true;
   $("#zona-microfono").hidden = true;
@@ -309,7 +305,69 @@ function procesarRespuestaTurno(r) {
   if (r.terminada) finalizar();
 }
 
-/* ------------------------------- microfono ---------------------------------- */
+/* =============================== LLAMADA EN VIVO ============================
+ *
+ * Una llamada real no tiene boton de "pulsar para hablar": uno habla, calla, y
+ * el otro contesta. Eso es lo que hace esta seccion, con deteccion de actividad
+ * de voz (VAD) en el navegador.
+ *
+ * Maquina de estados del microfono:
+ *
+ *   CALIBRANDO --> ESCUCHANDO --> HABLANDO --> (silencio 900 ms) --> PROCESANDO
+ *        ^                                                                |
+ *        |                                        AGENTE_HABLANDO <-------+
+ *        +-------------------- (termina el audio) --------+
+ *
+ * Tres decisiones que hacen que esto funcione en la practica:
+ *
+ * 1. **Remuestreo garantizado a 16 kHz.** Es la correccion de un fallo real: el
+ *    codigo anterior pedia `new AudioContext({sampleRate: 16000})` y asumia que
+ *    lo obtenia. Cuando el navegador entrega 48 kHz -- lo habitual con micros
+ *    modernos -- el servidor recibia audio a 48 kHz e interpretaba las muestras
+ *    como si fueran de 16 kHz: la voz sonaba tres veces mas lenta y grave, y
+ *    Whisper la descartaba como "sin voz". El sintoma era un turno que se queda
+ *    "Procesando..." sin respuesta. Ahora se lee la frecuencia REAL del contexto
+ *    y se remuestrea siempre.
+ *
+ * 2. **Umbral de voz adaptativo.** Un umbral fijo falla en cualquier sala que no
+ *    sea la del programador. Se mide el ruido ambiente durante los primeros
+ *    600 ms y el umbral se fija muy por encima de ese piso.
+ *
+ * 3. **Pre-roll.** El VAD detecta la voz cuando ya empezo, asi que se guardan
+ *    los ultimos 300 ms en un buffer circular y se envian al abrir el turno. Sin
+ *    esto se pierde la primera silaba y "sesenta" llega como "senta".
+ */
+
+const VAD = {
+  frecuenciaObjetivo: 16000,
+  msPorTrama: 64,           // 1024 muestras a 16 kHz
+  msCalibracion: 600,
+  msSilencioParaCerrar: 900,
+  msMinimoHabla: 250,       // por debajo de esto es una tos, no un turno
+  msMaximoTurno: 30000,     // corte de seguridad
+  preRollTramas: 5,         // ~320 ms
+  factorSobreRuido: 3.2,    // umbral = piso de ruido x este factor
+  umbralMinimo: 0.012,      // suelo absoluto, para micros muy silenciosos
+  umbralBargeIn: 0.10,      // hablar por encima de esto interrumpe al agente
+};
+
+const voz = {
+  activa: false,
+  fase: "inactivo",         // inactivo | calibrando | escuchando | hablando | procesando | agente
+  contexto: null,
+  stream: null,
+  fuente: null,
+  procesador: null,
+  frecuenciaReal: 0,
+  piso: 0,
+  umbral: VAD.umbralMinimo,
+  muestrasCalibracion: [],
+  preRoll: [],
+  msHablando: 0,
+  msSilencio: 0,
+  enviadas: 0,
+  bargeInHabilitado: true,
+};
 
 function conectarWS() {
   const proto = location.protocol === "https:" ? "wss" : "ws";
@@ -318,91 +376,324 @@ function conectarWS() {
 
   estado.ws.onmessage = (ev) => {
     if (typeof ev.data !== "string") {
-      const blob = new Blob([ev.data], { type: "audio/wav" });
-      const a = $("#reproductor");
-      a.src = URL.createObjectURL(blob);
-      a.play().catch(() => {});
+      reproducirBlob(ev.data);
       return;
     }
     const m = JSON.parse(ev.data);
     if (m.tipo === "transcripcion") {
       agregarTurno("paciente", m.texto);
-      $("#mic-estado").textContent = `Transcrito en ${ms(m.ms)} (RTF ${m.factor_tiempo_real})`;
+      infoVoz(`transcrito en ${ms(m.ms)} · RTF ${m.factor_tiempo_real}`);
     } else if (m.tipo === "sin_habla") {
-      $("#mic-estado").textContent = "No se detectó voz. Intente de nuevo.";
+      // No es un error: el VAD del servidor no encontro voz. Se vuelve a
+      // escuchar de inmediato en vez de dejar al usuario esperando.
+      infoVoz("no se detectó voz, siga hablando");
+      fase("escuchando");
     } else if (m.tipo === "turno") {
       procesarRespuestaTurno(m);
+    } else if (m.tipo === "cierre") {
+      agregarTurno("agente", m.agente_dice);
+      pintarDecision(m.decision);
+      finalizar();
     } else if (m.tipo === "error") {
       agregarTurno("sistema", `Error del servidor: ${m.mensaje}`, "alerta");
+      fase("escuchando");
     }
   };
-  estado.ws.onclose = () => { $("#mic-estado").textContent = "Canal de voz cerrado"; };
+
+  estado.ws.onclose = () => {
+    if (voz.activa) infoVoz("canal de voz cerrado");
+  };
+  estado.ws.onerror = () => infoVoz("error en el canal de voz");
 }
 
-const btnMic = $("#btn-mic");
-btnMic.addEventListener("mousedown", iniciarGrabacion);
-btnMic.addEventListener("touchstart", (e) => { e.preventDefault(); iniciarGrabacion(); });
-["mouseup", "mouseleave", "touchend"].forEach((ev) =>
-  btnMic.addEventListener(ev, detenerGrabacion));
+/* --------------------------- estado visible -------------------------------- */
 
-async function iniciarGrabacion() {
-  if (estado.grabando || !estado.ws) return;
+const ETIQUETA_FASE = {
+  inactivo: "Micrófono apagado",
+  calibrando: "Midiendo el ruido de la sala…",
+  escuchando: "Escuchando. Hable cuando quiera.",
+  hablando: "Le escucho…",
+  procesando: "Procesando lo que dijo…",
+  agente: "El agente está hablando",
+};
+
+function fase(nueva) {
+  voz.fase = nueva;
+  const btn = $("#btn-mic");
+  btn.classList.toggle("grabando", nueva === "hablando");
+  btn.classList.toggle("escuchando", nueva === "escuchando");
+  btn.classList.toggle("agente", nueva === "agente");
+  $("#mic-fase").textContent = ETIQUETA_FASE[nueva] || nueva;
+}
+
+function infoVoz(texto) {
+  $("#mic-detalle").textContent = texto;
+}
+
+/* ------------------------------ arranque ----------------------------------- */
+
+$("#btn-mic").addEventListener("click", () => {
+  if (voz.activa) {
+    detenerVoz();
+  } else {
+    iniciarVoz();
+  }
+});
+
+async function iniciarVoz() {
+  if (!estado.ws) {
+    infoVoz("primero hay que iniciar la llamada");
+    return;
+  }
   try {
-    if (!estado.contexto) {
-      estado.contexto = new AudioContext({ sampleRate: estado.frecuencia });
-    }
-    if (estado.contexto.state === "suspended") await estado.contexto.resume();
-    estado.stream = await navigator.mediaDevices.getUserMedia({
-      audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true },
+    voz.stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        channelCount: 1,
+        echoCancellation: true,   // imprescindible: el micro oye al agente
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
     });
-    const fuente = estado.contexto.createMediaStreamSource(estado.stream);
-    // ScriptProcessor esta obsoleto pero no requiere servir un modulo aparte,
-    // lo que mantiene el frontend en cero dependencias y cero build.
-    estado.procesador = estado.contexto.createScriptProcessor(4096, 1, 1);
-    estado.buffer = [];
 
-    estado.procesador.onaudioprocess = (e) => {
-      const entrada = e.inputBuffer.getChannelData(0);
-      let pico = 0;
-      const pcm = new Int16Array(entrada.length);
-      for (let i = 0; i < entrada.length; i++) {
-        const v = Math.max(-1, Math.min(1, entrada[i]));
-        pcm[i] = v < 0 ? v * 0x8000 : v * 0x7fff;
-        pico = Math.max(pico, Math.abs(v));
-      }
-      $("#medidor-nivel").style.width = `${Math.min(100, pico * 180)}%`;
-      if (estado.ws?.readyState === WebSocket.OPEN) estado.ws.send(pcm.buffer);
-    };
+    // No se fuerza la frecuencia: se pregunta cual dio el navegador y se
+    // remuestrea. Forzarla y confiar era el origen del fallo descrito arriba.
+    voz.contexto = new AudioContext();
+    if (voz.contexto.state === "suspended") await voz.contexto.resume();
+    voz.frecuenciaReal = voz.contexto.sampleRate;
 
-    fuente.connect(estado.procesador);
-    estado.procesador.connect(estado.contexto.destination);
-    estado.grabando = true;
-    btnMic.classList.add("grabando");
-    $("#mic-estado").textContent = "Escuchando…";
+    voz.fuente = voz.contexto.createMediaStreamSource(voz.stream);
+    const tamano = tamanoBufferPara(voz.frecuenciaReal);
+    voz.procesador = voz.contexto.createScriptProcessor(tamano, 1, 1);
+    voz.procesador.onaudioprocess = procesarTrama;
+
+    voz.fuente.connect(voz.procesador);
+    // Se conecta a un nodo de ganancia cero: ScriptProcessor necesita destino
+    // para recibir datos, pero no queremos oir el propio microfono.
+    const mudo = voz.contexto.createGain();
+    mudo.gain.value = 0;
+    voz.procesador.connect(mudo);
+    mudo.connect(voz.contexto.destination);
+
+    voz.activa = true;
+    voz.muestrasCalibracion = [];
+    voz.preRoll = [];
+    voz.msHablando = 0;
+    voz.msSilencio = 0;
+    voz.enviadas = 0;
+    fase("calibrando");
+    infoVoz(`micrófono a ${(voz.frecuenciaReal / 1000).toFixed(1)} kHz` +
+      (voz.frecuenciaReal !== VAD.frecuenciaObjetivo ? " → remuestreo a 16 kHz" : ""));
   } catch (e) {
-    $("#mic-estado").textContent = `No se pudo abrir el micrófono: ${e.message}`;
+    infoVoz(`no se pudo abrir el micrófono: ${e.message}`);
+    fase("inactivo");
   }
 }
 
-function detenerGrabacion() {
-  if (!estado.grabando) return;
-  estado.grabando = false;
-  btnMic.classList.remove("grabando");
+function detenerVoz() {
+  voz.activa = false;
+  try { voz.procesador?.disconnect(); } catch (_) {}
+  try { voz.fuente?.disconnect(); } catch (_) {}
+  voz.stream?.getTracks().forEach((t) => t.stop());
+  voz.contexto?.close().catch(() => {});
+  voz.procesador = null;
+  voz.fuente = null;
+  voz.stream = null;
+  voz.contexto = null;
   $("#medidor-nivel").style.width = "0%";
-  $("#mic-estado").textContent = "Procesando…";
-  detenerMicrofono();
-  // El fin de habla lo marca el usuario al soltar el boton: es el instante
-  // exacto donde arranca la medicion de latencia que exige la rubrica.
+  $("#medidor-umbral").style.left = "0%";
+  fase("inactivo");
+}
+
+function tamanoBufferPara(frecuencia) {
+  // Se busca el tamano potencia de dos mas cercano a msPorTrama.
+  const ideal = (frecuencia * VAD.msPorTrama) / 1000;
+  const validos = [256, 512, 1024, 2048, 4096, 8192, 16384];
+  let elegido = validos[0];
+  for (const v of validos) {
+    if (Math.abs(v - ideal) < Math.abs(elegido - ideal)) elegido = v;
+  }
+  return elegido;
+}
+
+/* ------------------------------- el VAD ------------------------------------ */
+
+function procesarTrama(evento) {
+  if (!voz.activa) return;
+
+  const entrada = evento.inputBuffer.getChannelData(0);
+  const rms = calcularRms(entrada);
+  const msTrama = (entrada.length / voz.frecuenciaReal) * 1000;
+
+  pintarMedidor(rms);
+
+  if (voz.fase === "calibrando") {
+    calibrar(rms, msTrama);
+    return;
+  }
+
+  // Mientras el agente habla, el microfono sigue midiendo pero no envia. Es
+  // half-duplex a proposito: aunque el navegador cancele el eco, dejar el canal
+  // abierto haria que el agente se transcriba a si mismo. La excepcion es el
+  // barge-in, mas abajo.
+  if (voz.fase === "agente") {
+    if (voz.bargeInHabilitado && rms > VAD.umbralBargeIn) {
+      interrumpirAgente();
+    }
+    return;
+  }
+
+  if (voz.fase === "procesando") return;
+
+  const pcm = remuestrearA16k(entrada, voz.frecuenciaReal);
+  const hayVoz = rms > voz.umbral;
+
+  if (voz.fase === "escuchando") {
+    // Buffer circular con los ultimos 300 ms, para no perder la primera silaba.
+    voz.preRoll.push(pcm);
+    if (voz.preRoll.length > VAD.preRollTramas) voz.preRoll.shift();
+
+    if (hayVoz) {
+      fase("hablando");
+      voz.msHablando = 0;
+      voz.msSilencio = 0;
+      voz.enviadas = 0;
+      for (const trama of voz.preRoll) enviarAudio(trama);
+      voz.preRoll = [];
+    }
+  }
+
+  if (voz.fase === "hablando") {
+    enviarAudio(pcm);
+    voz.msHablando += msTrama;
+    voz.msSilencio = hayVoz ? 0 : voz.msSilencio + msTrama;
+
+    const callo = voz.msSilencio >= VAD.msSilencioParaCerrar;
+    const demasiadoLargo = voz.msHablando >= VAD.msMaximoTurno;
+
+    if (callo || demasiadoLargo) {
+      if (voz.msHablando - voz.msSilencio >= VAD.msMinimoHabla) {
+        cerrarTurno(demasiadoLargo);
+      } else {
+        // Ruido corto: se descarta el turno sin molestar al servidor.
+        infoVoz("sonido demasiado corto, sigo escuchando");
+        fase("escuchando");
+        voz.msHablando = 0;
+        voz.msSilencio = 0;
+      }
+    }
+  }
+}
+
+function calibrar(rms, msTrama) {
+  voz.muestrasCalibracion.push(rms);
+  const transcurrido = voz.muestrasCalibracion.length * msTrama;
+
+  if (transcurrido >= VAD.msCalibracion) {
+    const ordenadas = [...voz.muestrasCalibracion].sort((a, b) => a - b);
+    // Mediana en vez de media: un golpe en la mesa durante la calibracion no
+    // debe subir el umbral para toda la llamada.
+    voz.piso = ordenadas[Math.floor(ordenadas.length / 2)];
+    voz.umbral = Math.max(VAD.umbralMinimo, voz.piso * VAD.factorSobreRuido);
+    $("#medidor-umbral").style.left = `${Math.min(100, voz.umbral * 400)}%`;
+    infoVoz(`ruido de sala ${voz.piso.toFixed(4)} · umbral de voz ${voz.umbral.toFixed(4)}`);
+    fase("escuchando");
+  }
+}
+
+function cerrarTurno(porLargo) {
+  fase("procesando");
+  if (porLargo) infoVoz("turno cortado a los 30 s");
+  // Aqui arranca la medicion de latencia que exige la rúbrica: el instante en
+  // que el VAD decide que el paciente termino de hablar.
   if (estado.ws?.readyState === WebSocket.OPEN) {
     estado.ws.send(JSON.stringify({ tipo: "fin_habla" }));
   }
+  voz.msHablando = 0;
+  voz.msSilencio = 0;
+  voz.preRoll = [];
 }
 
-function detenerMicrofono() {
-  estado.procesador?.disconnect();
-  estado.procesador = null;
-  estado.stream?.getTracks().forEach((t) => t.stop());
-  estado.stream = null;
+function enviarAudio(pcm) {
+  if (estado.ws?.readyState === WebSocket.OPEN) {
+    estado.ws.send(pcm.buffer);
+    voz.enviadas++;
+  }
+}
+
+function calcularRms(muestras) {
+  let suma = 0;
+  for (let i = 0; i < muestras.length; i++) suma += muestras[i] * muestras[i];
+  return Math.sqrt(suma / muestras.length);
+}
+
+function pintarMedidor(rms) {
+  $("#medidor-nivel").style.width = `${Math.min(100, rms * 400)}%`;
+  $("#medidor-nivel").classList.toggle("sobre-umbral", rms > voz.umbral);
+}
+
+/* --------------------------- remuestreo a 16 kHz --------------------------- */
+
+function remuestrearA16k(entrada, frecuenciaOrigen) {
+  let muestras = entrada;
+
+  if (frecuenciaOrigen !== VAD.frecuenciaObjetivo) {
+    const razon = frecuenciaOrigen / VAD.frecuenciaObjetivo;
+    const salida = new Float32Array(Math.floor(entrada.length / razon));
+    for (let i = 0; i < salida.length; i++) {
+      // Promedio de la ventana de origen, no muestreo puntual: promediar actua
+      // como filtro anti-aliasing barato, y sin filtro las frecuencias altas se
+      // reflejan como ruido justo en la banda de la voz.
+      const desde = i * razon;
+      const hasta = Math.min(entrada.length, Math.ceil((i + 1) * razon));
+      let suma = 0;
+      let n = 0;
+      for (let j = Math.floor(desde); j < hasta; j++) {
+        suma += entrada[j];
+        n++;
+      }
+      salida[i] = n > 0 ? suma / n : 0;
+    }
+    muestras = salida;
+  }
+
+  const pcm = new Int16Array(muestras.length);
+  for (let i = 0; i < muestras.length; i++) {
+    const v = Math.max(-1, Math.min(1, muestras[i]));
+    pcm[i] = v < 0 ? v * 0x8000 : v * 0x7fff;
+  }
+  return pcm;
+}
+
+/* ------------------- reproduccion y vuelta a escuchar ---------------------- */
+
+function reproducirBlob(datos) {
+  const blob = new Blob([datos], { type: "audio/wav" });
+  const a = $("#reproductor");
+  a.src = URL.createObjectURL(blob);
+  if (voz.activa) fase("agente");
+  a.play().catch(() => {});
+}
+
+$("#reproductor").addEventListener("ended", () => {
+  // El turno del agente termino: se vuelve a escuchar sin que nadie pulse nada.
+  if (voz.activa && voz.fase === "agente") {
+    fase("escuchando");
+    voz.preRoll = [];
+  }
+});
+
+$("#reproductor").addEventListener("error", () => {
+  if (voz.activa && voz.fase === "agente") fase("escuchando");
+});
+
+function interrumpirAgente() {
+  const a = $("#reproductor");
+  a.pause();
+  a.currentTime = 0;
+  infoVoz("le interrumpí porque empezó a hablar");
+  agregarTurno("sistema", "El paciente interrumpió al agente");
+  fase("escuchando");
+  voz.preRoll = [];
 }
 
 /* --------------------------- paneles de decision ---------------------------- */

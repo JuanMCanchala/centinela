@@ -48,12 +48,16 @@
     </div>
 
     <div class="microfono" id="zona-microfono" hidden>
-      <button class="boton-mic" id="btn-mic" title="Mantener presionado para hablar">
+      <button class="boton-mic" id="btn-mic" title="Encender o apagar el micrófono">
         <svg viewBox="0 0 24 24" class="icono icono-mic" aria-hidden="true"><path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v1a7 7 0 0 1-14 0v-1"/><path d="M12 18v4"/></svg>
       </button>
       <div class="mic-info">
-        <div id="mic-estado">Mantener presionado para hablar</div>
-        <div class="medidor"><div class="medidor-relleno" id="medidor-nivel"></div></div>
+        <div id="mic-fase" class="mic-fase">Micrófono apagado</div>
+        <div id="mic-detalle" class="mic-detalle">Pulse el micrófono una vez y hable normal: el turno se envía cuando deja de hablar.</div>
+        <div class="medidor">
+          <div class="medidor-relleno" id="medidor-nivel"></div>
+          <div class="medidor-umbral" id="medidor-umbral" title="umbral de voz detectado"></div>
+        </div>
       </div>
     </div>
 

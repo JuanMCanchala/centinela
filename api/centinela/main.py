@@ -665,6 +665,66 @@ async def metricas(llamada_id: str | None = None) -> dict:
 # WebSocket de voz
 # ==========================================================================
 
+FRECUENCIA_ESPERADA = 16000
+MAX_SEGUNDOS_TURNO = 60
+
+
+async def _atender_fin_habla(
+    ws: WebSocket, llamada_id: str, policy: DialogPolicy, crudo: bytes
+) -> None:
+    """Procesa un turno de voz completo: audio -> transcripcion -> respuesta.
+
+    Vive aparte del bucle del WebSocket para que ese bucle solo enrute mensajes.
+    """
+
+    crono = Cronometro(llamada_id, len(policy.turnos))
+    muestras = pcm16_a_float32(crudo)
+    duracion = len(muestras) / FRECUENCIA_ESPERADA
+
+    if duracion > MAX_SEGUNDOS_TURNO:
+        # Guarda contra audio mal formado. El cliente remuestrea a 16 kHz, pero si
+        # llega con otra frecuencia la duracion sale absurda y Whisper gasta
+        # segundos transcribiendo ruido -- que es exactamente el sintoma de "se
+        # queda procesando". Mejor decir el problema que trabajar de mas.
+        await ws.send_json({
+            "tipo": "error",
+            "mensaje": (
+                f"el audio dura {duracion:.0f} s interpretado a 16 kHz, lo que sugiere "
+                f"que llego con otra frecuencia de muestreo. El cliente debe "
+                f"remuestrear a 16 kHz mono."
+            ),
+        })
+    else:
+        with crono.etapa("stt"):
+            trans = await asyncio.to_thread(E["stt"].transcribir, muestras)
+
+        if trans.sin_habla:
+            await ws.send_json({
+                "tipo": "sin_habla",
+                "mensaje": "no se detecto voz en el audio",
+                "duracion_audio_s": trans.duracion_audio_s,
+            })
+        else:
+            await ws.send_json({
+                "tipo": "transcripcion",
+                "texto": trans.texto,
+                "ms": trans.ms,
+                "factor_tiempo_real": round(trans.factor_tiempo_real, 4),
+            })
+
+            with crono.etapa("extraccion"):
+                accion = await policy.procesar(trans.texto)
+
+            with crono.etapa("tts"):
+                audio = await _sintetizar_accion(accion)
+            crono.primer_audio()
+
+            payload = await _empaquetar_turno(llamada_id, policy, accion, crono, audio)
+            await ws.send_json({"tipo": "turno", **payload})
+            if audio:
+                await ws.send_bytes(audio)
+
+
 @app.websocket("/ws/llamada/{llamada_id}")
 async def ws_llamada(ws: WebSocket, llamada_id: str) -> None:
     """Canal de audio bidireccional.
@@ -672,11 +732,15 @@ async def ws_llamada(ws: WebSocket, llamada_id: str) -> None:
     Protocolo, deliberadamente simple porque la latencia se gana en el pipeline y
     no en el transporte:
 
-    - El navegador manda PCM16 mono 16 kHz en mensajes binarios.
-    - Manda `{"tipo": "fin_habla"}` cuando su VAD detecta que el paciente termino.
-      La medicion de latencia de la rubrica arranca exactamente ahi.
+    - El navegador manda PCM16 mono **16 kHz** en mensajes binarios. La frecuencia
+      no es negociable y el cliente remuestrea si su microfono entrega otra: es
+      el contrato que evita el fallo mas sutil de este camino (ver
+      `_atender_fin_habla`).
+    - Manda `{"tipo": "fin_habla"}` cuando su VAD detecta que el paciente dejo de
+      hablar. La medicion de latencia de la rubrica arranca exactamente ahi.
     - El servidor responde `{"tipo": "turno", ...}` con el texto, la decision y
       las citas, y a continuacion el WAV en un mensaje binario.
+    - `{"tipo": "sin_habla"}` no es un error: el cliente vuelve a escuchar.
     """
 
     await ws.accept()
@@ -701,40 +765,9 @@ async def ws_llamada(ws: WebSocket, llamada_id: str) -> None:
                 tipo = evento.get("tipo")
 
                 if tipo == "fin_habla":
-                    crono = Cronometro(llamada_id, len(policy.turnos))
-                    muestras = pcm16_a_float32(bytes(buffer))
+                    crudo = bytes(buffer)
                     buffer.clear()
-
-                    with crono.etapa("stt"):
-                        trans = await asyncio.to_thread(E["stt"].transcribir, muestras)
-
-                    if trans.sin_habla:
-                        await ws.send_json({
-                            "tipo": "sin_habla",
-                            "mensaje": "no se detecto voz en el audio",
-                            "duracion_audio_s": trans.duracion_audio_s,
-                        })
-                    else:
-                        await ws.send_json({
-                            "tipo": "transcripcion",
-                            "texto": trans.texto,
-                            "ms": trans.ms,
-                            "factor_tiempo_real": round(trans.factor_tiempo_real, 4),
-                        })
-
-                        with crono.etapa("extraccion"):
-                            accion = await policy.procesar(trans.texto)
-
-                        with crono.etapa("tts"):
-                            audio = await _sintetizar_accion(accion)
-                        crono.primer_audio()
-
-                        payload = await _empaquetar_turno(
-                            llamada_id, policy, accion, crono, audio
-                        )
-                        await ws.send_json({"tipo": "turno", **payload})
-                        if audio:
-                            await ws.send_bytes(audio)
+                    await _atender_fin_habla(ws, llamada_id, policy, crudo)
 
                 elif tipo == "cerrar":
                     accion = policy.cerrar_ahora()

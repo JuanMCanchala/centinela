@@ -131,15 +131,56 @@ input[type=text]:focus, select:focus { outline: 1px solid var(--acento); border-
 /* ---------- microfono ---------- */
 
 .microfono { display: flex; gap: .9rem; align-items: center; margin: 1rem 0; }
+
 .boton-mic {
   width: 58px; height: 58px; border-radius: 50%;
   background: var(--panel-alt); border: 2px solid var(--borde); color: var(--texto);
   cursor: pointer; display: grid; place-items: center; flex: 0 0 auto;
+  transition: border-color .15s, color .15s, background .15s;
 }
-.boton-mic.grabando { border-color: var(--rojo); color: var(--rojo); background: #2a1518; }
-.mic-info { flex: 1; font-size: .82rem; color: var(--texto-suave); }
-.medidor { height: 5px; background: var(--fondo); border-radius: 3px; margin-top: .4rem; overflow: hidden; }
-.medidor-relleno { height: 100%; width: 0%; background: var(--acento); transition: width .08s linear; }
+/* Escuchando: el micro esta abierto esperando voz. Latido lento para que se vea
+   que la llamada esta viva sin resultar molesto. */
+.boton-mic.escuchando {
+  border-color: var(--acento); color: var(--acento); background: #0a2724;
+  animation: latido 2.4s ease-in-out infinite;
+}
+/* Hablando: el VAD detecto voz y se esta enviando audio. */
+.boton-mic.grabando {
+  border-color: var(--rojo); color: var(--rojo); background: #2a1518;
+  animation: none;
+}
+/* El agente tiene el turno: el micro escucha pero no envia. */
+.boton-mic.agente {
+  border-color: var(--azul); color: var(--azul); background: #0d1f33;
+  animation: none;
+}
+
+@keyframes latido {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(45, 212, 191, .35); }
+  50%      { box-shadow: 0 0 0 7px rgba(45, 212, 191, 0); }
+}
+
+.mic-info { flex: 1; min-width: 0; }
+.mic-fase { font-size: .88rem; color: var(--texto); font-weight: 600; }
+.mic-detalle { font-size: .76rem; color: var(--texto-suave); margin-top: .1rem; }
+
+.medidor {
+  position: relative; height: 6px; background: var(--fondo);
+  border-radius: 3px; margin-top: .45rem; overflow: hidden;
+}
+.medidor-relleno {
+  height: 100%; width: 0%; background: var(--texto-suave);
+  transition: width .06s linear;
+}
+/* Verde solo cuando la senal pasa el umbral: hace visible la decision del VAD
+   en tiempo real, que es lo que permite depurar un micro problematico de un
+   vistazo. */
+.medidor-relleno.sobre-umbral { background: var(--acento); }
+/* Marca vertical en el umbral calibrado. */
+.medidor-umbral {
+  position: absolute; top: -2px; width: 2px; height: 10px;
+  background: var(--amarillo); left: 0; transition: left .2s;
+}
 
 .respaldo { border-top: 1px solid var(--borde); padding-top: .9rem; margin-top: .9rem; }
 .atajos { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .5rem; }
