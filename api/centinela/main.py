@@ -48,6 +48,7 @@ from .escalation.service import EscalationService
 from .llm.backend import LLMBackend
 from .models import Cita
 from .obs.metrics import Cronometro, MetricsCollector
+from .pruebas import POR_ID as SUITES_POR_ID, CorredorPruebas
 from .rag.answerer import ResponderClinico
 from .rag.embedder import Embedder
 from .rag.ingest import chunkear, extraer_documento
@@ -668,6 +669,43 @@ async def metricas(llamada_id: str | None = None) -> dict:
         "resumen": E["metrics"].resumen(llamada_id),
         "costo": E["metrics"].costo_estimado(llamada_id),
     }
+
+
+# ==========================================================================
+# Consola de pruebas
+# ==========================================================================
+#
+# El panel corre las suites del repo como subprocesos y muestra su salida tal
+# cual. No hay una segunda implementacion de las comprobaciones aqui dentro: el
+# veredicto es el codigo de salida del mismo comando que documenta el README.
+# El porque, con mas detalle, esta en `pruebas.py`.
+
+CORREDOR = CorredorPruebas()
+
+
+@app.get("/api/pruebas")
+async def listar_pruebas() -> dict:
+    return {"suites": CORREDOR.catalogo()}
+
+
+@app.get("/api/pruebas/{suite_id}")
+async def estado_prueba(suite_id: str) -> dict:
+    if suite_id not in SUITES_POR_ID:
+        raise HTTPException(404, f"suite desconocida: {suite_id}")
+    return CORREDOR.estado(suite_id)
+
+
+@app.post("/api/pruebas/{suite_id}")
+async def correr_prueba(suite_id: str, peticion: Request) -> dict:
+    if suite_id not in SUITES_POR_ID:
+        raise HTTPException(404, f"suite desconocida: {suite_id}")
+
+    # Las suites de humo y adversarial hacen peticiones HTTP contra esta misma
+    # API, asi que necesitan su URL. Se toma de la peticion en vez de leerla de
+    # la configuracion para que funcione igual si el servidor se levanto en otro
+    # puerto o detras de un proxy.
+    url_base = str(peticion.base_url)
+    return CORREDOR.lanzar(suite_id, url_base)
 
 
 # ==========================================================================

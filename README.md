@@ -237,13 +237,34 @@ El índice del corpus viene **ya construido** en `data/index.zip` y `make up` lo
 solo. Reconstruirlo desde los 107 PDFs toma cerca de una hora por el OCR, así que no se
 reconstruye en el arranque.
 
-Al abrir `http://localhost:8000` hay tres pestañas:
+Al abrir `http://localhost:8000` hay una consola de operaciones con cuatro pestañas y,
+a la izquierda, la **cola de llamadas** ordenada por criticidad — rojo primero, porque
+la cola es una lista de trabajo y el trabajo urgente va antes. Al pulsar una llamada ya
+cerrada se abre en modo lectura, con su hoja de traspaso y su transcripción.
 
 | Pestaña | Qué es |
 |---|---|
-| **Llamada** | Interfaz de llamada. Micrófono, conversación, y el razonamiento del agente en vivo |
-| **Consola de conocimiento** | Subir, listar y borrar documentos, con recibo de olvido |
-| **Trazabilidad** | Reglas vigentes con su respaldo documental, y métricas medidas |
+| **Llamada** | Micrófono, conversación, y el razonamiento del agente en vivo. Arriba, *la tira* |
+| **Conocimiento** | Subir, listar y borrar documentos, con recibo de olvido |
+| **Motor y métricas** | Reglas vigentes con su respaldo documental, y métricas medidas |
+| **Pruebas** | Corre las suites de este README desde el navegador y muestra su salida |
+
+**La tira** es el gráfico de arriba de la vista de llamada, tomado de la hoja de
+anestesia: el tiempo corre de izquierda a derecha, cada dominio clínico tiene su carril
+y se rellena en el turno en que se supo el dato, y el nivel se dibuja como una escalera
+que **solo puede subir**. Eso último no es una decisión estética sino una propiedad del
+motor con un test que la prueba (`test_manipulacion_no_baja_una_criticidad_ya_establecida`):
+establecida una bandera, ningún texto posterior la retira.
+
+La pestaña **Pruebas** ejecuta cada suite como un subproceso y el veredicto es su código
+de salida — el mismo comando que aparece en [Verificar la entrega](#verificar-la-entrega),
+sin una segunda implementación dentro del panel. Si el número que muestra la consola no
+coincide con el del informe, es que el informe está desactualizado.
+
+La interfaz no tiene paso de compilación: es HTML, CSS y JS servidos tal cual. Las
+tipografías (Chivo y Chivo Mono, SIL OFL) van **versionadas en el repo** en
+`web/fuentes/`, así que la consola no necesita red; `python scripts/fetch_fuentes.py`
+las vuelve a bajar si hiciera falta.
 
 ### Reconstruir el índice desde cero
 
@@ -311,10 +332,14 @@ del reto. Se verifica en `api/centinela/config.py`, en el `Makefile` y en `GET /
 
 ## Verificar la entrega
 
+Las cuatro primeras también se pueden lanzar desde la pestaña **Pruebas** del panel, que
+ejecuta exactamente estos comandos.
+
 ```bash
-make test        # 55 tests unitarios y de regresión
+make test        # 161 tests unitarios y de regresión
 make eval        # 160 casos oficiales · cero falsos negativos clínicos
 make redteam     # 32 casos adversariales (requiere la API levantada)
+make humo        # 67 comprobaciones de extremo a extremo (requiere la API levantada)
 make diagrama    # cada elemento del diagrama existe en el código
 make auditar     # defectos detectados en el corpus entregado
 make bench       # latencia de modelo y voz

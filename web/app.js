@@ -224,6 +224,7 @@ function limpiarPanelesDecision() {
   $("#reglas-disparadas").innerHTML = '<p class="vacio">Ninguna.</p>';
   $("#citas").innerHTML = '<p class="vacio">Sin citas todavía.</p>';
   $("#latencia").innerHTML = '<p class="vacio">—</p>';
+  emitir("reinicio", { paciente: pacienteActual() });
 }
 
 $("#btn-iniciar").addEventListener("click", async () => {
@@ -240,6 +241,7 @@ $("#btn-iniciar").addEventListener("click", async () => {
       }),
     });
     estado.llamadaId = r.llamada_id;
+    emitir("inicio", { llamada_id: r.llamada_id, paciente: p });
     agregarTurno("sistema", `Llamada ${r.llamada_id.slice(0, 8)} iniciada`);
     agregarTurno("agente", r.agente_dice);
     if (r.audio_bytes) reproducir(`/api/llamadas/${r.llamada_id}/audio/0`);
@@ -259,6 +261,7 @@ $("#btn-cerrar").addEventListener("click", async () => {
     const r = await api(`/api/llamadas/${estado.llamadaId}/cerrar`, { method: "POST" });
     agregarTurno("agente", r.agente_dice);
     pintarDecision(r.decision);
+    emitir("turno", r);
     if (r.cierre?.ticket) {
       agregarTurno("sistema", `Alerta creada: ${r.cierre.ticket.ticket_id} (${r.cierre.ticket.nivel})`, "alerta");
     }
@@ -277,6 +280,7 @@ function finalizar() {
   $("#btn-iniciar").disabled = false;
   $("#btn-cerrar").disabled = true;
   $("#zona-microfono").hidden = true;
+  emitir("fin", { llamada_id: estado.llamadaId });
 }
 
 function reproducir(url) {
@@ -329,7 +333,26 @@ function procesarRespuestaTurno(r) {
     agregarTurno("sistema", `Alerta creada: ${r.cierre.ticket.ticket_id} (${r.cierre.ticket.nivel})`, "alerta");
   }
   if (r.audio_bytes) reproducir(r.audio_url);
+  emitir("turno", r);
   if (r.terminada) finalizar();
+}
+
+/* Puente con panel.js.
+ *
+ * app.js es el motor de la llamada: microfono, VAD, WebSocket, audio. panel.js
+ * es la consola: la tira, la cola, las pruebas. Se comunican por eventos del DOM
+ * y nada mas -- ninguno de los dos importa funciones del otro.
+ *
+ * La razon es que este archivo ya tiene una maquina de estados de voz que
+ * funciona y esta medida, y no quiero que dibujar la interfaz pueda romperla.
+ * Si panel.js lanza una excepcion, el turno ya se procesó: la llamada sigue.
+ */
+function emitir(nombre, detalle) {
+  try {
+    document.dispatchEvent(new CustomEvent(`centinela:${nombre}`, { detail: detalle }));
+  } catch (e) {
+    console.warn(`[centinela] fallo al emitir ${nombre}`, e);
+  }
 }
 
 /* =============================== LLAMADA EN VIVO ============================

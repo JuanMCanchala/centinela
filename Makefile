@@ -109,6 +109,13 @@ eval-e2e:
 redteam:
 	$(PY) -m eval.redteam
 
+# Extremo a extremo contra la API levantada. Ya existia como eval/humo.py pero no
+# tenia objetivo en el Makefile, asi que el README no la podia citar y la consola
+# de pruebas la ejecutaba por un camino que nadie mas usaba.
+.PHONY: humo
+humo:
+	$(PY) -m eval.humo
+
 .PHONY: bench
 bench:
 	$(PY) scripts/bench_llm.py
