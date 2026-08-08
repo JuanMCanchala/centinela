@@ -47,7 +47,28 @@ def _dominios_resueltos(estado: dict) -> int:
     return n
 
 
+from eval.escucha import DIR_AUDIOS, leer_wav  # noqa: E402
 from eval.probar_ws import _voz_sync  # noqa: E402
+
+# La misma llamada del guion sintetico, pero con las grabaciones humanas. Los
+# nombres son los de `eval/escucha.py`; la frase de al lado es lo que se dijo, para
+# que el informe pueda comparar.
+GUION_GRABADO = (
+    ("Si soy yo", "01_si_soy_yo.wav"),
+    ("Un seis", "03_un_seis.wav"),
+    ("Treinta y siete cinco", "07_treinta_y_siete_cinco.wav"),
+    ("Camino normal", "16_camino_normal.wav"),
+    ("La herida tiene un liquido amarillo espeso y huele mal", "11_liquido_amarillo.wav"),
+)
+
+
+def _pcm_de_wav(ruta) -> bytes:
+    """WAV -> PCM16 a 16 kHz, tal como lo manda el navegador por el WebSocket."""
+
+    import numpy as _np
+
+    muestras = leer_wav(ruta)
+    return _np.clip(muestras * 32768.0, -32768, 32767).astype("<i2").tobytes()
 
 PACIENTE = {
     "paciente_id": "pac_42_00026", "nombre": "Ana Lucia Restrepo",
@@ -136,6 +157,8 @@ async def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--url", default="ws://127.0.0.1:8100")
     ap.add_argument("--rapido", action="store_true")
+    ap.add_argument("--audios", action="store_true",
+                    help="usa las grabaciones humanas de eval/audios/ en vez de Piper")
     args = ap.parse_args()
 
     http = args.url.replace("ws://", "http://").replace("wss://", "https://")
@@ -146,14 +169,26 @@ async def main() -> int:
     print(f"llamada {lid[:8]} — caso ROJO del dataset, por voz\n")
     print(f"  AGENTE: {ini['agente_dice'][:96]}...\n")
 
-    print("sintetizando los turnos con Piper...")
     audios = []
-    for frase in GUION:
-        pcm = await asyncio.to_thread(_voz_sync, frase)
-        if pcm is None:
-            print("Piper no disponible")
-            return 2
-        audios.append((frase, pcm))
+    if args.audios:
+        # Voz humana grabada, la de eval/audios/. Es la prueba que de verdad
+        # importa: Piper hablandole a su propio Whisper valida la tuberia, no la
+        # escucha.
+        print("usando las grabaciones de voz humana de eval/audios/...")
+        for frase, archivo in GUION_GRABADO:
+            ruta = DIR_AUDIOS / archivo
+            if not ruta.exists():
+                print(f"falta {ruta.name}; corra `make escucha-guion` para ver que grabar")
+                return 2
+            audios.append((frase, _pcm_de_wav(ruta)))
+    else:
+        print("sintetizando los turnos con Piper...")
+        for frase in GUION:
+            pcm = await asyncio.to_thread(_voz_sync, frase)
+            if pcm is None:
+                print("Piper no disponible")
+                return 2
+            audios.append((frase, pcm))
     print(f"{len(audios)} turnos listos\n")
 
     fallos: list[str] = []
