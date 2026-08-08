@@ -12,6 +12,8 @@ ruidosamente si algo no se comporta como el README dice:
   6. Pregunta clinica: respuesta fundamentada con cita verificable.
   7. Hueco de cobertura (mastectomia): el agente se abstiene.
   8. Conocimiento vivo: subir, citar, borrar, comprobar el olvido.
+  9. La alerta roja nace en el turno de la bandera y sale del proceso.
+ 10. Cuelgan sin cerrar: la llamada se cierra sola y la alerta sale igual.
 
     python -m eval.humo [--url http://127.0.0.1:8000]
 """
@@ -508,6 +510,146 @@ def caso_metricas(cli: Cliente) -> None:
                   f"(COP {c['costo_total_cop_por_llamada']})")
 
 
+def _esperar_entrega(cli: Cliente, ticket_id: str, segundos: float = 12.0) -> list[dict]:
+    """Espera a que el despachador vacie la cola.
+
+    El bucle de entrega corre cada pocos segundos, asi que preguntar de inmediato
+    devuelve `pendiente` y no significa que la entrega haya fallado. Se consulta hasta
+    que resuelva o hasta agotar el plazo, y se devuelve lo que haya.
+    """
+
+    limite = time.perf_counter() + segundos
+    entregas: list[dict] = []
+    while time.perf_counter() < limite:
+        tickets = {t["ticket_id"]: t for t in cli.tickets()["tickets"]}
+        entregas = (tickets.get(ticket_id) or {}).get("entregas") or []
+        if entregas and all(e["estado"] != "pendiente" for e in entregas):
+            break
+        time.sleep(1.0)
+    return entregas
+
+
+def caso_alerta_anticipada(cli: Cliente) -> None:
+    """La alerta nace en el turno de la bandera, no en el cierre.
+
+    Antes el ticket se creaba solo en `cerrar_llamada`, asi que todo lo que ocurriera
+    entre la deteccion y el cierre podia perderlo. Ahora existe desde el turno.
+    """
+
+    titulo("9. La alerta roja nace en el turno, y sale del proceso")
+
+    ini = cli.iniciar(PACIENTE_ROJO)
+    llamada_id = ini["llamada_id"]
+
+    cli.turno(llamada_id, "Si, soy yo")
+    r = cli.turno(llamada_id, "La herida tiene un liquido amarillo espeso y huele mal")
+
+    check(
+        (r.get("decision") or {}).get("nivel") == "rojo",
+        "la bandera roja se detecta en el turno de la herida",
+    )
+    check(
+        r.get("alerta") is not None,
+        "la alerta se crea EN EL TURNO, antes de cualquier cierre",
+        f"alerta={r.get('alerta')}",
+    )
+
+    ticket_id = (r.get("alerta") or {}).get("ticket_id")
+    entregas = _esperar_entrega(cli, ticket_id)
+    print(f"       entregas: {[(e['canal'], e['estado']) for e in entregas]}")
+    check(
+        any(e["estado"] == "entregado" for e in entregas),
+        "la alerta salio del proceso por al menos un canal",
+    )
+
+    hoja = RAIZ / "data" / "runtime" / "alertas" / f"{ticket_id}.txt"
+    check(hoja.exists(), f"la hoja de traspaso esta en el disco ({hoja.name})")
+
+    alertas = cli.c.get("/api/alertas").json()
+    print(f"       sin acuse: {alertas['sin_acuse']} · vencidas: {len(alertas['vencidas'])}")
+    check("sla" in alertas, "/api/alertas publica los plazos de acuse")
+
+    acuse = cli.c.post(f"/api/tickets/{ticket_id}/atender", json={"quien": "humo"}).json()
+    check(
+        (acuse.get("ticket") or {}).get("atendido_por") == "humo",
+        "el acuse de recibo queda registrado con quien lo atendio",
+    )
+
+
+def caso_llamada_abandonada(cli: Cliente, url: str) -> None:
+    """El caso que el sistema perdia: cuelgan y nadie cierra la llamada.
+
+    Es el camino mas probable de todos -- nadie pulsa "terminar llamada" -- y era el
+    que no producia nada: sin cierre no habia resumen ni ticket.
+
+    El guion NO llega a la bandera roja a proposito. Una llamada con bandera roja la
+    termina el propio agente (`_interrumpir_por_bandera_roja`), asi que ya esta
+    cerrada cuando el socket se cae y no ejercita este camino. La primera version de
+    esta prueba usaba el caso rojo y por eso veia `cierre_motivo=normal`: el sistema
+    tenia razon y la prueba media otra cosa.
+
+    Aqui la llamada sigue abierta con dominios sin responder, y lo que se comprueba es
+    que colgar produce cierre, resumen y alerta de vigilancia.
+    """
+
+    titulo("10. Cuelgan sin cerrar: la llamada se cierra y la alerta sale igual")
+
+    import asyncio
+
+    import websockets
+
+    ini = cli.iniciar(PACIENTE_ROJO)
+    llamada_id = ini["llamada_id"]
+    ws_url = url.replace("http://", "ws://").replace("https://", "wss://")
+
+    # Dos turnos normales: la llamada avanza y sigue abierta, con cuatro dominios sin
+    # preguntar. Es el estado en el que un paciente cuelga de verdad.
+    cli.turno(llamada_id, "Si, soy yo")
+    r = cli.turno(llamada_id, "Como un tres")
+    check(
+        not r.get("terminada"),
+        "la llamada sigue abierta cuando el paciente cuelga",
+        f"terminada={r.get('terminada')}",
+    )
+
+    async def abandonar() -> None:
+        # Al salir del `async with` el socket se cierra sin mandar `cerrar`: es lo que
+        # hace el navegador cuando se cierra la pestana de golpe.
+        async with websockets.connect(f"{ws_url}/ws/llamada/{llamada_id}", max_size=None):
+            await asyncio.sleep(0.2)
+
+    asyncio.run(abandonar())
+    time.sleep(1.0)
+
+    persistida = (cli.traza(llamada_id).get("persistida") or {})
+    check(
+        persistida.get("terminada_en") is not None,
+        "la llamada abandonada queda cerrada por el sistema",
+        f"cierre_motivo={persistida.get('cierre_motivo')}",
+    )
+    check(
+        persistida.get("cierre_motivo") == "interrumpida",
+        "el cierre queda marcado como interrumpido, no como normal",
+        f"cierre_motivo={persistida.get('cierre_motivo')}",
+    )
+    check(
+        persistida.get("nivel_final") == "amarillo",
+        "cerrar con dominios sin responder no puede quedar en verde",
+        f"nivel_final={persistida.get('nivel_final')}",
+    )
+
+    ticket_id = f"TK-{llamada_id[:8]}-A"
+    tickets = {t["ticket_id"]: t for t in cli.tickets()["tickets"]}
+    check(ticket_id in tickets, f"la llamada colgada produjo su ticket ({ticket_id})")
+
+    entregas = _esperar_entrega(cli, ticket_id)
+    print(f"       entregas: {[(e['canal'], e['estado']) for e in entregas]}")
+    check(
+        any(e["estado"] == "entregado" for e in entregas),
+        "la alerta de la llamada colgada tambien sale del proceso",
+    )
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--url", default="http://127.0.0.1:8000")
@@ -533,6 +675,8 @@ def main() -> int:
     caso_ruido(cli)
     caso_rag(cli)
     caso_conocimiento_vivo(cli)
+    caso_alerta_anticipada(cli)
+    caso_llamada_abandonada(cli, args.url)
     caso_metricas(cli)
 
     titulo("RESULTADO")

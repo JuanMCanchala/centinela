@@ -53,6 +53,31 @@ class Config:
     calentar_al_arrancar: bool = os.environ.get("CENTINELA_WARMUP", "1") == "1"
     pre_renderizar_audio: bool = os.environ.get("CENTINELA_PRERENDER", "1") == "1"
 
+    # --- escalamiento ---
+    #
+    # Una llamada sin actividad durante este tiempo se cierra sola. Existe porque el
+    # cliente puede desaparecer sin cerrar el socket (pestana cerrada de golpe, red
+    # caida, portatil suspendido) y una llamada abierta para siempre es una alerta
+    # que nunca sale.
+    timeout_llamada_s: int = int(os.environ.get("CENTINELA_TIMEOUT_LLAMADA_S", "180"))
+    sla_rojo_min: int = int(os.environ.get("CENTINELA_SLA_ROJO_MIN", "15"))
+    sla_amarillo_h: int = int(os.environ.get("CENTINELA_SLA_AMARILLO_H", "24"))
+    webhook_alertas: str = os.environ.get("CENTINELA_WEBHOOK_ALERTAS", "")
+    secreto_webhook: str = os.environ.get("CENTINELA_SECRETO_WEBHOOK", "")
+
+    # --- acceso ---
+    #
+    # Vacio a proposito. La compuerta G2 del reto da 15 minutos para levantar la
+    # solucion siguiendo solo el README, y pedir configurar un token para ver la
+    # consola gasta ese presupuesto en nada. Si se define, protege los endpoints que
+    # modifican algo. Un despliegue clinico real necesita identidad por persona, no
+    # un secreto compartido, y eso esta declarado en docs/operacion.md.
+    token_consola: str = os.environ.get("CENTINELA_TOKEN", "")
+
+    # Tope de subida de documentos. Un PDF de guia clinica no pasa de unas decenas de
+    # megas; el limite esta para que una peticion no llene el disco del servidor.
+    max_mb_documento: int = int(os.environ.get("CENTINELA_MAX_MB_DOC", "64"))
+
     @property
     def ruta_metricas(self) -> Path:
         return self.dir_runtime / "metricas.jsonl"
@@ -72,6 +97,13 @@ class Config:
             },
             "dir_index": str(self.dir_index),
             "dir_runtime": str(self.dir_runtime),
+            "escalamiento": {
+                "timeout_llamada_s": self.timeout_llamada_s,
+                "sla_rojo_min": self.sla_rojo_min,
+                "sla_amarillo_h": self.sla_amarillo_h,
+                "canales": ["archivo"] + (["webhook"] if self.webhook_alertas else []),
+            },
+            "acceso_protegido": bool(self.token_consola),
         }
 
 

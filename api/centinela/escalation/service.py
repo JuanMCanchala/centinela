@@ -26,12 +26,12 @@ from __future__ import annotations
 import json
 import sqlite3
 import threading
-from dataclasses import dataclass
-from datetime import datetime, timezone
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from ..dialog.policy import DialogPolicy
-from ..models import Nivel, TriageDecision
+from ..dialog.policy import DialogPolicy, Paciente, TurnoRegistrado
+from ..models import ClinicalState, Nivel, TriageDecision
 
 ESQUEMA = """
 CREATE TABLE IF NOT EXISTS llamadas (
@@ -72,9 +72,93 @@ CREATE TABLE IF NOT EXISTS incidentes (
     tipo        TEXT NOT NULL,
     detalle     TEXT NOT NULL
 );
+
+-- Registro por turno. Es lo unico que sobrevive a una caida en mitad de la
+-- llamada, y por tanto la fuente con la que se reconstruye un cierre que nunca
+-- llego a ocurrir. `estado_json` guarda el ClinicalState completo tal como
+-- estaba tras ese turno.
+CREATE TABLE IF NOT EXISTS turnos (
+    llamada_id  TEXT NOT NULL,
+    turno_idx   INTEGER NOT NULL,
+    hablante    TEXT NOT NULL,
+    momento     TEXT NOT NULL,
+    texto       TEXT NOT NULL,
+    nivel       TEXT,
+    estado_json TEXT,
+    PRIMARY KEY (llamada_id, turno_idx, hablante)
+);
+
+-- Outbox de entrega. Un ticket en una tabla no es una alerta: la alerta tiene
+-- que salir del proceso. Cada fila es el intento de entregar un ticket por un
+-- canal, con su reintento pendiente. `UNIQUE(ticket_id, canal)` es lo que hace
+-- que reencolar sea idempotente.
+CREATE TABLE IF NOT EXISTS entregas (
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    ticket_id          TEXT NOT NULL,
+    canal              TEXT NOT NULL,
+    estado             TEXT NOT NULL DEFAULT 'pendiente',
+    intentos           INTEGER NOT NULL DEFAULT 0,
+    creado_en          TEXT NOT NULL,
+    proximo_intento_en TEXT NOT NULL,
+    entregado_en       TEXT,
+    ultimo_error       TEXT,
+    UNIQUE (ticket_id, canal)
+);
+CREATE INDEX IF NOT EXISTS idx_entregas_pendientes
+    ON entregas(estado, proximo_intento_en);
+
+-- Serie por paciente. Se materializa al cerrar para no tener que leer el JSON
+-- del resumen cada vez que se quiere la tendencia de un dominio.
+CREATE TABLE IF NOT EXISTS mediciones (
+    llamada_id  TEXT NOT NULL,
+    paciente_id TEXT NOT NULL,
+    dia_postop  INTEGER NOT NULL,
+    dominio     TEXT NOT NULL,
+    valor       TEXT,
+    medido_en   TEXT NOT NULL,
+    PRIMARY KEY (llamada_id, dominio)
+);
+CREATE INDEX IF NOT EXISTS idx_mediciones_paciente
+    ON mediciones(paciente_id, dia_postop);
 """
 
+# Columnas anadidas despues del esquema original. `executescript` con
+# `CREATE TABLE IF NOT EXISTS` no toca una tabla que ya existe, asi que una base
+# de datos de una version anterior se queda sin ellas si no se migra a mano.
+COLUMNAS_NUEVAS = (
+    ("llamadas", "cierre_motivo", "TEXT"),
+    ("llamadas", "ultimo_turno_en", "TEXT"),
+)
+
+# Como termino la llamada. Importa porque distingue un cierre normal de uno que
+# el sistema tuvo que forzar, y eso cambia como se lee el resumen.
+CIERRE_NORMAL = "normal"
+CIERRE_INTERRUMPIDA = "interrumpida"
+CIERRE_TIMEOUT = "timeout"
+CIERRE_REINICIO = "reinicio"
+
+# La llamada se abrio y el paciente no dijo nada: ni un turno. No es un hallazgo
+# clinico, es un intento de contacto fallido, y la distincion importa. A alguien con
+# quien no se hablo no se le puede hacer triaje, asi que meter esa llamada en la
+# bandeja de alertas clinicas como AMARILLO es ruido con forma de hallazgo -- y una
+# bandeja con ruido es una bandeja que nadie lee. Lo que hay que hacer con estas es
+# volver a llamar, que es una tarea de operacion.
+CIERRE_SIN_CONTACTO = "sin_contacto"
+
 PRIORIDAD_FHIR = {"rojo": "urgent", "amarillo": "routine", "verde": "routine"}
+
+DOMINIOS_RESUMEN = ("dolor", "fiebre", "movilidad", "herida", "apetito", "sueno")
+
+# Reintento del despachador: 30 s, 1 min, 2 min... con tope. La progresion importa
+# poco; lo que importa es que no se rinda y que no golpee un webhook caido.
+ESPERA_BASE_S = 30
+ESPERA_MAXIMA_S = 900
+MAX_INTENTOS = 12
+
+# Plazos de acuse. Un rojo sin atender es lo unico que no puede quedarse quieto en
+# una bandeja: por eso se mide en minutos y no en horas.
+SLA_ROJO_MINUTOS = 15
+SLA_AMARILLO_HORAS = 24
 
 CODIGOS_LOINC = {
     "dolor_nrs": ("72514-3", "Pain severity - 0-10 verbal numeric rating"),
@@ -96,6 +180,32 @@ class Ticket:
     creado_en: str
 
 
+@dataclass
+class ContextoCierre:
+    """Lo que hace falta para escribir el resumen de una llamada.
+
+    Existe porque `construir_resumen` y `hoja_legible` recibian un `DialogPolicy`
+    completo, y tras un reinicio del proceso ese objeto ya no existe: lo unico que
+    queda es lo que se escribio en la tabla `turnos`. Con este contrato explicito,
+    la recuperacion puede armar el mismo resumen desde la base de datos sin
+    duplicar una linea de la logica del cierre.
+
+    `DialogPolicy` lo satisface por estructura, asi que el camino normal no cambia
+    y no hay dos formas de cerrar una llamada.
+    """
+
+    paciente: Paciente
+    estado: ClinicalState
+    turnos: list[TurnoRegistrado]
+    iniciada_en: datetime
+    preguntas_sin_responder: list[str] = field(default_factory=list)
+    incidentes: list[str] = field(default_factory=list)
+    consultas_rag: int = 0
+    # False cuando no hay ni un turno del paciente. `DialogPolicy` no tiene este
+    # atributo y no le hace falta: si hay una policy viva, la llamada ocurrio.
+    hubo_contacto: bool = True
+
+
 class EscalationService:
     def __init__(self, ruta_datos: Path) -> None:
         self.ruta = Path(ruta_datos)
@@ -105,8 +215,22 @@ class EscalationService:
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA foreign_keys=ON")
+        # Sin esto, dos escrituras concurrentes (un turno y el despachador de
+        # alertas) pueden cruzarse y una recibe "database is locked" al instante en
+        # vez de esperar su turno.
+        self._conn.execute("PRAGMA busy_timeout=5000")
         self._conn.executescript(ESQUEMA)
+        self._migrar()
         self._conn.commit()
+
+    def _migrar(self) -> None:
+        """Anade las columnas que no estaban en el esquema original."""
+
+        for tabla, columna, tipo in COLUMNAS_NUEVAS:
+            filas = self._conn.execute(f"PRAGMA table_info({tabla})").fetchall()
+            existentes = {f["name"] for f in filas}
+            if columna not in existentes:
+                self._conn.execute(f"ALTER TABLE {tabla} ADD COLUMN {columna} {tipo}")
 
     # ------------------------------------------------------------------
 
@@ -123,6 +247,54 @@ class EscalationService:
             )
             self._conn.commit()
 
+    def registrar_turnos(
+        self,
+        llamada_id: str,
+        turnos: list[TurnoRegistrado],
+        desde: int = 0,
+        nivel: str | None = None,
+        estado: ClinicalState | None = None,
+    ) -> int:
+        """Escribe los turnos nuevos y devuelve cuantos hay ya escritos.
+
+        Lo que compra es que una llamada cortada a mitad deje rastro: sin esto, lo
+        que el paciente dijo en el turno 4 solo existia en memoria del proceso, y con
+        el proceso se iba.
+
+        El valor devuelto es la marca de agua para la proxima llamada. Reescribir la
+        lista completa en cada turno seria correcto -- el INSERT es `OR REPLACE` --
+        pero cada commit es un fsync, y en una llamada de veinte turnos eso son
+        cientos de fsync en el camino que la rubrica cronometra. Se escribe solo lo
+        nuevo, en una sola transaccion.
+
+        El estado clinico se guarda pegado al ultimo turno: es el que la recuperacion
+        lee para reconstruir el cierre.
+        """
+
+        ahora = datetime.now(timezone.utc).isoformat()
+        nuevos = turnos[desde:]
+
+        with self._lock:
+            for i, t in enumerate(nuevos):
+                ultimo = i == len(nuevos) - 1
+                self._conn.execute(
+                    "INSERT OR REPLACE INTO turnos(llamada_id, turno_idx, hablante,"
+                    " momento, texto, nivel, estado_json) VALUES(?,?,?,?,?,?,?)",
+                    (
+                        llamada_id, t.turno_idx, t.hablante, t.momento, t.texto,
+                        nivel if ultimo else None,
+                        estado.model_dump_json() if (ultimo and estado is not None) else None,
+                    ),
+                )
+            if nuevos:
+                self._conn.execute(
+                    "UPDATE llamadas SET ultimo_turno_en=?, n_turnos=? WHERE llamada_id=?",
+                    (ahora, len(turnos), llamada_id),
+                )
+            self._conn.commit()
+
+        return len(turnos)
+
     def registrar_incidente(self, llamada_id: str, tipo: str, detalle: str) -> None:
         with self._lock:
             self._conn.execute(
@@ -136,30 +308,47 @@ class EscalationService:
     def cerrar_llamada(
         self,
         llamada_id: str,
-        policy: DialogPolicy,
+        policy: ContextoCierre | DialogPolicy,
         decision: TriageDecision,
         citas: list[dict],
+        motivo: str = CIERRE_NORMAL,
+        alertar: bool = True,
     ) -> dict:
-        """Persiste el resumen y, si corresponde, crea el ticket de alerta."""
+        """Persiste el resumen y, si corresponde, crea el ticket de alerta.
+
+        `motivo` distingue el cierre normal del que el sistema tuvo que forzar
+        porque nadie lo cerro -- se colgo la llamada, expiro la inactividad, o el
+        proceso se reinicio con la llamada abierta. En los tres casos el resumen y
+        el ticket se producen igual: una bandera roja detectada no depende de que
+        la llamada termine bien.
+
+        `alertar=False` es para la llamada en la que el paciente nunca hablo. El
+        resumen se escribe -- queda constancia del intento -- pero no se crea alerta
+        clinica, porque no hay nada que triar. Ver `CIERRE_SIN_CONTACTO`.
+        """
 
         resumen = self.construir_resumen(llamada_id, policy, decision, citas)
+        resumen["_centinela"]["cierre_motivo"] = motivo
         transcripcion = self._transcribir(policy)
         ahora = datetime.now(timezone.utc).isoformat()
 
         with self._lock:
             self._conn.execute(
                 "UPDATE llamadas SET terminada_en=?, nivel_final=?, version_reglas=?,"
-                " n_turnos=?, resumen_json=?, transcripcion=? WHERE llamada_id=?",
+                " n_turnos=?, resumen_json=?, transcripcion=?, cierre_motivo=?"
+                " WHERE llamada_id=?",
                 (
                     ahora, decision.nivel.value, decision.version_reglas,
                     len(policy.turnos),
                     json.dumps(resumen, indent=2, ensure_ascii=False),
-                    transcripcion, llamada_id,
+                    transcripcion, motivo, llamada_id,
                 ),
             )
 
+            self._guardar_mediciones(llamada_id, policy, ahora)
+
             ticket = None
-            if decision.escala:
+            if decision.escala and alertar:
                 ticket = self._crear_ticket(llamada_id, policy, decision, citas, resumen)
 
             for inc in policy.incidentes:
@@ -172,6 +361,143 @@ class EscalationService:
 
         return {"resumen": resumen, "ticket": ticket}
 
+    def escalar_ahora(
+        self,
+        llamada_id: str,
+        policy: ContextoCierre | DialogPolicy,
+        decision: TriageDecision,
+        citas: list[dict],
+    ) -> dict | None:
+        """Crea el ticket en el turno en que aparece la bandera, no al cerrar.
+
+        Es el arreglo del agujero central del escalamiento. El ticket se creaba
+        solo en `cerrar_llamada`, asi que una llamada que se cortaba justo despues
+        de que el paciente reportara secrecion purulenta no producia NADA: ni
+        resumen ni alerta. El camino mas probable de todos -- el paciente cuelga --
+        era el que se perdia el dato.
+
+        Idempotente: el `ticket_id` se deriva de la llamada y del nivel, y el ticket
+        se refresca al cerrar sin perder el acuse, asi que crearlo aqui y volver a
+        escribirlo despues deja una sola alerta con la informacion mas completa.
+
+        **Solo se anticipa el ROJO**, y la razon es medida, no estetica. A mitad de
+        llamada el motor devuelve AMARILLO provisional en cuanto le falta un dominio
+        por preguntar -- que es el estado normal del turno 1 de cualquier llamada.
+        Anticipar tambien el amarillo llenaba la bandeja con un ticket por llamada,
+        y una bandeja con ruido es una bandeja que nadie lee.
+
+        El amarillo no necesita anticiparse: significa "contacto de enfermeria en 24
+        horas", y su ticket se crea al cerrar. El cierre esta garantizado por los tres
+        caminos forzados (socket caido, inactividad, reinicio), asi que la alerta sale
+        igual. Lo que no puede esperar es el rojo.
+        """
+
+        creado: dict | None = None
+        if decision.nivel is Nivel.ROJO:
+            resumen = self.construir_resumen(llamada_id, policy, decision, citas)
+            with self._lock:
+                creado = self._crear_ticket(llamada_id, policy, decision, citas, resumen)
+                self._conn.commit()
+        return creado
+
+    def cerrar_por_interrupcion(
+        self,
+        llamada_id: str,
+        policy: DialogPolicy,
+        motivo: str,
+    ) -> dict:
+        """Cierra una llamada que nadie cerro, por el mismo camino que el cierre normal.
+
+        Con dominios sin responder el motor cierra en AMARILLO
+        (`triage_engine._dominios_por_indagar`), que es la conducta correcta: no se
+        puede descartar lo que no se llego a preguntar.
+        """
+
+        accion = policy.cerrar_ahora()
+        decision = accion.decision or policy.decision_vigente
+        cierre = self.cerrar_llamada(llamada_id, policy, decision, accion.citas, motivo)
+        self.registrar_incidente(
+            llamada_id, "cierre_forzado",
+            f"llamada cerrada por el sistema ({motivo}) tras {len(policy.turnos)} turnos",
+        )
+        return cierre
+
+    # ------------------------------------------------------------------
+
+    def llamadas_sin_cerrar(
+        self, limite: int = 200, excluir: tuple[str, ...] = ()
+    ) -> list[dict]:
+        """Llamadas con `terminada_en` en NULL: las que nadie cerro.
+
+        `excluir` es obligatorio en la practica cuando el proceso esta sirviendo: una
+        llamada EN CURSO tambien tiene `terminada_en` en NULL, y recuperarla seria
+        cerrarle la llamada al paciente mientras habla.
+        """
+
+        sql = (
+            "SELECT llamada_id, paciente_id, nombre, procedimiento, dia_postop,"
+            " iniciada_en, ultimo_turno_en FROM llamadas WHERE terminada_en IS NULL"
+        )
+        params: list[object] = []
+        if excluir:
+            sql += " AND llamada_id NOT IN (" + ",".join("?" * len(excluir)) + ")"
+            params.extend(excluir)
+        sql += " ORDER BY iniciada_en ASC LIMIT ?"
+        params.append(limite)
+        return [dict(f) for f in self._conn.execute(sql, params).fetchall()]
+
+    def contexto_desde_registro(self, llamada_id: str) -> ContextoCierre | None:
+        """Reconstruye lo justo para cerrar una llamada que sobrevivio a un reinicio.
+
+        El estado clinico sale del ultimo turno que alcanzo a escribirse. Si no hay
+        ningun turno con estado, se cierra con el estado vacio: seis dominios sin
+        responder, que el motor traduce a AMARILLO. Es el resultado correcto -- de
+        esa llamada no se sabe nada.
+        """
+
+        fila = self._conn.execute(
+            "SELECT * FROM llamadas WHERE llamada_id = ?", (llamada_id,)
+        ).fetchone()
+
+        contexto: ContextoCierre | None = None
+        if fila is not None:
+            turnos_db = self._conn.execute(
+                "SELECT turno_idx, hablante, texto, momento, estado_json FROM turnos"
+                " WHERE llamada_id = ? ORDER BY turno_idx ASC, hablante ASC",
+                (llamada_id,),
+            ).fetchall()
+
+            estado = ClinicalState()
+            for t in turnos_db:
+                if t["estado_json"]:
+                    estado = ClinicalState.model_validate_json(t["estado_json"])
+
+            # Si no hay ni un turno del paciente, la llamada no llego a ocurrir. Es
+            # lo que distingue un cierre `sin_contacto` de uno interrumpido.
+            hubo_paciente = any(t["hablante"] == "paciente" for t in turnos_db)
+
+            contexto = ContextoCierre(
+                hubo_contacto=hubo_paciente,
+                paciente=Paciente(
+                    paciente_id=fila["paciente_id"],
+                    nombre=fila["nombre"],
+                    procedimiento=fila["procedimiento"],
+                    dia_postop=fila["dia_postop"],
+                ),
+                estado=estado,
+                turnos=[
+                    TurnoRegistrado(
+                        turno_idx=t["turno_idx"],
+                        hablante=t["hablante"],
+                        texto=t["texto"],
+                        momento=t["momento"],
+                    )
+                    for t in turnos_db
+                ],
+                iniciada_en=datetime.fromisoformat(fila["iniciada_en"]),
+            )
+        return contexto
+
     def _crear_ticket(
         self,
         llamada_id: str,
@@ -182,21 +508,45 @@ class EscalationService:
     ) -> dict:
         ticket_id = f"TK-{llamada_id[:8]}-{decision.nivel.value[:1].upper()}"
         reglas = [r.model_dump() for r in decision.reglas_rojas + decision.banderas_amarillas]
-        hoja = self.hoja_legible(policy, decision, citas)
+        hoja = self.hoja_legible(policy, decision, citas, llamada_id)
         creado = datetime.now(timezone.utc).isoformat()
 
-        self._conn.execute(
-            "INSERT OR REPLACE INTO tickets(ticket_id, llamada_id, creado_en, nivel, estado,"
-            " motivo, reglas_json, citas_json, version_reglas, hoja_legible)"
-            " VALUES(?,?,?,?,?,?,?,?,?,?)",
-            (
-                ticket_id, llamada_id, creado, decision.nivel.value, "abierto",
-                decision.motivo,
-                json.dumps(reglas, ensure_ascii=False),
-                json.dumps(citas, ensure_ascii=False),
-                decision.version_reglas, hoja,
-            ),
-        )
+        # `INSERT OR REPLACE` reescribiria `estado` y `atendido_por`, y eso borraria
+        # el acuse de un humano que ya atendio la alerta durante la llamada. El
+        # UPDATE previo conserva lo que la persona hizo y solo refresca el contenido.
+        existente = self._conn.execute(
+            "SELECT estado, atendido_por, atendido_en, creado_en FROM tickets"
+            " WHERE ticket_id = ?", (ticket_id,)
+        ).fetchone()
+
+        if existente is None:
+            self._conn.execute(
+                "INSERT INTO tickets(ticket_id, llamada_id, creado_en, nivel, estado,"
+                " motivo, reglas_json, citas_json, version_reglas, hoja_legible)"
+                " VALUES(?,?,?,?,?,?,?,?,?,?)",
+                (
+                    ticket_id, llamada_id, creado, decision.nivel.value, "abierto",
+                    decision.motivo,
+                    json.dumps(reglas, ensure_ascii=False),
+                    json.dumps(citas, ensure_ascii=False),
+                    decision.version_reglas, hoja,
+                ),
+            )
+        else:
+            creado = existente["creado_en"]
+            self._conn.execute(
+                "UPDATE tickets SET nivel=?, motivo=?, reglas_json=?, citas_json=?,"
+                " version_reglas=?, hoja_legible=? WHERE ticket_id=?",
+                (
+                    decision.nivel.value, decision.motivo,
+                    json.dumps(reglas, ensure_ascii=False),
+                    json.dumps(citas, ensure_ascii=False),
+                    decision.version_reglas, hoja, ticket_id,
+                ),
+            )
+
+        self._encolar_entregas(ticket_id)
+
         return {
             "ticket_id": ticket_id,
             "nivel": decision.nivel.value,
@@ -206,22 +556,210 @@ class EscalationService:
         }
 
     # ------------------------------------------------------------------
+    # Serie de mediciones por paciente
+    # ------------------------------------------------------------------
+
+    def _guardar_mediciones(
+        self, llamada_id: str, policy: ContextoCierre | DialogPolicy, ahora: str
+    ) -> None:
+        """Materializa el cuadro de esta llamada como serie consultable."""
+
+        p = policy.paciente
+        for dominio in DOMINIOS_RESUMEN:
+            obs = policy.estado.observacion(dominio)
+            valor = None if obs.falta else str(obs.valor)
+            self._conn.execute(
+                "INSERT OR REPLACE INTO mediciones(llamada_id, paciente_id, dia_postop,"
+                " dominio, valor, medido_en) VALUES(?,?,?,?,?,?)",
+                (llamada_id, p.paciente_id, p.dia_postop, dominio, valor, ahora),
+            )
+
+    def historial(
+        self, paciente_id: str, antes_de_dia: int | None = None, excluir: str = ""
+    ) -> list[dict]:
+        """Las mediciones anteriores de este paciente, en orden de dia postoperatorio.
+
+        `excluir` deja fuera la llamada en curso, que es lo que se quiere al pedir
+        "lo que sabiamos antes de hoy".
+        """
+
+        sql = (
+            "SELECT llamada_id, dia_postop, dominio, valor, medido_en FROM mediciones"
+            " WHERE paciente_id = ? AND valor IS NOT NULL"
+        )
+        params: list[object] = [paciente_id]
+        if antes_de_dia is not None:
+            sql += " AND dia_postop < ?"
+            params.append(antes_de_dia)
+        if excluir:
+            sql += " AND llamada_id <> ?"
+            params.append(excluir)
+        sql += " ORDER BY dia_postop ASC, dominio ASC"
+        return [dict(f) for f in self._conn.execute(sql, params).fetchall()]
+
+    def serie_por_dominio(
+        self, paciente_id: str, antes_de_dia: int | None = None, excluir: str = ""
+    ) -> dict[str, list[tuple[int, str]]]:
+        """El historial agrupado: dominio -> [(dia, valor), ...]."""
+
+        agrupado: dict[str, list[tuple[int, str]]] = {}
+        for m in self.historial(paciente_id, antes_de_dia, excluir):
+            agrupado.setdefault(m["dominio"], []).append((m["dia_postop"], m["valor"]))
+        return agrupado
+
+    # ------------------------------------------------------------------
+    # Outbox de entrega
+    #
+    # El ticket y su encolado se escriben en la misma transaccion que el cierre,
+    # asi que no existe el estado "hay alerta pero nadie la va a entregar". El
+    # despachador (escalation/despacho.py) es el unico que consume esta cola.
+    # ------------------------------------------------------------------
+
+    def registrar_canales(self, nombres: tuple[str, ...]) -> None:
+        """Canales por los que hay que entregar cada alerta nueva."""
+
+        self.canales = tuple(nombres)
+
+    def _encolar_entregas(self, ticket_id: str) -> None:
+        ahora = datetime.now(timezone.utc).isoformat()
+        for canal in getattr(self, "canales", ("archivo",)):
+            self._conn.execute(
+                "INSERT OR IGNORE INTO entregas(ticket_id, canal, estado, creado_en,"
+                " proximo_intento_en) VALUES(?,?,?,?,?)",
+                (ticket_id, canal, "pendiente", ahora, ahora),
+            )
+
+    def entregas_pendientes(self, limite: int = 20) -> list[dict]:
+        ahora = datetime.now(timezone.utc).isoformat()
+        filas = self._conn.execute(
+            "SELECT e.*, t.nivel, t.llamada_id, t.motivo, t.hoja_legible"
+            " FROM entregas e JOIN tickets t ON t.ticket_id = e.ticket_id"
+            " WHERE e.estado = 'pendiente' AND e.proximo_intento_en <= ?"
+            " ORDER BY t.nivel = 'rojo' DESC, e.creado_en ASC LIMIT ?",
+            (ahora, limite),
+        ).fetchall()
+        return [dict(f) for f in filas]
+
+    def marcar_entregada(self, ticket_id: str, canal: str) -> None:
+        ahora = datetime.now(timezone.utc).isoformat()
+        with self._lock:
+            self._conn.execute(
+                "UPDATE entregas SET estado='entregado', entregado_en=?, ultimo_error=NULL,"
+                " intentos=intentos+1 WHERE ticket_id=? AND canal=?",
+                (ahora, ticket_id, canal),
+            )
+            self._conn.commit()
+
+    def marcar_fallida(self, ticket_id: str, canal: str, error: str) -> None:
+        """Reprograma el intento. Solo se rinde tras `MAX_INTENTOS`, y lo deja dicho."""
+
+        with self._lock:
+            fila = self._conn.execute(
+                "SELECT intentos FROM entregas WHERE ticket_id=? AND canal=?",
+                (ticket_id, canal),
+            ).fetchone()
+            intentos = (fila["intentos"] if fila else 0) + 1
+            espera = min(ESPERA_BASE_S * (2 ** (intentos - 1)), ESPERA_MAXIMA_S)
+            proximo = datetime.now(timezone.utc) + timedelta(seconds=espera)
+            estado = "agotado" if intentos >= MAX_INTENTOS else "pendiente"
+            self._conn.execute(
+                "UPDATE entregas SET estado=?, intentos=?, proximo_intento_en=?,"
+                " ultimo_error=? WHERE ticket_id=? AND canal=?",
+                (estado, intentos, proximo.isoformat(), error[:400], ticket_id, canal),
+            )
+            self._conn.commit()
+
+    def entregas_de(self, ticket_id: str) -> list[dict]:
+        filas = self._conn.execute(
+            "SELECT canal, estado, intentos, creado_en, entregado_en, ultimo_error,"
+            " proximo_intento_en FROM entregas WHERE ticket_id=? ORDER BY canal",
+            (ticket_id,),
+        ).fetchall()
+        return [dict(f) for f in filas]
+
+    # ------------------------------------------------------------------
+    # Acuse y plazos
+    # ------------------------------------------------------------------
+
+    def atender_ticket(self, ticket_id: str, quien: str) -> dict | None:
+        """Acusa recibo. Es lo que convierte una bandeja en un turno de trabajo."""
+
+        ahora = datetime.now(timezone.utc).isoformat()
+        with self._lock:
+            cur = self._conn.execute(
+                "UPDATE tickets SET estado='atendido', atendido_por=?, atendido_en=?"
+                " WHERE ticket_id=? AND estado <> 'atendido'",
+                (quien, ahora, ticket_id),
+            )
+            self._conn.commit()
+            cambiado = cur.rowcount > 0
+
+        atendido: dict | None = None
+        if cambiado:
+            fila = self._conn.execute(
+                "SELECT * FROM tickets WHERE ticket_id=?", (ticket_id,)
+            ).fetchone()
+            atendido = self._ticket_dict(fila) if fila else None
+        return atendido
+
+    def alertas_vencidas(
+        self,
+        sla_rojo_min: int = SLA_ROJO_MINUTOS,
+        sla_amarillo_h: int = SLA_AMARILLO_HORAS,
+    ) -> list[dict]:
+        """Tickets sin acuse fuera de plazo.
+
+        Sin esto, la bandeja crece y nadie se entera: hoy hay 83 tickets abiertos y
+        cero atendidos, y el sistema no lo dice en ninguna parte.
+        """
+
+        ahora = datetime.now(timezone.utc)
+        limite_rojo = (ahora - timedelta(minutes=sla_rojo_min)).isoformat()
+        limite_amarillo = (ahora - timedelta(hours=sla_amarillo_h)).isoformat()
+        filas = self._conn.execute(
+            "SELECT * FROM tickets WHERE estado <> 'atendido' AND ("
+            "  (nivel = 'rojo' AND creado_en <= ?)"
+            "  OR (nivel = 'amarillo' AND creado_en <= ?))"
+            " ORDER BY nivel = 'rojo' DESC, creado_en ASC",
+            (limite_rojo, limite_amarillo),
+        ).fetchall()
+        return [self._ticket_dict(f) for f in filas]
+
+    def tickets_sin_acuse_de(self, paciente_id: str, nivel: str = "rojo") -> list[dict]:
+        """Alertas previas de este paciente que nadie atendio todavia.
+
+        Se consulta al iniciar una llamada nueva: un rojo del dia 7 sin atender
+        cuando llega la llamada del dia 14 es exactamente lo que no puede pasar en
+        silencio.
+        """
+
+        filas = self._conn.execute(
+            "SELECT t.* FROM tickets t JOIN llamadas l ON l.llamada_id = t.llamada_id"
+            " WHERE l.paciente_id = ? AND t.nivel = ? AND t.estado <> 'atendido'"
+            " ORDER BY t.creado_en DESC",
+            (paciente_id, nivel),
+        ).fetchall()
+        return [self._ticket_dict(f) for f in filas]
+
+    # ------------------------------------------------------------------
     # Resumen con forma FHIR
     # ------------------------------------------------------------------
 
     def construir_resumen(
         self,
         llamada_id: str,
-        policy: DialogPolicy,
+        policy: ContextoCierre | DialogPolicy,
         decision: TriageDecision,
         citas: list[dict],
     ) -> dict:
         p = policy.paciente
         e = policy.estado
         ahora = datetime.now(timezone.utc).isoformat()
+        serie = self.serie_por_dominio(p.paciente_id, p.dia_postop, excluir=llamada_id)
+        alertas_previas = self.tickets_sin_acuse_de(p.paciente_id)
 
         observaciones = []
-        for dominio in ("dolor", "fiebre", "movilidad", "herida", "apetito", "sueno"):
+        for dominio in DOMINIOS_RESUMEN:
             obs = e.observacion(dominio)
             campo = {
                 "dolor": "dolor_nrs", "fiebre": "fiebre_c", "movilidad": "movilidad",
@@ -334,6 +872,25 @@ class EscalationService:
                 "proximos_pasos": self._proximos_pasos(decision),
                 "consultas_rag": policy.consultas_rag,
                 "n_turnos": len(policy.turnos),
+                # La serie de las llamadas anteriores del mismo paciente. Va al
+                # resumen y a la hoja de traspaso, no a una regla: sobre las 40
+                # trayectorias oficiales una regla de delta no anticipa nada
+                # (`eval/tendencia.py`), pero un dolor que va 4 -> 4 -> 9 es lo
+                # primero que el humano que recibe la alerta necesita ver.
+                "historial_previo": {
+                    dominio: [{"dia": d, "valor": v} for d, v in valores]
+                    for dominio, valores in serie.items()
+                },
+                "alertas_previas_sin_acuse": [
+                    {
+                        "ticket_id": t["ticket_id"],
+                        "nivel": t["nivel"],
+                        "creado_en": t["creado_en"],
+                        "motivo": t["motivo"],
+                    }
+                    for t in alertas_previas
+                    if t["llamada_id"] != llamada_id
+                ],
             },
         }
 
@@ -376,10 +933,15 @@ class EscalationService:
     # ------------------------------------------------------------------
 
     def hoja_legible(
-        self, policy: DialogPolicy, decision: TriageDecision, citas: list[dict]
+        self,
+        policy: ContextoCierre | DialogPolicy,
+        decision: TriageDecision,
+        citas: list[dict],
+        llamada_id: str = "",
     ) -> str:
         p = policy.paciente
         e = policy.estado
+        serie = self.serie_por_dominio(p.paciente_id, p.dia_postop, excluir=llamada_id)
         L: list[str] = []
 
         etiqueta = {"rojo": "ALERTA ROJA", "amarillo": "SEGUIMIENTO", "verde": "SIN HALLAZGOS"}
@@ -395,15 +957,21 @@ class EscalationService:
             L.append(f"EPS / ciudad  : {p.eps}  -  {p.ciudad or '?'}")
         L.append("")
         L.append("CUADRO REPORTADO POR EL PACIENTE")
-        for dominio in ("dolor", "fiebre", "movilidad", "herida", "apetito", "sueno"):
+        for dominio in DOMINIOS_RESUMEN:
             obs = e.observacion(dominio)
+            previo = serie.get(dominio, [])
+            # La serie de dias anteriores al lado del valor de hoy. Un 9 no dice lo
+            # mismo si venia de un 4 que si venia de un 8.
+            historia = ""
+            if previo:
+                historia = "   [" + " · ".join(f"d{d}: {v}" for d, v in previo) + "]"
             if obs.conocido:
                 cita = obs.procedencia.cita_paciente if obs.procedencia else ""
-                L.append(f"  {dominio:10s}: {obs.valor}")
+                L.append(f"  {dominio:10s}: {obs.valor}{historia}")
                 if cita:
                     L.append(f"              (dijo: \"{cita[:110]}\")")
             else:
-                L.append(f"  {dominio:10s}: NO REPORTADO")
+                L.append(f"  {dominio:10s}: NO REPORTADO{historia}")
         if e.fiebre_subjetiva and e.fiebre_c.falta:
             L.append("  nota      : refiere sensacion febril sin medicion objetiva")
         if e.sintomas_libres:
@@ -424,6 +992,20 @@ class EscalationService:
             L.append("  Banderas de vigilancia:")
             for r in decision.banderas_amarillas:
                 L.append(f"    - [{r.codigo}] {r.descripcion} (observado: {r.valor_observado})")
+        # Alertas anteriores de este mismo paciente que nadie atendio. Va antes de
+        # las preguntas pendientes porque es lo mas urgente que puede aparecer en
+        # esta hoja: significa que el sistema ya aviso y no paso nada.
+        previas = [
+            t for t in self.tickets_sin_acuse_de(p.paciente_id)
+            if t["llamada_id"] != llamada_id
+        ]
+        if previas:
+            L.append("")
+            L.append("  ALERTAS ANTERIORES DE ESTE PACIENTE SIN ACUSE:")
+            for t in previas:
+                L.append(f"    - [{t['ticket_id']}] {t['nivel'].upper()} del {t['creado_en'][:16]}")
+                L.append(f"        {t['motivo'][:110]}")
+
         if policy.preguntas_sin_responder:
             L.append("")
             L.append("  PREGUNTAS DEL PACIENTE QUE QUEDARON SIN RESPONDER:")
@@ -449,7 +1031,7 @@ class EscalationService:
         return "\n".join(L)
 
     @staticmethod
-    def _transcribir(policy: DialogPolicy) -> str:
+    def _transcribir(policy: ContextoCierre | DialogPolicy) -> str:
         lineas = [
             f"[{t.turno_idx:02d}] {t.hablante:8s} | {t.texto}"
             for t in policy.turnos
@@ -470,7 +1052,15 @@ class EscalationService:
             filas = self._conn.execute(
                 "SELECT * FROM tickets ORDER BY creado_en DESC LIMIT ?", (limite,)
             ).fetchall()
-        return [self._ticket_dict(f) for f in filas]
+
+        # El estado de entrega viaja con el ticket: en la consola, "hay alerta" y
+        # "la alerta salio" son dos hechos distintos y hay que poder distinguirlos.
+        salida = []
+        for f in filas:
+            d = self._ticket_dict(f)
+            d["entregas"] = self.entregas_de(d["ticket_id"])
+            salida.append(d)
+        return salida
 
     def llamadas(self, limite: int = 50) -> list[dict]:
         filas = self._conn.execute(

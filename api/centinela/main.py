@@ -20,7 +20,7 @@ import asyncio
 import json
 import uuid
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import numpy as np
@@ -43,10 +43,18 @@ from .clinical.thresholds import UMBRALES_ROJOS, BANDERAS_AMARILLAS
 from .clinical.triage_engine import TriageEngine
 from .config import config
 from .dialog import script as S
-from .dialog.policy import DialogPolicy, Paciente
-from .escalation.service import EscalationService
+from .dialog.policy import DialogPolicy, EstadoLlamada, Paciente
+from .escalation.despacho import Despachador, canales_desde_config
+from .escalation.service import (
+    CIERRE_INTERRUMPIDA,
+    CIERRE_REINICIO,
+    CIERRE_SIN_CONTACTO,
+    CIERRE_TIMEOUT,
+    EscalationService,
+)
 from .llm.backend import LLMBackend
 from .models import Cita
+from .obs.log import log
 from .obs.metrics import Cronometro, MetricsCollector
 from .pruebas import POR_ID as SUITES_POR_ID, CorredorPruebas
 from .rag.answerer import ResponderClinico
@@ -59,6 +67,15 @@ from .stt.whisper import WhisperSTT, pcm16_a_float32
 from .tts.piper import PiperTTS, concatenar_wav
 
 RAIZ = Path(__file__).resolve().parents[2]
+
+# Cada cuanto se revisa si hay llamadas abandonadas. Corto frente al timeout de la
+# llamada para que el cierre no se retrase mucho mas alla del plazo configurado.
+INTERVALO_BARRIDO_S = 30
+
+# Tope de llamadas colgadas que se recuperan durante el arranque. El resto lo recoge
+# el barredor con el servidor ya sirviendo: la compuerta G2 mide el tiempo de
+# arranque y es eliminatoria.
+MAX_RECUPERAR_AL_ARRANCAR = 50
 
 # Estado del proceso. Se inicializa en el lifespan.
 E: dict = {}
@@ -84,8 +101,20 @@ async def lifespan(app: FastAPI):
     E["escalation"] = EscalationService(config.dir_runtime)
     E["metrics"] = MetricsCollector(config.ruta_metricas)
     E["llamadas"] = {}
+    # Marca de agua de turnos persistidos por llamada. Evita reescribir la lista
+    # completa en cada turno, que serian cientos de fsync en el camino cronometrado.
+    E["marca_turnos"] = {}
     E["motor"] = TriageEngine(citas_umbrales=_cargar_citas_umbrales())
     E["arrancado_en"] = datetime.now(timezone.utc).isoformat()
+
+    # Entrega de alertas. Se monta antes de recuperar las llamadas colgadas para que
+    # los tickets que salgan de esa recuperacion ya encuentren la cola armada.
+    E["despachador"] = Despachador(E["escalation"], canales_desde_config(config))
+    E["recuperadas"] = _recuperar_llamadas_colgadas()
+    E["tareas"] = [
+        asyncio.create_task(E["despachador"].correr()),
+        asyncio.create_task(_barrer_llamadas_inactivas()),
+    ]
 
     if config.calentar_al_arrancar:
         # Todo el calentamiento fuera del camino critico del primer turno. Sin
@@ -102,7 +131,23 @@ async def lifespan(app: FastAPI):
     else:
         E["prerender"] = {"aviso": "pre-renderizado desactivado o Piper no disponible"}
 
+    log("arrancado", llamadas_recuperadas=E["recuperadas"],
+        canales=list(E["despachador"].canales))
+
     yield
+
+    # Apagado ordenado. Primero las llamadas en vuelo -- si el proceso se para con
+    # una llamada abierta que ya tenia una bandera, la alerta tiene que salir --
+    # y despues un ultimo barrido de la cola de entregas.
+    for tarea in E.get("tareas", []):
+        tarea.cancel()
+    _cerrar_llamadas_en_vuelo(CIERRE_REINICIO)
+    try:
+        await asyncio.wait_for(E["despachador"].paso(), timeout=10)
+    except Exception:  # noqa: BLE001
+        # Lo que no salga queda en la cola con su reintento pendiente: el proximo
+        # arranque lo encuentra. Perder el apagado no puede perder la alerta.
+        pass
 
     await E["llm"].cerrar()
     await E["tts"].cerrar()
@@ -115,6 +160,123 @@ async def _calentar_llm() -> None:
         await E["llm"].calentar()
     except Exception:  # noqa: BLE001
         pass
+
+
+# ==========================================================================
+# Que ninguna llamada quede sin cerrar
+#
+# El ticket se creaba solo al cerrar la llamada, y nadie garantizaba el cierre. Una
+# llamada que se corta despues de una bandera roja no producia ni resumen ni alerta.
+# Tres redes cubren los tres modos de fallo: el socket que se cae, el cliente que
+# desaparece sin avisar, y el proceso que se reinicia con llamadas abiertas.
+# ==========================================================================
+
+def _forzar_cierre(llamada_id: str, policy: DialogPolicy, motivo: str) -> bool:
+    """Cierra una llamada viva y la saca de memoria.
+
+    La comprobacion de fase no es defensiva de mas: una llamada cerrada por el
+    camino normal se queda en `E["llamadas"]`, asi que sin ella el barredor
+    reescribiria su cierre con motivo `timeout` media hora despues.
+    """
+
+    cerrada = False
+    if policy.fase is EstadoLlamada.TERMINADA:
+        E["llamadas"].pop(llamada_id, None)
+    else:
+        try:
+            E["escalation"].cerrar_por_interrupcion(llamada_id, policy, motivo)
+        except Exception as e:  # noqa: BLE001
+            log("cierre_forzado_fallo", nivel="error", llamada_id=llamada_id,
+                motivo=motivo, error=f"{type(e).__name__}: {e}")
+        else:
+            cerrada = True
+            E["llamadas"].pop(llamada_id, None)
+            log("llamada_cerrada_por_el_sistema", llamada_id=llamada_id, motivo=motivo,
+                turnos=len(policy.turnos))
+    return cerrada
+
+
+def _cerrar_llamadas_en_vuelo(motivo: str) -> int:
+    """Cierra las llamadas que este proceso tiene vivas en memoria."""
+
+    cerradas = 0
+    for llamada_id, policy in list(E["llamadas"].items()):
+        if _forzar_cierre(llamada_id, policy, motivo):
+            cerradas += 1
+    return cerradas
+
+
+def _recuperar_llamadas_colgadas() -> int:
+    """Cierra al arrancar lo que un proceso anterior dejo abierto.
+
+    El estado clinico se reconstruye desde la tabla `turnos`. Si de una llamada no se
+    alcanzo a escribir ningun turno, se cierra con el estado vacio: seis dominios sin
+    responder, que el motor traduce a AMARILLO. Es el resultado correcto, porque de
+    esa llamada no se sabe nada.
+
+    Va acotado: la compuerta G2 es eliminatoria y el arranque no puede alargarse por
+    una base de datos con historia. Lo que no entre en este arranque lo recoge el
+    barredor, que corre ya con el servidor sirviendo.
+    """
+
+    # Excluir las llamadas vivas de este proceso no es un detalle: una llamada en
+    # curso tambien tiene `terminada_en` en NULL, y recuperarla seria colgarle el
+    # telefono al paciente mientras habla.
+    pendientes = E["escalation"].llamadas_sin_cerrar(
+        limite=MAX_RECUPERAR_AL_ARRANCAR, excluir=tuple(E["llamadas"])
+    )
+    recuperadas = 0
+
+    sin_contacto = 0
+
+    for fila in pendientes:
+        contexto = E["escalation"].contexto_desde_registro(fila["llamada_id"])
+        if contexto is not None:
+            decision = E["motor"].evaluar(contexto.estado, cerrar=True)
+            # Una llamada sin ningun turno del paciente no produce alerta clinica: no
+            # se puede triar a alguien con quien no se hablo. Queda el resumen como
+            # constancia del intento, y el trabajo pendiente es volver a llamar.
+            motivo = CIERRE_REINICIO if contexto.hubo_contacto else CIERRE_SIN_CONTACTO
+            try:
+                E["escalation"].cerrar_llamada(
+                    fila["llamada_id"], contexto, decision, [], motivo,
+                    alertar=contexto.hubo_contacto,
+                )
+            except Exception as e:  # noqa: BLE001
+                log("recuperacion_fallo", nivel="error",
+                    llamada_id=fila["llamada_id"], error=f"{type(e).__name__}: {e}")
+            else:
+                recuperadas += 1
+                if not contexto.hubo_contacto:
+                    sin_contacto += 1
+
+    if recuperadas:
+        log("llamadas_recuperadas_al_arrancar", cantidad=recuperadas,
+            sin_contacto=sin_contacto,
+            quedan=max(0, len(pendientes) - recuperadas))
+    return recuperadas
+
+
+async def _barrer_llamadas_inactivas() -> None:
+    """Cierra las llamadas que llevan demasiado tiempo sin un turno.
+
+    Cubre el caso que no cubre el handler del WebSocket: el cliente que desaparece
+    sin cerrar el socket -- pestana cerrada de golpe, red caida, portatil suspendido
+    -- y el camino HTTP, que no tiene socket que se caiga.
+    """
+
+    while True:
+        await asyncio.sleep(INTERVALO_BARRIDO_S)
+        limite = datetime.now(timezone.utc) - timedelta(seconds=config.timeout_llamada_s)
+        for llamada_id, policy in list(E["llamadas"].items()):
+            ultimo = policy.turnos[-1].momento if policy.turnos else None
+            visto = datetime.fromisoformat(ultimo) if ultimo else policy.iniciada_en
+            if visto < limite:
+                _forzar_cierre(llamada_id, policy, CIERRE_TIMEOUT)
+
+        # Lo que no entro en el tope del arranque. Aqui el servidor ya esta sirviendo,
+        # asi que el coste no lo paga la compuerta G2.
+        _recuperar_llamadas_colgadas()
 
 
 def _cargar_citas_umbrales() -> dict[str, Cita]:
@@ -443,6 +605,12 @@ class TurnoTexto(BaseModel):
     texto: str
 
 
+class AcuseTicket(BaseModel):
+    """Quien atiende la alerta. Un acuse anonimo no sirve para nada clinico."""
+
+    quien: str
+
+
 def _nueva_policy(datos: InicioLlamada) -> DialogPolicy:
     paciente = Paciente(
         paciente_id=datos.paciente_id,
@@ -526,17 +694,42 @@ async def _empaquetar_turno(llamada_id, policy, accion, crono, audio) -> dict:
     medicion.tts_desde_cache = all(f.clave for f in accion.fragmentos)
     E["metrics"].registrar(medicion)
 
+    # Los tres caminos de turno -- texto, audio HTTP y WebSocket -- pasan por aqui,
+    # asi que este es el sitio donde la llamada se vuelve durable.
+    decision = accion.decision or policy.decision_vigente
+    E["marca_turnos"][llamada_id] = E["escalation"].registrar_turnos(
+        llamada_id, policy.turnos,
+        desde=E["marca_turnos"].get(llamada_id, 0),
+        nivel=decision.nivel.value,
+        estado=policy.estado,
+    )
+
+    # El ticket nace con la bandera, no con el cierre. Es el arreglo del agujero
+    # central: antes, una llamada que se cortaba justo despues de que el paciente
+    # reportara secrecion purulenta no producia ni resumen ni alerta.
+    alerta = None
+    if decision.escala:
+        alerta = E["escalation"].escalar_ahora(llamada_id, policy, decision, accion.citas)
+        if alerta is not None:
+            log("alerta_creada", llamada_id=llamada_id, ticket=alerta["ticket_id"],
+                nivel_clinico=decision.nivel.value, turno=medicion.turno_idx)
+
     cierre = None
     if accion.llamada_terminada:
-        decision = accion.decision or policy.decision_vigente
         cierre = E["escalation"].cerrar_llamada(
             llamada_id, policy, decision, accion.citas
         )
+        # La policy se queda en memoria con `fase=TERMINADA` a proposito: la consola
+        # y los arneses todavia piden su traza. El barredor la retira cuando pasa el
+        # plazo de inactividad, y `_forzar_cierre` no la vuelve a cerrar porque
+        # comprueba la fase.
+        E["marca_turnos"].pop(llamada_id, None)
 
     for inc in ([accion.incidente_seguridad] if accion.incidente_seguridad else []):
         E["escalation"].registrar_incidente(llamada_id, "manipulacion", inc)
 
     return {
+        "alerta": alerta,
         "agente_dice": accion.texto_completo,
         "fragmentos": [
             {"texto": f.texto, "clave": f.clave, "citas": f.citas} for f in accion.fragmentos
@@ -615,6 +808,29 @@ async def listar_llamadas(limite: int = 50) -> dict:
     return {"llamadas": E["escalation"].llamadas(limite)}
 
 
+@app.get("/api/pacientes/{paciente_id}/historial")
+async def historial_paciente(paciente_id: str, antes_de_dia: int | None = None) -> dict:
+    """La serie de este paciente entre llamadas.
+
+    El dataset del reto trae cuatro llamadas por paciente (dias 1, 3, 7 y 14) y cada
+    una se evaluaba aislada. La serie no cambia la decision -- eso esta medido en
+    `eval/tendencia.py` -- pero es lo primero que necesita ver la persona que recibe
+    la alerta: un dolor que va 4 -> 4 -> 9 no se lee como un 9 suelto.
+    """
+
+    servicio = E["escalation"]
+    return {
+        "paciente_id": paciente_id,
+        "series": {
+            dominio: [{"dia": d, "valor": v} for d, v in valores]
+            for dominio, valores in servicio.serie_por_dominio(
+                paciente_id, antes_de_dia
+            ).items()
+        },
+        "alertas_sin_acuse": servicio.tickets_sin_acuse_de(paciente_id),
+    }
+
+
 @app.get("/api/llamadas/{llamada_id}/traza")
 async def traza(llamada_id: str) -> dict:
     """Todo lo que paso en la llamada, para que sea auditable sin leer logs."""
@@ -661,6 +877,50 @@ async def traza(llamada_id: str) -> dict:
 @app.get("/api/tickets")
 async def tickets(estado: str | None = None, limite: int = 50) -> dict:
     return {"tickets": E["escalation"].tickets(estado, limite)}
+
+
+@app.post("/api/tickets/{ticket_id}/atender")
+async def atender_ticket(ticket_id: str, cuerpo: AcuseTicket) -> dict:
+    """Acuse de recibo. Es lo que convierte una bandeja en un turno de trabajo.
+
+    Sin esto la bandeja solo crecia: el sistema tenia 83 tickets abiertos y cero
+    atendidos, y en ningun sitio decia que eso fuera un problema.
+    """
+
+    atendido = E["escalation"].atender_ticket(ticket_id, cuerpo.quien)
+    if atendido is None:
+        raise HTTPException(404, "ticket no encontrado o ya atendido")
+    log("alerta_atendida", ticket=ticket_id, por=cuerpo.quien,
+        nivel_clinico=atendido["nivel"])
+    return {"ticket": atendido}
+
+
+@app.get("/api/alertas")
+async def alertas() -> dict:
+    """Estado del escalamiento: que se entrego, que falta y que se paso de plazo.
+
+    Es la vista que responde la pregunta de operacion que importa -- *hay alguna
+    alerta roja que nadie haya atendido* -- sin tener que leer la base de datos.
+    """
+
+    servicio = E["escalation"]
+    vencidas = servicio.alertas_vencidas(config.sla_rojo_min, config.sla_amarillo_h)
+    abiertos = servicio.tickets(estado="abierto", limite=100)
+    return {
+        "sla": {
+            "rojo_minutos": config.sla_rojo_min,
+            "amarillo_horas": config.sla_amarillo_h,
+        },
+        "canales": list(E["despachador"].canales),
+        "entrega": {
+            "entregadas": E["despachador"].entregadas,
+            "fallidas": E["despachador"].fallidas,
+            "pendientes": len(servicio.entregas_pendientes(limite=500)),
+        },
+        "sin_acuse": len(abiertos),
+        "vencidas": vencidas,
+        "abiertos": abiertos,
+    }
 
 
 @app.get("/api/metricas")
@@ -973,11 +1233,23 @@ async def ws_llamada(ws: WebSocket, llamada_id: str) -> None:
                     await ws.send_json({"tipo": "pong"})
 
             elif mensaje.get("type") == "websocket.disconnect":
+                # El cliente se fue sin decir "cerrar". Mismo caso que
+                # `WebSocketDisconnect`, por otro camino: hay que cerrar la llamada.
+                _forzar_cierre(llamada_id, policy, CIERRE_INTERRUMPIDA)
                 break
 
     except WebSocketDisconnect:
-        pass
+        # Aqui habia un `pass`, y era el agujero mas grande del sistema: el paciente
+        # cuelga, el navegador se cierra o la red se cae, y la llamada se quedaba
+        # abierta para siempre. Sin cierre no habia resumen y no habia ticket --
+        # aunque la bandera roja ya se hubiera detectado tres turnos antes.
+        #
+        # Es el camino mas probable de todos: nadie pulsa "terminar llamada".
+        _forzar_cierre(llamada_id, policy, CIERRE_INTERRUMPIDA)
     except Exception as e:  # noqa: BLE001
+        log("ws_fallo", nivel="error", llamada_id=llamada_id,
+            error=f"{type(e).__name__}: {e}")
+        _forzar_cierre(llamada_id, policy, CIERRE_INTERRUMPIDA)
         try:
             await ws.send_json({"tipo": "error", "mensaje": f"{type(e).__name__}: {e}"})
         except Exception:  # noqa: BLE001

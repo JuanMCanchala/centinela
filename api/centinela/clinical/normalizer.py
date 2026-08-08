@@ -288,6 +288,17 @@ RE_TEMP_DECIMAL = re.compile(r"\b(3[5-9]|4[0-2])[.,]([0-9])\b")
 RE_TEMP_ENTERA = re.compile(r"\b(3[5-9]|4[0-2])\b(?!\s*[.,]?\s*\d)")
 RE_TEMP_Y_PICO = re.compile(r"\b(3[5-9])\s*(?:grados?\s*)?y\s*pico\b")
 
+# Magnitudes que se dicen con las mismas cifras que una temperatura. Es la unica
+# fuente real de confusion cuando el numero se acepta sin contexto: "tengo 38
+# anos", "hace 40 minutos", "peso 40 kilos". La unidad va siempre detras del
+# numero, asi que mirar lo que sigue al fragmento resuelve el caso completo.
+RE_UNIDAD_NO_TEMPERATURA = re.compile(
+    r"^\W*(?:anos?|meses|mes|semanas?|dias?|horas?|minutos?|min|segundos?|"
+    r"veces|vez|kilos?|kg|libras?|gramos?|gr|mg|miligramos?|mililitros?|ml|"
+    r"pastillas?|tabletas?|gotas?|cucharadas?|cuadras?|metros?|cm|centimetros?|"
+    r"mil|millones?|personas?|puntos?|por\s+ciento)\b"
+)
+
 CONTEXTO_TEMPERATURA = (
     "grado", "temperatura", "termometro", "fiebre", "calentura", "febril",
     "afiebrad", "calor", "escalofri",
@@ -335,6 +346,35 @@ class NumerosClinicos:
     fiebre_negada: bool = False
     evidencia_dolor: str = ""
     evidencia_temperatura: str = ""
+    # La temperatura llego sin que el turno hablara de fiebre y sin que fuera el
+    # dominio preguntado. Se acepta igual (ver `extraer_numeros`), pero queda
+    # marcado: es informacion util en la traza y lo que un test puede afirmar.
+    temperatura_fuera_de_dominio: bool = False
+
+
+def _mide_otra_cosa(base: str, fin: int) -> bool:
+    """True si detras del numero viene una unidad que no es una temperatura.
+
+    Es la unica guarda que hace falta para aceptar un numero con forma de
+    temperatura sin contexto ninguno: la unidad va siempre despues de la cifra.
+    """
+
+    return bool(RE_UNIDAD_NO_TEMPERATURA.match(base[fin:fin + 24]))
+
+
+def _primera_valida(patron: re.Pattern[str], base: str) -> re.Match[str] | None:
+    """La primera coincidencia que NO esta midiendo otra cosa.
+
+    Con `search` a secas se perdia el dato en un turno con dos cifras: "tengo 38
+    anos y me marco 39" descartaba el 38 por la unidad y no seguia buscando, asi
+    que la temperatura de verdad se caia. Hay que recorrer las candidatas.
+    """
+
+    valida: re.Match[str] | None = None
+    for m in patron.finditer(base):
+        if valida is None and not _mide_otra_cosa(base, m.end()):
+            valida = m
+    return valida
 
 
 def temperatura_en_palabras(base: str) -> tuple[float, str] | None:
@@ -352,9 +392,9 @@ def temperatura_en_palabras(base: str) -> tuple[float, str] | None:
     """
 
     resultado: tuple[float, str] | None = None
-    m = RE_TEMP_PALABRAS.search(base)
+    m = _primera_valida(RE_TEMP_PALABRAS, base)
 
-    if m:
+    if m is not None:
         valor = float(DECENAS[m.group(1)])
         if m.group(2):
             valor += PALABRA_A_NUMERO[m.group(2)]
@@ -365,6 +405,37 @@ def temperatura_en_palabras(base: str) -> tuple[float, str] | None:
             resultado = (valor, m.group(0))
 
     return resultado
+
+
+def buscar_temperatura(base: str) -> tuple[float, str] | None:
+    """La temperatura del turno, dicha en cifra o en letra.
+
+    Las cuatro formas van en orden de especificidad. El entero pelado va ultimo a
+    proposito: es la forma que mas se parece a otra magnitud, y por eso es la que
+    necesita la guarda de unidad.
+    """
+
+    encontrada: tuple[float, str] | None = None
+
+    m = _primera_valida(RE_TEMP_DECIMAL, base)
+    if m is not None:
+        encontrada = (float(f"{m.group(1)}.{m.group(2)}"), m.group(0))
+    else:
+        en_palabras = temperatura_en_palabras(base)
+        if en_palabras is not None:
+            encontrada = en_palabras
+        else:
+            m = RE_TEMP_Y_PICO.search(base)
+            if m is not None:
+                # "37 y pico" se interpreta como 37.5: es el punto medio del
+                # intervalo que el paciente esta describiendo.
+                encontrada = (float(m.group(1)) + 0.5, m.group(0))
+            else:
+                m = _primera_valida(RE_TEMP_ENTERA, base)
+                if m is not None:
+                    encontrada = (float(m.group(1)), m.group(0))
+
+    return encontrada
 
 
 def extraer_numeros(texto: str, dominio_objetivo: str = "") -> NumerosClinicos:
@@ -391,30 +462,31 @@ def extraer_numeros(texto: str, dominio_objetivo: str = "") -> NumerosClinicos:
     n = NumerosClinicos()
 
     # --- temperatura ---
+    #
+    # Tres fuentes de contexto, en orden de confianza. Las dos primeras estaban
+    # desde el principio; la tercera se anadio despues de verla fallar en una
+    # llamada de verdad.
+    #
+    #   1. El turno habla de temperatura: "38 de fiebre", "me dio calentura".
+    #   2. El agente acaba de preguntar por la fiebre.
+    #   3. Ninguna de las dos, pero el numero tiene forma de temperatura.
+    #
+    # La tercera existe porque dentro de este cuestionario un numero entre 35 y 42
+    # no puede ser otra cosa: la escala de dolor va de 0 a 10 y ningun otro dominio
+    # produce cifras. El paciente que responde "treinta y ocho" mientras el agente
+    # todavia pregunta por el sueno esta dando su temperatura, y descartarla era
+    # perder el dato que mas pesa en la decision -- justo el falso negativo que la
+    # rubrica llama catastrofico.
+    #
+    # `_mide_otra_cosa` cubre el unico falso positivo posible, que es la magnitud
+    # dicha con la misma cifra: "tengo 38 anos", "hace 40 minutos", "peso 40 kilos".
     hay_contexto_temp = any(t in base for t in CONTEXTO_TEMPERATURA)
     pregunta_por_fiebre = dominio_objetivo == "fiebre"
 
-    if hay_contexto_temp or pregunta_por_fiebre:
-        m = RE_TEMP_DECIMAL.search(base)
-        if m:
-            n.temperatura_c = float(f"{m.group(1)}.{m.group(2)}")
-            n.evidencia_temperatura = m.group(0)
-        else:
-            en_palabras = temperatura_en_palabras(base)
-            if en_palabras:
-                n.temperatura_c, n.evidencia_temperatura = en_palabras
-            else:
-                m = RE_TEMP_Y_PICO.search(base)
-                if m:
-                    # "37 y pico" se interpreta como 37.5: es el punto medio del
-                    # intervalo que el paciente esta describiendo.
-                    n.temperatura_c = float(m.group(1)) + 0.5
-                    n.evidencia_temperatura = m.group(0)
-                else:
-                    m = RE_TEMP_ENTERA.search(base)
-                    if m:
-                        n.temperatura_c = float(m.group(1))
-                        n.evidencia_temperatura = m.group(0)
+    encontrada = buscar_temperatura(base)
+    if encontrada is not None:
+        n.temperatura_c, n.evidencia_temperatura = encontrada
+        n.temperatura_fuera_de_dominio = not (hay_contexto_temp or pregunta_por_fiebre)
 
     n.fiebre_subjetiva = any(t in base for t in SINONIMOS_FIEBRE_SUBJETIVA)
     n.sin_termometro = any(t in base for t in SIN_TERMOMETRO)
