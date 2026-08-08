@@ -102,6 +102,13 @@ diagrama:
 cifras:
 	$(PY) scripts/verificar_cifras.py
 
+# Deja la consola limpia para grabar o demostrar. Respalda antes de borrar y no toca el
+# indice del corpus. Sin --aplicar solo enumera. Correr ANTES de medir las metricas de
+# la rubrica, no despues: vaciar el estado invalida la muestra que las sostiene.
+.PHONY: demo
+demo:
+	$(PY) scripts/preparar_demo.py
+
 .PHONY: g2
 g2:
 	powershell -ExecutionPolicy Bypass -File scripts/ensayo_g2.ps1

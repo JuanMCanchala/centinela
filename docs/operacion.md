@@ -121,6 +121,34 @@ sirviendo. Si el arranque se alarga, mirar cuántas quedan:
 SELECT COUNT(*) FROM llamadas WHERE terminada_en IS NULL;
 ```
 
+### Dejar la consola limpia para grabar o demostrar
+
+Correr las suites deja rastro legítimo: `make humo` abre llamadas, `make redteam` abre
+cuarenta y dos, y cada una que escala produce su alerta. Tras un día de desarrollo la
+bandeja tiene cientos de alertas sin acuse —todas correctas, todas de pruebas— y una
+consola con 300 alertas rojas fuera de plazo no se lee como un sistema que funciona: se
+lee como un sistema en crisis.
+
+```bash
+make demo                                  # enumera, no escribe
+python scripts/preparar_demo.py --aplicar  # respalda y vacía
+```
+
+Respalda con `.backup` antes de borrar, vacía las tablas de operación, y borra las hojas
+entregadas y el registro de métricas por turno. **No toca** el índice del corpus, los
+documentos subidos, el caché de audio ni los modelos.
+
+**El orden importa.** Vaciar el estado invalida la muestra que sostiene las métricas de
+la rúbrica, así que se limpia *antes* de medir y no después:
+
+```bash
+python scripts/preparar_demo.py --aplicar
+make up && make humo && make runtime && make metricas && make cifras
+```
+
+La última comprobación es la que cierra el círculo: `make cifras` falla si algún número
+del README o del informe dejó de cuadrar con la nueva medición.
+
 ### Respaldo
 
 La base de datos de llamadas es el registro clínico. `.backup` de SQLite es seguro con
