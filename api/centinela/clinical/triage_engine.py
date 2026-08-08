@@ -33,6 +33,7 @@ from ..models import (
     Sueno,
     TriageDecision,
 )
+from .tendencia import banderas_de_tendencia
 from .thresholds import (
     BANDERAS_AMARILLAS,
     UMBRALES_ROJOS,
@@ -62,12 +63,18 @@ class TriageEngine:
         estado: ClinicalState,
         estilo_paciente: str | None = None,
         cerrar: bool = False,
+        historia: dict | None = None,
     ) -> TriageDecision:
         """Clasifica el cuadro clinico en verde / amarillo / rojo.
 
         `cerrar=False` es la evaluacion en mitad de la llamada: si falta
         informacion, el motor devuelve `provisional=True` y la politica de
         dialogo vuelve a preguntar en vez de decidir a ciegas.
+
+        `historia` es la serie de las llamadas anteriores de este paciente. Sin ella
+        el motor se comporta exactamente igual que antes de que existiera, asi que el
+        replay de los 160 casos oficiales -- que evalua cada llamada aislada -- no se
+        mueve. Ver `clinical/tendencia.py` para lo que la medicion dijo sobre esto.
 
         `cerrar=True` es la evaluacion final, cuando ya no hay mas turnos
         disponibles y hay que comprometerse a un nivel. Ahi la ambiguedad se
@@ -86,14 +93,14 @@ class TriageEngine:
             decision = TriageDecision(
                 nivel=Nivel.ROJO,
                 reglas_rojas=rojas,
-                banderas_amarillas=self._banderas_amarillas(estado),
+                banderas_amarillas=self._banderas_amarillas(estado, historia),
                 dominios_por_indagar=[],
                 provisional=False,
                 motivo=self._motivo_rojo(rojas),
                 version_reglas=self.config.version,
             )
         else:
-            amarillas = self._banderas_amarillas(estado)
+            amarillas = self._banderas_amarillas(estado, historia)
             por_indagar = self._dominios_por_indagar(estado, amarillas, estilo_paciente)
 
             if len(amarillas) >= self.config.banderas_minimas:
@@ -194,7 +201,9 @@ class TriageEngine:
     # Banderas amarillas
     # ------------------------------------------------------------------
 
-    def _banderas_amarillas(self, estado: ClinicalState) -> list[RuleHit]:
+    def _banderas_amarillas(
+        self, estado: ClinicalState, historia: dict | None = None
+    ) -> list[RuleHit]:
         hits: list[RuleHit] = []
 
         dolor = estado.dolor_nrs
@@ -219,6 +228,10 @@ class TriageEngine:
         sueno = estado.sueno
         if not sueno.falta and sueno.valor == Sueno.MUY_ALTERADO.value:
             hits.append(self._hit_amarillo("A5_SUENO", sueno.valor))
+
+        # Salto respecto a la llamada anterior del mismo paciente. Sin historia no
+        # anade nada, que es el caso de toda evaluacion offline.
+        hits.extend(banderas_de_tendencia(estado, historia, self.citas_umbrales))
 
         return hits
 

@@ -149,10 +149,15 @@ class DialogPolicy:
         extractor: Extractor,
         motor: TriageEngine,
         responder_clinico=None,
+        historia: dict | None = None,
     ) -> None:
         self.paciente = paciente
         self.extractor = extractor
         self.motor = motor
+        # Serie de las llamadas anteriores de este paciente, tal como la devuelve
+        # `EscalationService.serie_por_dominio`. Sin ella el motor decide exactamente
+        # igual que antes; con ella puede ver un salto respecto al dia anterior.
+        self.historia = historia or {}
         # Inyectado: `rag.answerer.ResponderClinico.responder`. Se pasa como
         # dependencia para que la politica sea testeable sin RAG ni modelo.
         self.responder_clinico = responder_clinico
@@ -253,6 +258,7 @@ class DialogPolicy:
             self.estado,
             estilo_paciente=norm.registro.estilo_inferido,
             cerrar=False,
+            historia=self.historia,
         )
         self.decisiones.append(decision)
 
@@ -550,7 +556,7 @@ class DialogPolicy:
     # ------------------------------------------------------------------
 
     def _cerrar(self) -> list[Fragmento]:
-        final = self.motor.evaluar(self.estado, cerrar=True)
+        final = self.motor.evaluar(self.estado, cerrar=True, historia=self.historia)
         self.decisiones.append(final)
         self.fase = EstadoLlamada.TERMINADA
 
@@ -663,5 +669,7 @@ class DialogPolicy:
         if self.decisiones:
             decision = self.decisiones[-1]
         else:
-            decision = self.motor.evaluar(self.estado, cerrar=False)
+            decision = self.motor.evaluar(
+                self.estado, cerrar=False, historia=self.historia
+            )
         return decision

@@ -714,6 +714,7 @@
     pintarNivel("abierta");
     pintarTira();
     cargarCola();
+    cargarHistorial(e.detail.paciente);
   });
 
   document.addEventListener("centinela:turno", (e) => {
@@ -756,6 +757,257 @@
     pestanas.addEventListener("click", (e) => {
       const btn = e.target.closest(".pestana");
       if (btn && btn.dataset.vista === "pruebas") cargarSuites();
+      if (btn && btn.dataset.vista === "alertas") cargarAlertas();
+    });
+  }
+
+  /* ===================== HISTORIAL ENTRE LLAMADAS ==========================
+   *
+   * El dataset del reto trae cuatro llamadas por paciente (dias 1, 3, 7 y 14) y
+   * cada una se evaluaba aislada. Esta tabla NO cambia la decision: sobre las 40
+   * trayectorias oficiales una regla de delta no anticipa nada, y esta medido
+   * (`make tendencia`). Cambia como se lee el valor de hoy, que es lo que
+   * necesita la persona que atiende la alerta.
+   */
+
+  async function cargarHistorial(paciente) {
+    const bloque = $("#bloque-historial");
+    if (!bloque || !paciente) return;
+
+    let datos;
+    try {
+      datos = await pedir(
+        `/api/pacientes/${encodeURIComponent(paciente.paciente_id)}/historial`
+        + `?antes_de_dia=${encodeURIComponent(paciente.dia_postop)}`,
+      );
+    } catch {
+      bloque.hidden = true;
+      return;
+    }
+
+    const series = datos.series || {};
+    const previas = datos.alertas_sin_acuse || [];
+    const dominios = Object.keys(series);
+
+    // Sin nada anterior el bloque no aparece: la primera llamada de un paciente no
+    // tiene por que mostrar una tabla vacia.
+    if (!dominios.length && !previas.length) {
+      bloque.hidden = true;
+      return;
+    }
+    bloque.hidden = false;
+
+    // Se recorre `DOMINIOS` en vez de las claves que llegan para que el orden sea el
+    // del cuestionario y no el que decida la base de datos.
+    const tabla = $("#tabla-historial");
+    tabla.textContent = "";
+    DOMINIOS.forEach((d) => {
+      const valores = series[d.clave];
+      if (valores && valores.length) {
+        const tr = el("tr");
+        tr.append(el("th", null, d.etiqueta));
+        const td = el("td", "mono");
+        td.textContent = valores.map((v) => `d${v.dia}: ${v.valor}`).join("  ·  ");
+        tr.append(td);
+        tabla.append(tr);
+      }
+    });
+
+    // Una alerta anterior sin acuse es lo mas urgente que puede aparecer aca: el
+    // sistema ya aviso de este paciente y nadie lo atendio.
+    const caja = $("#alertas-previas");
+    caja.textContent = "";
+    previas.forEach((t) => {
+      const aviso = el("p", "aviso-previo");
+      aviso.append(icono("nivel-rojo", "icono glifo"));
+      aviso.append(el("span", null,
+        `Alerta ${t.nivel} del ${(t.creado_en || "").slice(0, 10)} sin atender`));
+      caja.append(aviso);
+    });
+  }
+
+  /* ============================== ALERTAS ==================================
+   *
+   * Una alerta tiene dos vidas independientes y las dos pueden fallar por
+   * separado, asi que se muestran por separado:
+   *
+   *   ENTREGA  salio del proceso? (outbox con reintentos, escalation/despacho.py)
+   *   ACUSE    la miro una persona?
+   *
+   * Antes de esta vista habia 83 tickets abiertos y cero atendidos, y el sistema
+   * no lo decia en ningun sitio. Un ticket en una tabla no es una alerta.
+   *
+   * Disciplina de color: el rojo y el ambar de esta vista marcan CRITICIDAD
+   * CLINICA, igual que en el resto del panel. El estado de entrega se dice con
+   * glifo y palabra -- entregado / en cola / atascado -- porque "no salio" no es
+   * un hallazgo clinico y pintarlo del mismo rojo confundiria las dos cosas.
+   */
+
+  const ENTREGA = {
+    entregado: { palabra: "entregada", glifo: "entregado" },
+    pendiente: { palabra: "en cola", glifo: "en-cola" },
+    agotado: { palabra: "sin entregar", glifo: "atascado" },
+    // Ticket anterior al outbox: nadie encolo su entrega, asi que nunca va a salir.
+    // Decir "en cola" seria mentir -- da a entender que esta esperando su turno.
+    sin_registro: { palabra: "sin registro de entrega", glifo: "atascado" },
+  };
+
+  function estadoDeEntrega(entregas) {
+    // El peor estado manda: si un canal entrego y otro se atasco, lo que hay que
+    // ver es el atasco.
+    let peor = "entregado";
+    (entregas || []).forEach((e) => {
+      if (e.estado === "agotado") peor = "agotado";
+      else if (e.estado === "pendiente" && peor !== "agotado") peor = "pendiente";
+    });
+    return (entregas || []).length ? peor : "sin_registro";
+  }
+
+  function marcador(rotulo, valor, clase) {
+    const caja = el("div", "marcador");
+    caja.append(el("p", "rotulo", rotulo));
+    caja.append(el("p", `cifra ${clase || ""}`.trim(), String(valor)));
+    return caja;
+  }
+
+  function filaAlerta(t, fueraDePlazo) {
+    const nivel = NIVELES[t.nivel] || NIVELES["—"];
+    const fila = el("article", `alerta nivel-${t.nivel}`);
+
+    const cabeza = el("div", "alerta-cabeza");
+    const marca = el("span", `etiqueta-nivel ${t.nivel}`);
+    marca.append(icono(nivel.glifo, "icono glifo"));
+    marca.append(el("span", null, nivel.palabra));
+    cabeza.append(marca);
+    cabeza.append(el("span", "mono id-ticket", t.ticket_id));
+    if (fueraDePlazo) {
+      cabeza.append(el("span", "insignia peligro", "fuera de plazo"));
+    }
+    fila.append(cabeza);
+
+    fila.append(el("p", "alerta-motivo", t.motivo || ""));
+
+    const pie = el("div", "alerta-pie");
+
+    const ent = ENTREGA[estadoDeEntrega(t.entregas)];
+    const cajaEnt = el("span", "dato-entrega");
+    cajaEnt.append(icono(ent.glifo, "icono glifo"));
+    const canales = (t.entregas || []).map((e) => e.canal).join(", ");
+    cajaEnt.append(el("span", null, canales ? `${ent.palabra} · ${canales}` : ent.palabra));
+    pie.append(cajaEnt);
+
+    if (t.estado === "atendido") {
+      const acuse = el("span", "dato-acuse");
+      acuse.append(icono("acuse", "icono glifo"));
+      acuse.append(el("span", null, `atendida por ${t.atendido_por}`));
+      pie.append(acuse);
+    } else {
+      const btn = el("button", "boton chico", "Atender");
+      btn.dataset.ticket = t.ticket_id;
+      pie.append(btn);
+    }
+
+    pie.append(el("span", "mono tenue", (t.creado_en || "").slice(0, 16).replace("T", " ")));
+    fila.append(pie);
+    return fila;
+  }
+
+  function pintarListaAlertas(cont, tickets, vencidos, vacio) {
+    cont.textContent = "";
+    if (!tickets.length) {
+      cont.append(el("p", "vacio", vacio));
+    } else {
+      tickets.forEach((t) => cont.append(filaAlerta(t, vencidos.has(t.ticket_id))));
+    }
+  }
+
+  async function cargarAlertas() {
+    const lista = $("#lista-alertas");
+    if (!lista) return;
+
+    let datos;
+    let tickets = [];
+    try {
+      const [a, t] = await Promise.all([
+        pedir("/api/alertas"),
+        pedir("/api/tickets?limite=80"),
+      ]);
+      datos = a;
+      tickets = t.tickets || [];
+    } catch (e) {
+      lista.textContent = "";
+      lista.append(el("p", "vacio", `No se pudieron cargar las alertas: ${e.message}`));
+      return;
+    }
+
+    const vencidos = new Set((datos.vencidas || []).map((t) => t.ticket_id));
+
+    $("#sla-rojo").textContent = `${datos.sla.rojo_minutos} min`;
+    $("#sla-amarillo").textContent = `${datos.sla.amarillo_horas} h`;
+
+    const marcadores = $("#marcadores-alertas");
+    marcadores.textContent = "";
+    marcadores.append(marcador("Sin acuse", datos.sin_acuse));
+    marcadores.append(marcador(
+      "Fuera de plazo", vencidos.size, vencidos.size ? "peligro" : "",
+    ));
+    marcadores.append(marcador("Entregadas", datos.entrega.entregadas));
+    marcadores.append(marcador(
+      "En cola de entrega", datos.entrega.pendientes,
+      datos.entrega.pendientes ? "aviso" : "",
+    ));
+    marcadores.append(marcador("Canales", (datos.canales || []).join(", ") || "—"));
+
+    $("#contador-vencidas").textContent = vencidos.size ? `· ${vencidos.size}` : "";
+    $("#contador-alertas").textContent = tickets.length ? `· ${tickets.length}` : "";
+
+    pintarListaAlertas(
+      $("#alertas-vencidas"), datos.vencidas || [], vencidos,
+      "Ninguna alerta fuera de plazo.",
+    );
+    pintarListaAlertas(
+      lista, tickets, vencidos, "Ninguna alerta registrada todavía.",
+    );
+
+    // La insignia de la pestana solo aparece cuando hay algo fuera de plazo. Un
+    // contador permanente al lado del nombre deja de leerse a los dos dias.
+    const insignia = $("#insignia-alertas");
+    if (insignia) {
+      insignia.textContent = String(vencidos.size);
+      insignia.hidden = vencidos.size === 0;
+      insignia.className = "insignia peligro";
+    }
+  }
+
+  const vistaAlertas = $("#vista-alertas");
+  if (vistaAlertas) {
+    vistaAlertas.addEventListener("click", async (e) => {
+      const btn = e.target.closest("button[data-ticket]");
+      if (!btn) return;
+      // El modal es el de `app.js`: `prompt()` congela la pagina, y con una llamada
+      // abierta eso significa perder el turno del paciente.
+      const quien = await pedirTexto({
+        titulo: "¿Quién atiende esta alerta?",
+        explicacion:
+          "Queda registrado en el ticket con la hora. Un acuse anónimo no sirve "
+          + "para nada clínico.",
+        marcador: "nombre y rol",
+        textoOk: "Registrar acuse",
+      });
+      if (!quien) return;
+      btn.disabled = true;
+      try {
+        await pedir(`/api/tickets/${encodeURIComponent(btn.dataset.ticket)}/atender`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ quien }),
+        });
+      } catch (err) {
+        btn.disabled = false;
+        btn.textContent = `No se pudo: ${err.message}`;
+        return;
+      }
+      cargarAlertas();
     });
   }
 
@@ -767,5 +1019,9 @@
   pintarTira();
   pintarNivel("—");
   cargarCola();
+  // La insignia de alertas fuera de plazo se calcula al arrancar aunque nadie abra
+  // la pestana: es lo unico de esta vista que tiene que verse sin buscarlo.
+  cargarAlertas();
   setInterval(() => { if (!panel.leyendo) cargarCola(); }, 15000);
+  setInterval(cargarAlertas, 30000);
 })();

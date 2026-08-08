@@ -1,0 +1,61 @@
+{
+  "pacientes": 40,
+  "pacientes_que_empeoran": 19,
+  "oportunidades_de_anticipacion": 7,
+  "saltos_verde_a_rojo": 3,
+  "barrido": [
+    {
+      "salto_dolor": 2,
+      "salto_fiebre": 0.5,
+      "oportunidades": 7,
+      "avisos_anticipados": 0,
+      "falsas_alarmas": 17
+    },
+    {
+      "salto_dolor": 2,
+      "salto_fiebre": 0.8,
+      "oportunidades": 7,
+      "avisos_anticipados": 0,
+      "falsas_alarmas": 14
+    },
+    {
+      "salto_dolor": 3,
+      "salto_fiebre": 0.5,
+      "oportunidades": 7,
+      "avisos_anticipados": 0,
+      "falsas_alarmas": 8
+    },
+    {
+      "salto_dolor": 3,
+      "salto_fiebre": 0.8,
+      "oportunidades": 7,
+      "avisos_anticipados": 0,
+      "falsas_alarmas": 5
+    },
+    {
+      "salto_dolor": 3,
+      "salto_fiebre": 1.0,
+      "oportunidades": 7,
+      "avisos_anticipados": 0,
+      "falsas_alarmas": 2
+    },
+    {
+      "salto_dolor": 4,
+      "salto_fiebre": 0.8,
+      "oportunidades": 7,
+      "avisos_anticipados": 0,
+      "falsas_alarmas": 4
+    },
+    {
+      "salto_dolor": 4,
+      "salto_fiebre": 1.0,
+      "oportunidades": 7,
+      "avisos_anticipados": 0,
+      "falsas_alarmas": 0
+    }
+  ],
+  "umbral_en_el_motor": {
+    "salto_dolor_nrs": 4,
+    "salto_fiebre_c": 1.0
+  }
+}

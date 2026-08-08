@@ -641,6 +641,12 @@ def _nueva_policy(datos: InicioLlamada) -> DialogPolicy:
         extractor=E["extractor"],
         motor=E["motor"],
         responder_clinico=responder,
+        # Lo que ya se sabia de este paciente antes de hoy. El motor lo usa para ver un
+        # salto respecto a la llamada anterior, y la hoja de traspaso para mostrar la
+        # serie a quien reciba la alerta.
+        historia=E["escalation"].serie_por_dominio(
+            paciente.paciente_id, paciente.dia_postop
+        ),
     )
 
 

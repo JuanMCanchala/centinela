@@ -1432,6 +1432,133 @@ input[type="file"]::file-selector-button:hover {
   .lienzo { overflow: visible; }
 }
 
+/* ==========================================================================
+   BANDEJA DE ALERTAS
+   ==========================================================================
+
+   Disciplina de color, igual que en el resto del panel: el rojo y el ambar de
+   esta vista son CRITICIDAD CLINICA. El estado de entrega -- entregada, en cola,
+   sin entregar -- se dice con glifo y palabra, en gris, porque "no salio" es un
+   problema de operacion y no un hallazgo del paciente. Pintarlo del mismo rojo
+   haria que las dos cosas se leyeran como la misma. */
+
+/* Alerta anterior de este paciente que nadie atendio. Lleva rojo porque es
+   criticidad clinica sin resolver, no un estado de la interfaz. */
+.aviso-previo {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 8px 0 0;
+  font-size: var(--t12);
+  color: var(--rojo);
+}
+
+.aviso-previo .glifo { width: 14px; height: 14px; flex: 0 0 auto; }
+
+.marcadores {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.marcador {
+  flex: 1 1 130px;
+  padding: 10px 12px;
+  background: var(--superficie-hundida);
+  border: 1px solid var(--linea);
+  border-radius: 3px;
+}
+
+.marcador .rotulo { margin: 0 0 4px; }
+
+.marcador .cifra {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: var(--t18);
+  font-variant-numeric: tabular-nums;
+  color: var(--texto);
+}
+
+/* El unico sitio donde el color entra en un marcador: cuando el numero es un
+   trabajo sin hacer. Cero no se pinta -- un panel donde todo esta en verde deja
+   de comunicar. */
+.marcador .cifra.peligro { color: var(--rojo); }
+.marcador .cifra.aviso { color: var(--ambar); }
+
+.alerta {
+  padding: 12px 14px;
+  border: 1px solid var(--linea);
+  border-left: 3px solid var(--linea-viva);
+  border-radius: 3px;
+  background: var(--superficie);
+  margin-bottom: 10px;
+}
+
+/* La franja izquierda es lo unico del contenedor que lleva color, y lleva el de
+   la criticidad. Es la misma senal que la cola usa en el riel. */
+.alerta.nivel-rojo { border-left-color: var(--rojo); }
+.alerta.nivel-amarillo { border-left-color: var(--ambar); }
+.alerta.nivel-verde { border-left-color: var(--verde); }
+
+.alerta-cabeza {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.etiqueta-nivel {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--t12);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.etiqueta-nivel.rojo { color: var(--rojo); }
+.etiqueta-nivel.amarillo { color: var(--ambar); }
+.etiqueta-nivel.verde { color: var(--verde); }
+
+.etiqueta-nivel .glifo { width: 15px; height: 15px; }
+
+.id-ticket {
+  font-size: var(--t11);
+  color: var(--texto-tenue);
+  letter-spacing: 0.02em;
+}
+
+.alerta-motivo {
+  margin: 8px 0 10px;
+  font-size: var(--t13);
+  line-height: 1.5;
+  color: var(--texto-suave);
+}
+
+.alerta-pie {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  font-size: var(--t12);
+  color: var(--texto-medio);
+}
+
+.dato-entrega,
+.dato-acuse {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dato-entrega .glifo,
+.dato-acuse .glifo { width: 14px; height: 14px; color: var(--texto-tenue); }
+
+.alerta-pie .tenue { color: var(--texto-tenue); font-size: var(--t11); }
+
+.alerta-pie .boton { margin-left: auto; }
+
 /* Nada de la informacion depende del movimiento, asi que se puede apagar todo. */
 @media (prefers-reduced-motion: reduce) {
   * { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }

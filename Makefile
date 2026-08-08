@@ -30,6 +30,7 @@ help:
 	@echo "  make eval        motor de decision sobre los 160 casos oficiales"
 	@echo "  make humo        extremo a extremo contra la API levantada"
 	@echo "  make rag         cobertura del corpus - 0 citas cruzadas, 0 cifras sin respaldo"
+	@echo "  make tendencia   barrido de tendencia entre llamadas sobre las 40 trayectorias"
 	@echo "  make escucha     mide el STT sobre voz humana grabada"
 	@echo "  make redteam     suite adversarial (inyeccion, ruido, fuera de mision)"
 	@echo "  make bench       latencia de modelo y voz"
@@ -118,6 +119,12 @@ escucha-guion:
 .PHONY: rag
 rag:
 	$(PY) -m eval.rag_cobertura
+
+# Barrido de umbrales de tendencia sobre las 40 trayectorias oficiales. La conclusion
+# es negativa y por eso esta aca: reproducible en vez de afirmada en un documento.
+.PHONY: tendencia
+tendencia:
+	$(PY) -m eval.tendencia
 
 .PHONY: redteam
 redteam:

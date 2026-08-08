@@ -47,6 +47,25 @@
     <symbol id="reloj" viewBox="0 0 24 24">
       <circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/>
     </symbol>
+    <!-- Estado de entrega de una alerta. Tres estados distintos, tres formas
+         distintas: el color no puede ser lo unico que los separe. -->
+    <symbol id="entregado" viewBox="0 0 24 24">
+      <path d="M4 12.5l5 5L20 6.5"/>
+    </symbol>
+    <symbol id="en-cola" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="9"/><path d="M12 8v4l3 2"/>
+    </symbol>
+    <symbol id="atascado" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="9"/><path d="M9 9l6 6"/><path d="M15 9l-6 6"/>
+    </symbol>
+    <symbol id="acuse" viewBox="0 0 24 24">
+      <path d="M20 6H4a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1V7a1 1 0 0 0-1-1Z"/>
+      <path d="m3.5 7 8.5 6 8.5-6"/>
+    </symbol>
+    <symbol id="campana" viewBox="0 0 24 24">
+      <path d="M18 8a6 6 0 1 0-12 0c0 7-3 8-3 8h18s-3-1-3-8"/>
+      <path d="M13.7 20a2 2 0 0 1-3.4 0"/>
+    </symbol>
   </defs>
 </svg>
 
@@ -61,6 +80,9 @@
   <nav class="pestanas" id="pestanas">
     <button class="pestana activa" data-vista="llamada">Llamada</button>
     <button class="pestana" data-vista="consola">Conocimiento</button>
+    <button class="pestana" data-vista="alertas">
+      Alertas <span class="insignia" id="insignia-alertas" hidden></span>
+    </button>
     <button class="pestana" data-vista="observabilidad">Motor y métricas</button>
     <button class="pestana" data-vista="pruebas">Pruebas</button>
   </nav>
@@ -185,6 +207,17 @@
           <table class="tabla-estado" id="tabla-estado"></table>
         </div>
 
+        <!-- Lo que ya se sabía de este paciente antes de hoy.
+             No cambia la decisión — sobre las 40 trayectorias oficiales una regla
+             de delta no anticipa nada, y eso está medido en `make tendencia`.
+             Cambia cómo se lee el valor de hoy: un 9 no dice lo mismo si venía de
+             un 4 que si venía de un 8. -->
+        <div class="bloque" id="bloque-historial" hidden>
+          <p class="rotulo">Llamadas anteriores de este paciente</p>
+          <table class="tabla-estado" id="tabla-historial"></table>
+          <div id="alertas-previas"></div>
+        </div>
+
         <div class="bloque">
           <p class="rotulo">Documentos que sustentan</p>
           <div id="citas" class="lista-citas"><p class="vacio">Sin citas todavía.</p></div>
@@ -292,6 +325,47 @@
     </main>
 
     <!-- ============================== PRUEBAS ============================== -->
+    <!-- ============================== ALERTAS ==============================
+         Una alerta no termina cuando se crea. Tiene que salir del proceso y
+         alguien tiene que acusar recibo, y las dos cosas pueden fallar por
+         separado -- asi que se muestran por separado. Antes de esta vista habia
+         83 tickets abiertos y cero atendidos, y el sistema no lo decia en ningun
+         sitio. -->
+    <main class="vista" id="vista-alertas">
+      <div class="columna-simple">
+
+        <section class="panel">
+          <h2><svg class="icono" aria-hidden="true"><use href="#campana"/></svg> Bandeja de alertas</h2>
+          <p class="ayuda">
+            Cada alerta con su estado de entrega y su acuse. El plazo de acuse es
+            <strong id="sla-rojo">—</strong> para una alerta roja y
+            <strong id="sla-amarillo">—</strong> para una de vigilancia; pasado ese
+            tiempo sin atender, la alerta aparece como <em>fuera de plazo</em>.
+          </p>
+          <div class="marcadores" id="marcadores-alertas"></div>
+        </section>
+
+        <section class="panel">
+          <p class="rotulo">
+            Fuera de plazo <span class="contador" id="contador-vencidas"></span>
+          </p>
+          <div id="alertas-vencidas">
+            <p class="vacio">Ninguna alerta fuera de plazo.</p>
+          </div>
+        </section>
+
+        <section class="panel">
+          <p class="rotulo">
+            Todas las alertas <span class="contador" id="contador-alertas"></span>
+          </p>
+          <div id="lista-alertas">
+            <p class="vacio">Ninguna alerta registrada todavía.</p>
+          </div>
+        </section>
+
+      </div>
+    </main>
+
     <main class="vista" id="vista-pruebas">
       <div class="columna-simple">
         <section class="panel">
