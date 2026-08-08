@@ -7,9 +7,9 @@ regla que la disparó.
 
 Entrega para el **Tech Sphere Challenge 2026** (Source Meridian).
 
-> **Estado:** en construcción. Este README se actualiza con cada avance. Las cifras de
-> las tablas de métricas las generan los scripts de `eval/` y `scripts/`, no se escriben
-> a mano.
+> Todas las cifras de este documento las generan los scripts de `eval/` y `scripts/`.
+> Ninguna se escribe a mano: la rúbrica advierte que lo reportado se contrasta con los
+> logs de la sesión.
 
 ---
 
@@ -17,23 +17,54 @@ Entrega para el **Tech Sphere Challenge 2026** (Source Meridian).
 
 > **El modelo percibe. El código decide.**
 
-Un modelo de 3.8 B de parámetros no es de fiar para decidir si alguien se está
-complicando después de una cirugía. Pero sí es bueno convirtiendo *"me duele como aquí
-abajito de la axila hace como 20 minutos"* en datos tipados. Así que el agente está
-partido en dos mitades con responsabilidades separadas:
+Una decisión clínica tiene tres propiedades que no son negociables. Es **reproducible**:
+el mismo cuadro da el mismo nivel siempre, hoy y en un mes. Es **auditable**: se explica
+por la regla exacta que la disparó y por el dato que la cumplió. Es **citable**: cada
+umbral apunta a un documento con página y frase.
+
+Ningún modelo generativo da las tres, y no es una cuestión de tamaño — muestrear una
+distribución no es decidir. Así que en Centinela **la decisión clínica es código**:
+comparaciones numéricas versionadas, cada una con su cita al corpus.
+
+Lo que hace el modelo es aquello en lo que ninguna regla lo iguala: convertir *"me duele
+como aquí abajito de la axila hace como 20 minutos"* en datos tipados.
 
 ```
 voz → percepción (modelo, difusa) → estado clínico tipado → decisión (código, determinista) → acción
 ```
 
-- **Percepción** (`clinical/extractor.py`): el modelo extrae seis campos clínicos con
-  esquema JSON forzado. Nunca decide nada.
-- **Decisión** (`clinical/triage_engine.py`): reglas deterministas versionadas, con cada
-  umbral respaldado por una cita al corpus. Auditable, reproducible, y **inmune a
-  inyección de prompt**: no existe frase capaz de convencer a `fiebre >= 38.0` de ser falso.
+- **Percepción** (`clinical/extractor.py`): tres capas —regex, léxico y modelo— producen
+  seis campos clínicos con esquema JSON forzado. Ninguna decide nada, y un hallazgo de
+  alarma detectado por regla **nunca se degrada** aunque el modelo diga lo contrario.
+- **Decisión** (`clinical/triage_engine.py`): reglas deterministas versionadas. Aquí no
+  hay ni una llamada al modelo, y eso compra tres propiedades comprobables: no puede
+  alucinar una decisión porque no hay nada que muestrear; es **inmune a inyección de
+  prompt**, porque no existe frase capaz de convencer a `fiebre >= 38.0` de ser falso; y
+  el replay de los 160 casos oficiales da el mismo resultado en cada corrida.
 - **Conducción** (`dialog/policy.py`): el flujo de la conversación es una máquina de
   estados. El modelo no elige la siguiente pregunta, así que no se le puede hablar para
   que se salga del protocolo.
+
+---
+
+## Garantías operativas
+
+Lo que el sistema garantiza cuando algo va mal, con el mecanismo que lo sostiene y el
+comando que lo comprueba. El detalle de operación está en
+[`docs/operacion.md`](docs/operacion.md).
+
+| Garantía | Mecanismo | Se comprueba con |
+|---|---|---|
+| Una bandera roja produce alerta **en el turno**, no al cerrar | `EscalationService.escalar_ahora` | `make humo` caso 9 |
+| Ninguna llamada queda abierta: si cuelgan, si el cliente desaparece o si el proceso se reinicia, se cierra y produce su resumen | handler de WS + barredor cada 30 s + recuperación al arrancar | `make humo` caso 10 · `make test` |
+| Cerrar sin haber preguntado todo **nunca** da verde | `triage_engine`, asimetría clínica | `make test` |
+| La alerta sale del proceso, con reintentos y sin duplicar | outbox durable + despachador | `make humo` caso 9 |
+| Un rojo sin acuse en 15 min se reporta como fuera de plazo | `alertas_vencidas` + pestaña Alertas | `GET /api/alertas` |
+| Ninguna respuesta clínica cita otro procedimiento ni usa una cifra que el corpus no sostenga | filtro por tema + verificación posterior a la generación | `make rag` |
+
+Una llamada que se abre y en la que el paciente nunca habla **no** produce alerta
+clínica: queda la constancia del intento de contacto. A alguien con quien no se habló no
+se le puede hacer triaje, y una bandeja con ruido es una bandeja que nadie lee.
 
 ---
 
@@ -59,7 +90,7 @@ estos números son los mismos en cada corrida.
 
 Medidas por `obs/metrics.py` durante la ejecución real, congeladas con `make runtime` y
 escritas por `make metricas`. **Ninguna se escribe a mano**, porque la rúbrica advierte que
-lo reportado se contrasta con los logs de la sesión. Muestra: **21 turnos en 4 llamadas
+lo reportado se contrasta con los logs de la sesión. Muestra: **25 turnos en 6 llamadas
 completas**, la que produce `make humo` sobre un servidor recién arrancado.
 
 **1. Latencia de respuesta** — *desde que se cierra el VAD (fin de habla del paciente)
@@ -68,14 +99,14 @@ hasta que el primer byte de audio del agente sale hacia el navegador.*
 | Percentil | Latencia |
 |---|---:|
 | **P50** | **0.6 ms** |
-| **P95** | **385.3 ms** |
-| P99 | 5 062.9 ms |
+| **P95** | **390.2 ms** |
+| P99 | 4 535.6 ms |
 
-El P50 es de milisegundos porque **90 % de los turnos se sirven desde el caché de audio
-pre-renderizado** (19 de 21): la conversación la conduce una máquina de estados, así que
+El P50 es de milisegundos porque **88 % de los turnos se sirven desde el caché de audio
+pre-renderizado** (22 de 25): la conversación la conduce una máquina de estados, así que
 las locuciones del guion se conocen antes de que suene el teléfono. El P95 son los turnos
 que sintetizan voz nueva. El P99 es un solo turno —el que invoca al modelo *y* consulta el
-RAG— y con 21 muestras un P99 es un dato anecdótico, no una estadística; se reporta por
+RAG— y con 25 muestras un P99 es un dato anecdótico, no una estadística; se reporta por
 completitud, no como promesa.
 
 **2. Consumo por turno y por llamada**
@@ -83,25 +114,25 @@ completitud, no como promesa.
 | Métrica | Valor |
 |---|---:|
 | Tokens de entrada / salida por turno (P50) | **0 / 0** |
-| Tokens de entrada / salida por turno (media) | 133.2 / 4.1 |
-| Tokens de entrada / salida **por llamada** (media) | **699.5 / 21.8** |
-| Turnos por llamada (media) | 5.2 |
+| Tokens de entrada / salida por turno (media) | 111.9 / 3.3 |
+| Tokens de entrada / salida **por llamada** (media) | **466.3 / 13.8** |
+| Turnos por llamada (media) | 4.2 |
 
 **3. Invocaciones al modelo por turno** — **P50 = 0**, máximo 1. La mayoría de los turnos
 no llegan al modelo: si la regex ya extrajo el dolor y el léxico resolvió la herida, no hay
 nada que preguntarle. Es la consecuencia directa de que la decisión clínica la tome el
 motor de reglas.
 
-**4. Consultas al RAG por llamada** — **0.25 de media**, máximo 1. Son bajas a propósito:
+**4. Consultas al RAG por llamada** — **0.17 de media**, máximo 1. Son bajas a propósito:
 el cuestionario no consulta el corpus, recorre seis dominios con preguntas fijas. El RAG
 entra cuando el paciente pregunta algo clínico —*«¿puedo ducharme?»*— y entonces la
 respuesta va fundamentada y con su cita. Una media alta aquí significaría que el agente
 consulta documentos para preguntar la temperatura: gasto sin ganancia.
 
-**Costo estimado por llamada: USD 0.003227** (COP 12.9). Centinela corre local, así que el
+**Costo estimado por llamada: USD 0.002596** (COP 10.4). Centinela corre local, así que el
 costo marginal real es electricidad; la rúbrica pide extrapolar a precios de API y explicar
 el cálculo. Son los tokens y segundos de audio realmente medidos por tarifas públicas de
-referencia: modelo USD 0.000072 · transcripción USD 0.001283 · voz USD 0.001872. Las
+referencia: modelo USD 0.000048 · transcripción USD 0.001036 · voz USD 0.001512. Las
 tarifas están en `obs/metrics.py::PRECIOS_REFERENCIA` y los insumos en
 [`docs/metricas.md`](docs/metricas.md), que se genera del mismo `runtime.json` que estas
 cifras — si divergen, es que alguien editó una a mano.
@@ -111,7 +142,7 @@ alguien estuvo probando a mano, la muestra se llena de llamadas abandonadas de d
 
 ```bash
 make up          # en otra terminal
-make humo        # 6 llamadas completas
+make humo        # llamadas completas de extremo a extremo
 make runtime     # congela /api/metricas
 make metricas    # las escribe en docs/metricas.md
 ```
@@ -138,7 +169,7 @@ responde baja a `small` en CUDA y luego a CPU. Lo que se cargó de hecho lo dice
 Dos decisiones sostienen el presupuesto:
 
 **El guion va en caché.** La conversación la conduce una máquina de estados sobre seis
-dominios, así que las **53 locuciones** que el agente puede decir se conocen antes de que
+dominios, así que las **54 locuciones** que el agente puede decir se conocen antes de que
 suene el teléfono. Se sintetizan al arrancar y se sirven desde disco; la proporción de
 turnos servidos así es la que aparece arriba, medida, no estimada.
 
@@ -146,7 +177,7 @@ turnos servidos así es la que aparece arriba, medida, no estimada.
 herida, no se invoca — de ahí que el P50 de invocaciones sea 0. La optimización quedó
 registrada en `eval/probar_tokens.py`, sobre un escenario fijo de seis turnos: **1359 → 672
 tokens de entrada por llamada**. Es un escenario fijo, distinto de la muestra de §5, así que
-su cifra no tiene por qué coincidir con los 699.5 tokens/llamada de arriba: son dos
+su cifra no tiene por qué coincidir con los 466.3 tokens/llamada de arriba: son dos
 mediciones de dos cosas distintas y las dos son reales.
 
 ### Suite adversarial
@@ -168,7 +199,7 @@ clasificador aislado. Resultado: **32/32**.
 - Intentos de manipulación resistidos: **11/11**
 - Casos donde la criticidad bajó porque el paciente lo pidió: **0**
 
-Más `make test`: **55 tests**, que incluyen cero falsos positivos de manipulación sobre
+Más `make test`: **260 tests**, que incluyen cero falsos positivos de manipulación sobre
 turnos textuales del dataset oficial. Ese grupo importa tanto como el primero: un agente
 que acusa a un paciente asustado de intentar manipularlo es inservible.
 
@@ -313,7 +344,7 @@ sin una segunda implementación dentro del panel. Si el número que muestra la c
 coincide con el del informe, es que el informe está desactualizado.
 
 La interfaz no tiene paso de compilación: es HTML, CSS y JS servidos tal cual. Las
-tipografías (Chivo y Chivo Mono, SIL OFL) van **versionadas en el repo** en
+tipografías (Montserrat y Chivo Mono, SIL OFL) van **versionadas en el repo** en
 `web/fuentes/`, así que la consola no necesita red; `python scripts/fetch_fuentes.py`
 las vuelve a bajar si hiciera falta.
 
@@ -379,6 +410,7 @@ del reto. Se verifica en `api/centinela/config.py`, en el `Makefile` y en `GET /
 | [`docs/arquitectura.md`](docs/arquitectura.md) | Diagramas de arquitectura y flujo de decisión, verificados contra el código |
 | [`docs/metricas.md`](docs/metricas.md) | Todas las métricas medidas, generadas por script |
 | [`docs/informe-corpus.md`](docs/informe-corpus.md) | Auditoría de integridad del corpus entregado |
+| [`docs/operacion.md`](docs/operacion.md) | Runbook: configuración, garantías, qué hacer cuando una alerta no sale, respaldo, retención |
 | [`prompts/`](prompts/) | Prompts versionados, uno por archivo, con su esquema y notas |
 
 ## Verificar la entrega
@@ -387,10 +419,13 @@ Las cuatro primeras también se pueden lanzar desde la pestaña **Pruebas** del 
 ejecuta exactamente estos comandos.
 
 ```bash
-make test        # 161 tests unitarios y de regresión
+make test        # 260 tests unitarios y de regresión
 make eval        # 160 casos oficiales · cero falsos negativos clínicos
 make redteam     # 32 casos adversariales (requiere la API levantada)
-make humo        # 67 comprobaciones de extremo a extremo (requiere la API levantada)
+make humo        # 79 comprobaciones de extremo a extremo (requiere la API levantada)
+make rag         # 60 preguntas · 0 citas cruzadas, 0 cifras sin respaldo
+make tendencia   # barrido de tendencia sobre las 40 trayectorias oficiales
+make cifras      # comprueba que los números de estos documentos siguen siendo ciertos
 make diagrama    # cada elemento del diagrama existe en el código
 make auditar     # defectos detectados en el corpus entregado
 make bench       # latencia de modelo y voz

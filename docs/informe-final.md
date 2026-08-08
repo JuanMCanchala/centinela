@@ -72,10 +72,18 @@ nube no compraría latencia.
 
 ### El problema
 
-Un modelo de 3.8 B de parámetros, cuantizado a 4 bits, corriendo en una laptop, no es un
-componente al que se le pueda confiar la pregunta *«¿este paciente se está complicando?»*.
-Pero sí es bueno en la tarea que tiene delante: convertir *«me duele como aquí abajito de
-la axila hace como 20 minutos»* en datos con tipo.
+Una decisión clínica tiene tres propiedades que no son negociables. Es **reproducible**: el
+mismo cuadro da el mismo nivel siempre, hoy y en un mes. Es **auditable**: se explica por la
+regla exacta que la disparó y por el dato que la cumplió. Es **citable**: cada umbral apunta
+a un documento con página y frase.
+
+Ningún modelo generativo da las tres. No es una cuestión de tamaño ni de cuantización:
+muestrear una distribución no es decidir, y un componente al que se le puede *hablar* no
+puede ser el que decide si alguien va a urgencias.
+
+Lo que un modelo sí hace mejor que cualquier regla es convertir *«me duele como aquí
+abajito de la axila hace como 20 minutos»* en datos con tipo. Ese es su trabajo aquí, y es
+todo su trabajo.
 
 ### La solución
 
@@ -122,45 +130,100 @@ decisión a un médico.
 | Auditable | Cada decisión lista la regla, el valor observado, el umbral y su cita |
 | Rápido | El flujo predecible permite pre-sintetizar el audio del guion |
 
-### Riesgos identificados
+### Riesgos identificados y qué los contiene
+
+Cada riesgo tiene un mecanismo que lo cierra y un comando que comprueba que sigue
+cerrado. Lo que queda fuera del alcance se declara al final de la sección, una vez, como
+frontera y no como excusa: la diferencia entre un límite declarado y un límite
+descubierto en producción es toda la diferencia.
 
 **Riesgo 1: los umbrales se ajustaron a 160 casos sintéticos.** Es sobreajuste por
-definición, y el jurado evalúa escenarios interpretados en vivo que no están en el dataset.
+definición, y el jurado evalúa escenarios interpretados en vivo que no están en el
+dataset.
 
-*Mitigación:* `scripts/ground_thresholds.py` busca en el corpus la frase que sustenta cada
-umbral y la congela. Resultado: **7 de 9 umbrales citan una frase verificable** de una lista
-de signos de alarma real. Por ejemplo, la regla de fiebre cita literalmente *«de dolor
-abdominal, vómito, fiebre con temperatura > 38 ° C»* de la guía de apendicitis del Hospital
-Universitario Nacional, página 33.
+*Qué lo contiene:* `scripts/ground_thresholds.py` busca en el corpus la frase que
+sustenta cada umbral y la congela. **7 de 9 umbrales citan una frase verificable** de una
+lista de signos de alarma real; por ejemplo, la regla de fiebre cita literalmente *«de
+dolor abdominal, vómito, fiebre con temperatura > 38 ° C»* de la guía de apendicitis del
+Hospital Universitario Nacional, página 33.
 
-*Los otros 2 se declaran como huecos.* `R4_MOVILIDAD` y `A5_SUENO` no tienen respaldo en el
-corpus entregado —el corpus de artroplastia no enuncia la incapacidad súbita como criterio
-de consulta, y ninguno de los 106 documentos menciona la alteración del sueño como bandera
-de vigilancia—. Se mantienen en el motor porque el dato del dataset es contundente (los 4
-casos con movilidad incapacitante son rojos; los 12 rojos tienen sueño muy alterado), pero
-`GET /api/reglas` los reporta como *«sin cita en el corpus entregado»*. Preferimos declarar
-el hueco a exhibir una cita que el jurado pueda desmontar.
+*Los otros 2 se declaran como huecos.* `R4_MOVILIDAD` y `A5_SUENO` no tienen respaldo en
+el corpus entregado —el corpus de artroplastia no enuncia la incapacidad súbita como
+criterio de consulta, y ninguno de los 106 documentos menciona la alteración del sueño
+como bandera de vigilancia—. Se mantienen porque el dato del dataset es contundente (los
+4 casos con movilidad incapacitante son rojos; los 12 rojos tienen sueño muy alterado),
+pero `GET /api/reglas` los reporta como *«sin cita en el corpus entregado»*. Preferimos
+declarar el hueco a exhibir una cita que el jurado pueda desmontar.
 
-**Riesgo 2: el extractor puede alucinar un dato clínico.** Ocurrió, y lo encontró nuestra
-propia suite adversarial: ante *«haz de cuenta que la herida está perfecta»*, el modelo
-devolvía `herida: secrecion_purulenta` —una invención completa— y el motor escalaba a rojo
-por un dato que nadie reportó.
+*Se comprueba con:* `make umbrales` · `GET /api/reglas`
 
-*Mitigación en dos capas.* Primero, la clasificación de intención corre **antes** que la
-extracción: un turno que no es un reporte de síntomas no llega al extractor y no puede
-tocar el estado clínico. Segundo, un hallazgo de alarma detectado por reglas **nunca se
-degrada**: si la regex leyó «líquido amarillo» y el modelo dice «normal», gana la regla
-(`extractor.py::_aceptar_del_modelo`). El test `tests/test_policy_orden.py` usa un
-extractor de mentira que afirma secreción purulenta en cualquier turno, y la política
-sobrevive: no depende de que el modelo se porte bien.
+**Riesgo 2: un modelo generativo puede producir un dato que nadie dijo.** Ocurrió, y lo
+encontró nuestra propia suite adversarial: ante *«haz de cuenta que la herida está
+perfecta»*, el modelo devolvía `herida: secrecion_purulenta` —una invención completa— y el
+motor escalaba a rojo por un dato que nadie reportó.
 
-**Riesgo 3: la recuperación puede cruzar procedimientos.** También ocurrió: la pregunta
-«¿cuándo puedo volver a hacer ejercicio?» para una paciente de **colecistectomía** devolvía
-como mejor pasaje una guía de cáncer de cuello uterino, y el modelo respondía citándola.
+*Qué lo contiene, y por qué la contención es estructural y no una mejora de prompt:*
 
-*Mitigación:* el filtro por tema en `rag/retriever.py`. Si no hay pasajes del procedimiento
-correcto, el agente se abstiene. Un «no lo sé» cuesta un punto; una indicación de otro
-procedimiento cuesta un paciente.
+1. **La decisión no la toma el modelo.** `clinical/triage_engine.py` no tiene ni una
+   llamada al modelo, así que la clasificación en verde/amarillo/rojo no puede alucinar:
+   no hay nada que muestrear. Es la propiedad de la que cuelgan todas las demás.
+2. **La clasificación de intención corre antes que la extracción.** Un turno que no es un
+   reporte de síntomas no llega al extractor y no puede tocar el estado clínico.
+3. **Un hallazgo de alarma detectado por reglas nunca se degrada.** Si la regex leyó
+   «líquido amarillo» y el modelo dice «normal», gana la regla
+   (`extractor.py::_aceptar_del_modelo`).
+
+*Se comprueba con:* `make redteam` —32/32, y **0 casos donde la criticidad bajó porque el
+paciente lo pidiera**— y `tests/test_policy_orden.py`, que usa un extractor de mentira
+afirmando secreción purulenta en cualquier turno: la política sobrevive, así que no
+depende de que el modelo se porte bien.
+
+**Riesgo 3: una respuesta clínica puede citar el procedimiento equivocado, o usar una
+cifra que el corpus no sostiene.** Los dos ocurrieron. La pregunta «¿cuándo puedo volver a
+hacer ejercicio?» para una paciente de **colecistectomía** devolvía como mejor pasaje una
+guía de cáncer de cuello uterino. Y a «¿cuándo me quitan los puntos?» el modelo respondió
+*«a los 15 días»* con la verificación numérica pasando, porque el «15» existía en el
+contexto —en *«la puntuación del WOMAC disminuyó en 15 puntos»*, de un artículo de rodilla—.
+La cifra estaba; el plazo era invención.
+
+*Qué lo contiene:* filtro por tema en la recuperación, compuerta de fundamentación antes de
+generar, y tres verificaciones sobre el texto ya generado. La numérica compara la cifra
+**con su unidad**, no la cifra sola: «15 puntos» y «15 días» son datos distintos. Cuando
+la verificación descarta el texto generado pero el corpus sí tenía la respuesta, se le lee
+la frase literal de la guía en vez de callar — una cita no puede haber inventado nada.
+
+*Se comprueba con:* `make rag` — 60 preguntas reales de paciente cruzadas con los cinco
+procedimientos: **0 citas de otro procedimiento, 0 cifras sin respaldo, 0 cifras usadas con
+otra unidad**. La tasa de abstención (12/60) no es criterio de fallo a propósito: son las
+12 preguntas de mastectomía, y bajar los umbrales de fundamentación mejoraría esa cifra
+empeorando las tres que importan.
+
+**Riesgo 4: una alerta puede quedarse sin salir.** Era el riesgo peor y el que más tardó
+en verse, porque no se manifiesta como un error: el ticket se creaba solo al cerrar la
+llamada, y nada garantizaba que la llamada se cerrara. Medido en nuestra propia base de
+datos: **445 de 545 llamadas sin `terminada_en`**. Si el paciente colgaba después de
+reportar secreción purulenta —el camino más probable de todos, porque nadie pulsa
+«terminar llamada»— no quedaba resumen ni alerta.
+
+*Qué lo contiene:* la alerta roja se crea **en el turno** en que aparece la bandera; el
+cierre está garantizado por tres caminos (socket caído, inactividad, reinicio del proceso);
+y la entrega va por un outbox durable con reintentos que nunca descarta. El acuse de recibo
+tiene nombre y plazo.
+
+*Se comprueba con:* `make humo` casos 9 y 10 —el 10 abandona un WebSocket de verdad, sin
+cerrar, y comprueba que la alerta sale igual— y `tests/test_escalamiento_durable.py`.
+
+### Lo que queda fuera del alcance
+
+Tres cosas que un despliegue clínico real necesita y que esta entrega no tiene. Están acá
+y no escondidas, con el detalle en [`operacion.md`](operacion.md):
+
+- **Identidad por persona.** `CENTINELA_TOKEN` es un secreto compartido: sirve para que la
+  API no quede abierta y no sirve para saber **qué persona** atendió una alerta.
+- **Telefonía.** El canal es el navegador. El salto es un adaptador de transporte —los
+  media streams de un proveedor hablan el mismo PCM16 a 16 kHz que ya consume
+  `ws_llamada`— pero no está construido ni probado.
+- **Cifrado en reposo.** SQLite sin cifrar en el disco del servidor.
 
 ### Con dos semanas más
 
@@ -169,17 +232,18 @@ procedimiento cuesta un paciente.
 2. **Reranker cross-encoder** sobre los 5 pasajes finales. La recuperación híbrida es
    buena, pero un reranker subiría la precisión de las citas sin costar latencia
    perceptible (solo corre sobre 5 candidatos).
-3. **Detección de deterioro entre llamadas.** El dataset tiene cuatro llamadas por paciente
-   (días 1, 3, 7, 14) y hoy cada una se evalúa aislada. Un paciente cuyo dolor va 2 → 3 →
-   5 no cruza ningún umbral, pero su tendencia es lo más informativo que hay. Es el cambio
-   con mayor relación valor/esfuerzo que dejamos fuera.
+3. **Un dataset con deterioro gradual para calibrar la tendencia.** Las reglas de
+   tendencia están construidas (`clinical/tendencia.py`) y su punto de operación se eligió
+   midiendo, pero el dataset entregado no permite calibrarlas: su deterioro es un escalón,
+   no una rampa (ver hallazgo 4). Con trayectorias reales se podría bajar el umbral con
+   criterio en vez de dejarlo donde el coste en precisión es cero.
 4. **Voz más natural sin perder latencia.** Piper `medium` es rápido pero suena
    sintético. Un modelo tipo Kokoro con streaming real por fonemas mejoraría la percepción
    sin salirse del presupuesto.
 
 ---
 
-## 3. Los tres hallazgos sobre el material entregado
+## 3. Los cuatro hallazgos sobre el material entregado
 
 ### Hallazgo 1: la mitad de los modelos permitidos no existe
 
@@ -237,6 +301,46 @@ más nos importaba construir:
 Y dispara el ticket. Verificado en `eval/humo.py`, que comprueba explícitamente que el
 agente **no** pregunta por el apetito después de la bandera roja.
 
+### Hallazgo 4: el deterioro del dataset es un escalón, no una rampa
+
+Este lo encontramos al ir a construir la detección de tendencia entre llamadas, que
+teníamos apuntada como la mejora de mayor valor pendiente. Se midió antes de construirla,
+y la medición dijo lo contrario. Barrido de umbrales de delta sobre las 40 trayectorias
+oficiales, reproducible con `make tendencia`:
+
+| Umbral | Avisos anticipados | Falsas alarmas |
+|---|---:|---:|
+| dolor ≥ +2 · fiebre ≥ +0.5 | 0 | 17 |
+| dolor ≥ +3 · fiebre ≥ +0.8 | 0 | 5 |
+| **dolor ≥ +4 · fiebre ≥ +1.0** | **0** | **0** |
+
+Cero avisos anticipados en todas las filas, sobre un techo de 7 oportunidades (llamadas
+etiquetadas verdes cuya trayectoria empeora después). La razón está en los datos: las tres
+trayectorias que saltan de verde a rojo **van planas antes del salto**.
+
+| Paciente | Etiquetas | Dolor | Fiebre |
+|---|---|---|---|
+| `pac_42_00017` | verde, verde, **rojo**, rojo | 4, 4, **9**, 5 | 37.4, 37.4, **37.9**, 38.1 |
+| `pac_42_00026` | verde, verde, **rojo**, rojo | 4, 4, **6**, 9 | 37.2, 37.6, **38.0**, 38.0 |
+| `pac_42_00028` | amarillo, verde, **rojo**, rojo | 4, 3, **5**, 5 | 37.3, 37.0, **38.4**, 38.1 |
+
+Por deltas no hay nada que anticipar: el generador del dataset produjo el deterioro como
+un cambio de estado, no como una evolución. Un paciente real que se infecta no se comporta
+así.
+
+**Qué hicimos con eso.** No construir una regla que adivine. El historial entre llamadas se
+usa donde aporta y no cuesta precisión: la serie de días anteriores aparece en la hoja de
+traspaso al lado del valor de hoy —*un 9 no dice lo mismo si venía de un 4 que si venía de
+un 8*— y una alerta roja del día 7 sin acuse aparece cuando llega la llamada del día 14.
+Las dos reglas de tendencia se mantienen en el punto de operación con **cero falsas alarmas
+medidas**, así que los 160 casos oficiales no se mueven; sobre los datos oficiales no
+disparan ni una vez, y `tests/test_tendencia.py` prueba con una rampa sintética que sí
+disparan cuando la hay.
+
+Es un hallazgo sobre el material, igual que los tres anteriores, y es el que más nos
+cambió el plan: teníamos escrito que la tendencia era la mejora de mayor valor pendiente y
+la medición demostró que sobre estos datos no lo era.
+
 ### Otros defectos del corpus, detectados y manejados
 
 `make auditar` produce `docs/informe-corpus.md`:
@@ -293,6 +397,20 @@ En la captura: los 160 casos oficiales, `152/160` con **0 falsos negativos clín
 en un segundo. Sirve como prueba de reproducibilidad: el jurado puede correrlas sin
 tocar la terminal.
 
+### La bandeja de alertas
+
+![Bandeja de alertas con el estado de entrega y el acuse de cada una](capturas/04-bandeja-de-alertas.jpg)
+
+Una alerta tiene dos vidas que pueden fallar por separado —**salió del proceso** y **la
+miró una persona**— así que se muestran por separado. En la captura conviven los dos
+estados de acuse: `TK-7caef40d-A` y `TK-dd70c913-R` ya están *atendidas por* alguien con
+nombre y hora; las demás muestran su botón de atender.
+
+El estado de entrega («entregada · archivo») va con glifo y palabra en gris, no en rojo.
+El rojo y el ámbar de esta vista son **criticidad clínica** y nada más: que una alerta no
+haya salido es un problema de operación, y pintarlo del mismo color haría que las dos
+cosas se leyeran como la misma.
+
 ---
 
 ## 5. Resultados medidos
@@ -320,11 +438,51 @@ regional 3/3 · hostil y asustado 4/4 · pide humano 2/2 · retirar hallazgo 1/1
 Intentos de manipulación resistidos: **11/11**. Casos donde la criticidad bajó porque el
 paciente lo pidió: **0**.
 
-### Tests (`make test`) — 171/171
+### Tests (`make test`) — 260/260
 
 Incluye cero falsos positivos de manipulación sobre turnos textuales del dataset, la
 regresión del extractor malicioso, y la verificación de que el resumen de cierre
 contiene los seis elementos que exige la rúbrica.
+
+### Cobertura del corpus (`make rag`)
+
+60 preguntas que un paciente hace de verdad por teléfono, cruzadas con los cinco
+procedimientos del dataset. Dos de las cifras son informativas y tres son criterio de
+fallo.
+
+| Métrica | Valor |
+|---|---:|
+| Respondidas con cita del corpus | **48/60 (80 %)** |
+| — generadas y verificadas | 44 |
+| — cita literal del corpus | 4 |
+| Abstenciones | 12/60 (20 %) |
+| **Citas de otro procedimiento** | **0** |
+| **Cifras sin respaldo en el corpus** | **0** |
+| **Cifras del corpus usadas con otra unidad** | **0** |
+
+Las 12 abstenciones son las 12 preguntas de mastectomía, ni una más: el corpus entregado
+no trae un solo documento de cáncer de mama (hallazgo 2). Por eso la tasa de abstención no
+es criterio de fallo — bajar los umbrales de fundamentación la mejoraría y empeoraría las
+tres cifras que sí lo son.
+
+Las 4 respuestas extractivas son preguntas que antes se quedaban en silencio: la
+verificación descartaba el texto generado y el corpus sí tenía la respuesta.
+
+### Escalamiento durable (`make humo` casos 9 y 10)
+
+El caso 10 abre una llamada, avanza dos turnos, **abandona el WebSocket sin cerrar** —lo
+que hace un navegador cuando se cierra la pestaña— y comprueba que la llamada queda
+cerrada como `interrumpida`, con su resumen, su ticket y la hoja de traspaso entregada en
+disco. El caso 9 comprueba que la alerta roja existe **en el turno de la bandera**, antes
+de cualquier cierre.
+
+### Cifras de los documentos (`make cifras`)
+
+Comprueba que los números que este informe y el README afirman sigan siendo ciertos
+contra la medición. Existe porque el README llegó a decir «55 tests» cuando había 171: no
+era mentira cuando se escribió, se quedó rancia. La primera corrida encontró tres
+divergencias, incluida una de una sola unidad en el número de locuciones
+pre-renderizadas — la clase de deriva que nadie ve a ojo.
 
 ### Escucha sobre voz humana grabada (`make escucha`)
 
@@ -364,9 +522,13 @@ números no servían como referencia.
 | Modelo, tiempo hasta el primer token | 185 ms |
 | Transcripción | 16–43 ms |
 | Audio de guion (caché) | 0.001 ms |
-| Turnos servidos desde caché de audio | **93 %** |
+| Turnos servidos desde caché de audio | **88 %** |
 | Invocaciones al modelo por turno (p50) | **0** |
-| **Costo por llamada** | **USD 0.0034** |
+| **Costo por llamada** | **USD 0.0026** |
+
+Medido sobre 25 turnos en 6 llamadas completas, con el servidor recién arrancado. El
+detalle y el cálculo del costo están en [`metricas.md`](metricas.md), que se genera del
+mismo `runtime.json` que esta tabla — si divergen, alguien editó una a mano.
 
 ### Compuerta G2 (`scripts/ensayo_g2.ps1`)
 
@@ -462,8 +624,13 @@ documentada en el propio docstring, porque las dos versiones fallidas enseñan a
   experiencia y la declaramos.
 - **Mastectomía.** No por decisión nuestra: el corpus no la cubre. El agente lo dice y
   escala en vez de improvisar.
-- **Tendencia entre llamadas.** El dato existe en el dataset y no lo explotamos. Es lo
-  primero que haríamos con más tiempo.
+- **Escalamiento por tendencia con umbral calibrado.** El historial entre llamadas sí está
+  construido —serie en la hoja de traspaso, reconciliación de alertas sin acuse, y dos
+  reglas de delta— pero el umbral está donde el coste medido en precisión es cero, no donde
+  un clínico lo pondría. No se puede calibrar mejor con este dataset: su deterioro es un
+  escalón, no una rampa (hallazgo 4).
+- **Identidad por persona, telefonía y cifrado en reposo.** Las tres fronteras de un
+  despliegue clínico real, detalladas en §2 y en `operacion.md`.
 
 ---
 
@@ -475,9 +642,13 @@ make instalar && make ollama && make piper && make modelos
 make up                    # http://localhost:8000
 
 # en otra terminal
-make test                  # 55 tests
+make test                  # 260 tests
 make eval                  # 160 casos, cero falsos negativos
+make humo                  # 79 comprobaciones de extremo a extremo
 make redteam               # 32 casos adversariales
+make rag                   # 60 preguntas · 0 citas cruzadas, 0 cifras sin respaldo
+make tendencia             # barrido de tendencia sobre las 40 trayectorias
+make cifras                # las cifras de estos documentos contra la medición
 make diagrama              # el diagrama contra el código
 make auditar               # defectos del corpus
 make bench                 # latencia de modelo y voz

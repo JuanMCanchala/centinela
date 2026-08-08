@@ -35,6 +35,7 @@ help:
 	@echo "  make redteam     suite adversarial (inyeccion, ruido, fuera de mision)"
 	@echo "  make bench       latencia de modelo y voz"
 	@echo "  make test        todos los tests"
+	@echo "  make cifras      las cifras de los documentos contra la medicion real"
 	@echo "  make metricas    regenera las tablas de metricas del README"
 
 # ---------------------------------------------------------------- instalacion
@@ -93,6 +94,13 @@ auditar:
 .PHONY: diagrama
 diagrama:
 	$(PY) scripts/verificar_diagrama.py
+
+# Las cifras que los documentos afirman, contra la medicion real. Existe porque el
+# README llego a decir "55 tests" cuando habia 171: no era mentira cuando se escribio,
+# se quedo rancia. Con esto no puede quedarse rancia sin que algo falle.
+.PHONY: cifras
+cifras:
+	$(PY) scripts/verificar_cifras.py
 
 .PHONY: g2
 g2:

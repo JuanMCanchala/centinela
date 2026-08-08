@@ -334,6 +334,7 @@ Medido en `eval/redteam.py`: 33 casos adversariales, incluida la familia
 | `clinical/extractor.py` | Habla → `ClinicalState` en 3 capas | Decidir criticidad |
 | `clinical/thresholds.py` | Umbrales + consulta que resuelve su cita | Evaluar |
 | `clinical/triage_engine.py` | **La decisión clínica** | Invocar el modelo |
+| `clinical/tendencia.py` | Salto entre llamadas del mismo paciente, como bandera amarilla | Decidir sin historia |
 | `dialog/script.py` | Guion canónico; fuente del caché de audio | Decidir el flujo |
 | `dialog/policy.py` | **Conducir la llamada**; interrupción por bandera roja | Extraer datos |
 | `dialog/guardrails.py` | Intención del turno; detección de manipulación | Responder |
@@ -342,7 +343,9 @@ Medido en `eval/redteam.py`: 33 casos adversariales, incluida la familia
 | `rag/embedder.py` | Embeddings ONNX con prefijos E5 | Todo lo demás |
 | `rag/retriever.py` | Recuperación híbrida + compuerta de fundamentación | Generar texto |
 | `rag/answerer.py` | Respuesta clínica + verificación post-generación | Decidir criticidad |
-| `escalation/service.py` | Ticket persistente + resumen con forma FHIR | Decidir |
+| `escalation/service.py` | Ticket persistente, resumen con forma FHIR, historial y acuse | Decidir |
+| `escalation/despacho.py` | Sacar la alerta del proceso, con reintentos y sin duplicar | Decidir a quién avisar |
 | `stt/whisper.py` | Transcripción | Interpretar |
 | `tts/piper.py` | Síntesis + caché pre-renderizado | Elegir qué decir |
 | `obs/metrics.py` | Instrumentación por etapa | Afectar el pipeline |
+| `obs/log.py` | Eventos JSON correlacionados por `llamada_id` | Registrar lo que dijo el paciente |

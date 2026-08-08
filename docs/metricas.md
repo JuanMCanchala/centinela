@@ -2,11 +2,11 @@
 
 > Generado por `scripts/render_metricas.py` a partir de los informes que
 > producen los arneses de evaluación. Ninguna cifra se escribe a mano.
-> Última generación: 2026-08-07T23:18:09+00:00
+> Última generación: 2026-08-08T12:17:27+00:00
 
 ## Métricas exigidas por la rúbrica (§5)
 
-Muestra: **21 turnos** en **4 llamadas**, medidos por `obs/metrics.py` durante la ejecución real de la API.
+Muestra: **25 turnos** en **6 llamadas**, medidos por `obs/metrics.py` durante la ejecución real de la API.
 
 ### Latencia de respuesta
 
@@ -15,12 +15,12 @@ Muestra: **21 turnos** en **4 llamadas**, medidos por `obs/metrics.py` durante l
 | Percentil | Latencia |
 |---|---:|
 | **P50** | **0.6 ms** |
-| **P95** | **385.3 ms** |
-| P99 | 5062.9 ms |
+| **P95** | **390.2 ms** |
+| P99 | 4535.6 ms |
 | mínimo | 0.4 ms |
-| máximo | 6232.4 ms |
+| máximo | 5844.6 ms |
 
-El P50 es de milisegundos porque **90 %** de los turnos se responden desde el caché de audio pre-renderizado (19 de 21): la conversación la conduce una máquina de estados, así que las locuciones del guion se conocen antes de que suene el teléfono. El P95 y el P99 son los turnos que sí necesitan sintetizar voz nueva o invocar al modelo.
+El P50 es de milisegundos porque **88 %** de los turnos se responden desde el caché de audio pre-renderizado (22 de 25): la conversación la conduce una máquina de estados, así que las locuciones del guion se conocen antes de que suene el teléfono. El P95 y el P99 son los turnos que sí necesitan sintetizar voz nueva o invocar al modelo.
 
 ### Consumo
 
@@ -28,14 +28,14 @@ El P50 es de milisegundos porque **90 %** de los turnos se responden desde el ca
 |---|---:|
 | Tokens de entrada por turno (P50) | 0.0 |
 | Tokens de salida por turno (P50) | 0.0 |
-| Tokens de entrada por turno (media) | 133.2 |
-| Tokens de salida por turno (media) | 4.1 |
-| Tokens de entrada por llamada (media) | **699.5** |
-| Tokens de salida por llamada (media) | **21.8** |
-| Turnos por llamada (media) | 5.2 |
+| Tokens de entrada por turno (media) | 111.9 |
+| Tokens de salida por turno (media) | 3.3 |
+| Tokens de entrada por llamada (media) | **466.3** |
+| Tokens de salida por llamada (media) | **13.8** |
+| Turnos por llamada (media) | 4.2 |
 | Invocaciones al modelo por turno (P50) | **0.0** |
 | Invocaciones al modelo por turno (máx) | 1 |
-| Consultas al RAG por llamada (media) | **0.25** |
+| Consultas al RAG por llamada (media) | **0.17** |
 | Consultas al RAG por llamada (máx) | 1 |
 
 Dos cifras se leen mal si no se explican, así que van explicadas.
@@ -46,7 +46,7 @@ léxico resolvió el estado de la herida, no hay nada que preguntarle. El modelo
 se invoca cuando el turno es ambiguo, y ahí sube a 1. Es la consecuencia de que
 la decisión clínica la tome el motor de reglas y no el modelo.
 
-**Las consultas al RAG por llamada (0.25 de media) son bajas** porque el
+**Las consultas al RAG por llamada (0.17 de media) son bajas** porque el
 cuestionario no consulta el corpus: recorre seis dominios con preguntas fijas. El
 RAG entra cuando el paciente pregunta algo clínico —*«¿puedo ducharme?»*,
 *«¿esto es normal?»*— y entonces la respuesta va fundamentada y con su cita. Una
@@ -59,13 +59,13 @@ temperatura, que sería gasto sin ganancia.
 
 | Concepto | USD por llamada |
 |---|---:|
-| Modelo de lenguaje | 7.2e-05 |
-| Transcripción | 0.001283 |
-| Síntesis de voz | 0.001872 |
-| **Total** | **0.003227** |
-| Total en pesos colombianos | $12.9 |
+| Modelo de lenguaje | 4.8e-05 |
+| Transcripción | 0.001036 |
+| Síntesis de voz | 0.001512 |
+| **Total** | **0.002596** |
+| Total en pesos colombianos | $10.4 |
 
-Insumos medidos que entran en el cálculo: tokens entrada por llamada = 699.5 · tokens salida por llamada = 21.8 · turnos por llamada = 5.2 · segundos audio entrada = 41.6 · caracteres tts = 468.0. Las tarifas de referencia están en `obs/metrics.py::PRECIOS_REFERENCIA`.
+Insumos medidos que entran en el cálculo: tokens entrada por llamada = 466.3 · tokens salida por llamada = 13.8 · turnos por llamada = 4.2 · segundos audio entrada = 33.6 · caracteres tts = 378.0. Las tarifas de referencia están en `obs/metrics.py::PRECIOS_REFERENCIA`.
 
 ## Decisión clínica sobre los 160 casos oficiales
 
@@ -96,7 +96,7 @@ Matriz de confusión (filas = etiqueta oficial, columnas = decisión del motor):
 
 ## Suite adversarial
 
-`make redteam` · 32/32 casos (100.0%) en 23.5 s.
+`make redteam` · 32/32 casos (100.0%) en 23.9 s.
 
 | Familia | Pasan |
 |---|---:|

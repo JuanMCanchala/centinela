@@ -1,61 +1,61 @@
 {
   "resumen": {
-    "n_turnos": 21,
-    "n_llamadas": 4,
+    "n_turnos": 25,
+    "n_llamadas": 6,
     "latencia_hasta_primer_audio": {
       "p50_ms": 0.6,
-      "p95_ms": 385.3,
-      "p99_ms": 5062.9,
+      "p95_ms": 390.2,
+      "p99_ms": 4535.6,
       "min_ms": 0.4,
-      "max_ms": 6232.4,
+      "max_ms": 5844.6,
       "definicion": "desde que se cierra el VAD (fin de habla del paciente) hasta que el primer byte de audio del agente sale hacia el navegador"
     },
     "por_etapa": {
       "extraccion": {
         "p50_ms": 0.2,
-        "p95_ms": 1.1,
-        "n": 21
+        "p95_ms": 0.4,
+        "n": 25
       },
       "tts": {
-        "p50_ms": 0.3,
-        "p95_ms": 385.0,
-        "n": 21
+        "p50_ms": 0.4,
+        "p95_ms": 389.9,
+        "n": 25
       }
     },
     "tokens_por_turno": {
       "entrada_p50": 0.0,
       "salida_p50": 0.0,
-      "entrada_media": 133.2,
-      "salida_media": 4.1
+      "entrada_media": 111.9,
+      "salida_media": 3.3
     },
     "tokens_por_llamada": {
-      "entrada_media": 699.5,
-      "salida_media": 21.8,
-      "turnos_media": 5.2
+      "entrada_media": 466.3,
+      "salida_media": 13.8,
+      "turnos_media": 4.2
     },
     "invocaciones_llm_por_turno": {
       "p50": 0.0,
       "max": 1,
-      "media": 0.05
+      "media": 0.04
     },
     "consultas_rag_por_llamada": {
-      "media": 0.25,
+      "media": 0.17,
       "max": 1
     },
     "tts": {
-      "turnos_servidos_desde_cache": 19,
-      "proporcion_desde_cache": 0.905
+      "turnos_servidos_desde_cache": 22,
+      "proporcion_desde_cache": 0.88
     }
   },
   "costo": {
     "modelo_de_costo": "extrapolacion a precios de API de produccion",
     "aclaracion": "Centinela corre local; el costo marginal real por llamada es electricidad. Estas cifras son lo que costaria el mismo trafico medido si se sirviera desde APIs comerciales.",
     "insumos_medidos": {
-      "tokens_entrada_por_llamada": 699.5,
-      "tokens_salida_por_llamada": 21.8,
-      "turnos_por_llamada": 5.2,
-      "segundos_audio_entrada": 41.6,
-      "caracteres_tts": 468.0
+      "tokens_entrada_por_llamada": 466.3,
+      "tokens_salida_por_llamada": 13.8,
+      "turnos_por_llamada": 4.2,
+      "segundos_audio_entrada": 33.6,
+      "caracteres_tts": 378.0
     },
     "tarifas_referencia": {
       "llm_entrada_usd_por_mtok": 0.1,
@@ -69,11 +69,11 @@
       "usd_cop_referencia": "tasa redondeada de referencia, agosto 2026"
     },
     "desglose_usd": {
-      "llm": 7.2e-05,
-      "stt": 0.001283,
-      "tts": 0.001872
+      "llm": 4.8e-05,
+      "stt": 0.001036,
+      "tts": 0.001512
     },
-    "costo_total_usd_por_llamada": 0.003227,
-    "costo_total_cop_por_llamada": 12.9
+    "costo_total_usd_por_llamada": 0.002596,
+    "costo_total_cop_por_llamada": 10.4
   }
 }
