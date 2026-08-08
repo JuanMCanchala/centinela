@@ -13,6 +13,51 @@
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 
+/* ===================== token de acceso, si hay uno =========================
+ *
+ * Con `CENTINELA_TOKEN` sin definir -- el caso por defecto, y el del arranque del
+ * jurado -- esto no hace nada: el servidor no pide nada y nunca hay un 401.
+ *
+ * Si el despliegue si define un token, la consola tiene que poder usarlo o la
+ * proteccion la deja inservible. Se envuelve `fetch` UNA vez en vez de tocar cada
+ * llamada: son tres sitios hoy y serian cuatro mañana, y el que se olvide es el
+ * que rompe la consola en produccion.
+ *
+ * El token vive en `sessionStorage`, no en `localStorage`: se pide otra vez al
+ * cerrar la pestana. En un puesto de enfermeria compartido, un secreto que
+ * sobrevive al cierre del navegador es un secreto de quien se siente despues.
+ */
+const CLAVE_TOKEN = "centinela_token";
+const fetchOriginal = window.fetch.bind(window);
+
+window.fetch = async (recurso, opciones = {}) => {
+  const token = sessionStorage.getItem(CLAVE_TOKEN);
+  const conCabecera = (t) => {
+    const cabeceras = new Headers(opciones.headers || {});
+    cabeceras.set("Authorization", `Bearer ${t}`);
+    return { ...opciones, headers: cabeceras };
+  };
+
+  let r = await fetchOriginal(recurso, token ? conCabecera(token) : opciones);
+
+  if (r.status === 401) {
+    const nuevo = await pedirTexto({
+      titulo: "Esta consola pide un token",
+      explicacion:
+        "El despliegue tiene CENTINELA_TOKEN definido. Se guarda solo hasta que "
+        + "cierre esta pestaña.",
+      marcador: "token de acceso",
+      textoOk: "Entrar",
+    });
+    if (nuevo) {
+      sessionStorage.setItem(CLAVE_TOKEN, nuevo);
+      r = await fetchOriginal(recurso, conCabecera(nuevo));
+    }
+  }
+
+  return r;
+};
+
 const estado = {
   llamadaId: null,
   ws: null,

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import secrets
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
@@ -25,8 +26,10 @@ from pathlib import Path
 
 import numpy as np
 from fastapi import (
+    Depends,
     FastAPI,
     File,
+    Header,
     HTTPException,
     Request,
     UploadFile,
@@ -306,6 +309,36 @@ app.add_middleware(
 
 
 # ==========================================================================
+# Acceso
+#
+# `CENTINELA_TOKEN` vacio por defecto y el sistema queda abierto, que es lo que
+# necesita la compuerta G2: quince minutos para levantar la solucion siguiendo solo
+# el README, sin pedirle al jurado que configure nada.
+#
+# Definido, protege los endpoints que MODIFICAN algo -- subir y borrar documentos,
+# abrir una llamada, atender una alerta, correr las suites. Lo que solo lee queda
+# abierto a proposito: la auditabilidad es parte de la entrega y un `/api/reglas`
+# detras de un secreto no la sirve.
+#
+# Es el minimo honesto y no es identidad. Un despliegue clinico real necesita saber
+# QUE PERSONA atendio cada alerta, y un secreto compartido no lo puede saber; esta
+# declarado asi en docs/operacion.md.
+# ==========================================================================
+
+async def exigir_token(authorization: str | None = Header(default=None)) -> None:
+    if config.token_consola:
+        presentado = (authorization or "").removeprefix("Bearer ").strip()
+        # Comparacion en tiempo constante: con `==` el tiempo de respuesta filtra
+        # cuantos caracteres del token acerto quien lo intenta.
+        if not secrets.compare_digest(presentado, config.token_consola):
+            log("acceso_rechazado", nivel="aviso", presento_algo=bool(presentado))
+            raise HTTPException(401, "falta el token o no es valido")
+
+
+PROTEGIDO = [Depends(exigir_token)]
+
+
+# ==========================================================================
 # Salud y configuracion
 # ==========================================================================
 
@@ -407,7 +440,7 @@ async def listar_documentos() -> dict:
     }
 
 
-@app.post("/api/documentos")
+@app.post("/api/documentos", dependencies=PROTEGIDO)
 async def subir_documento(archivo: UploadFile = File(...)) -> dict:
     """Ingesta en caliente. El agente lo puede usar en la siguiente consulta."""
 
@@ -415,7 +448,23 @@ async def subir_documento(archivo: UploadFile = File(...)) -> dict:
         raise HTTPException(400, "solo se aceptan archivos PDF")
 
     datos = await archivo.read()
-    destino = config.dir_subidas / archivo.filename
+
+    # Tope de tamano. Una guia clinica no pasa de unas decenas de megas; el limite
+    # esta para que una peticion no llene el disco del servidor, y se comprueba
+    # DESPUES de leer porque el tamano declarado en la cabecera lo pone el cliente.
+    tope = config.max_mb_documento * 1024 * 1024
+    if len(datos) > tope:
+        log("subida_rechazada_por_tamano", nivel="aviso",
+            nombre=archivo.filename, mb=round(len(datos) / 1024 / 1024, 1))
+        raise HTTPException(
+            413,
+            f"el archivo pesa {len(datos) / 1024 / 1024:.1f} MB y el tope es "
+            f"{config.max_mb_documento} MB (CENTINELA_MAX_MB_DOC)",
+        )
+
+    # El nombre lo pone el cliente, asi que no puede llegar al sistema de archivos
+    # tal cual: `../../algo.pdf` escribiria fuera del directorio de subidas.
+    destino = config.dir_subidas / Path(archivo.filename).name
     destino.write_bytes(datos)
 
     doc = await asyncio.to_thread(extraer_documento, destino, None, True)
@@ -496,7 +545,7 @@ class PeticionOlvido(BaseModel):
     consulta_de_verificacion: str | None = None
 
 
-@app.delete("/api/documentos/{doc_id}")
+@app.delete("/api/documentos/{doc_id}", dependencies=PROTEGIDO)
 async def eliminar_documento(doc_id: str, consulta: str | None = None) -> dict:
     """Borrado con recibo de olvido.
 
@@ -650,7 +699,7 @@ def _nueva_policy(datos: InicioLlamada) -> DialogPolicy:
     )
 
 
-@app.post("/api/llamadas")
+@app.post("/api/llamadas", dependencies=PROTEGIDO)
 async def iniciar_llamada(datos: InicioLlamada) -> dict:
     llamada_id = uuid.uuid4().hex
     policy = _nueva_policy(datos)
@@ -892,7 +941,7 @@ async def tickets(estado: str | None = None, limite: int = 50) -> dict:
     return {"tickets": E["escalation"].tickets(estado, limite)}
 
 
-@app.post("/api/tickets/{ticket_id}/atender")
+@app.post("/api/tickets/{ticket_id}/atender", dependencies=PROTEGIDO)
 async def atender_ticket(ticket_id: str, cuerpo: AcuseTicket) -> dict:
     """Acuse de recibo. Es lo que convierte una bandeja en un turno de trabajo.
 
@@ -968,7 +1017,7 @@ async def estado_prueba(suite_id: str) -> dict:
     return CORREDOR.estado(suite_id)
 
 
-@app.post("/api/pruebas/{suite_id}")
+@app.post("/api/pruebas/{suite_id}", dependencies=PROTEGIDO)
 async def correr_prueba(suite_id: str, peticion: Request) -> dict:
     if suite_id not in SUITES_POR_ID:
         raise HTTPException(404, f"suite desconocida: {suite_id}")
