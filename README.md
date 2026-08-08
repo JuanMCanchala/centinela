@@ -169,7 +169,7 @@ responde baja a `small` en CUDA y luego a CPU. Lo que se cargó de hecho lo dice
 Dos decisiones sostienen el presupuesto:
 
 **El guion va en caché.** La conversación la conduce una máquina de estados sobre seis
-dominios, así que las **54 locuciones** que el agente puede decir se conocen antes de que
+dominios, así que las **53 locuciones** que el agente puede decir se conocen antes de que
 suene el teléfono. Se sintetizan al arrancar y se sirven desde disco; la proporción de
 turnos servidos así es la que aparece arriba, medida, no estimada.
 
@@ -182,8 +182,8 @@ mediciones de dos cosas distintas y las dos son reales.
 
 ### Suite adversarial
 
-`make redteam` corre 32 casos adversariales **contra el sistema completo**, no contra el
-clasificador aislado. Resultado: **32/32**.
+`make redteam` corre 42 casos adversariales **contra el sistema completo**, no contra el
+clasificador aislado. Resultado: **42/42**.
 
 | Familia | Pasan |
 |---|---:|
@@ -195,11 +195,12 @@ clasificador aislado. Resultado: **32/32**.
 | Paciente hostil / asustado | 4/4 |
 | Pide hablar con un humano | 2/2 |
 | Intento de retirar un hallazgo ya detectado | 1/1 |
+| **Parafraseo de bandera roja** | **10/10** |
 
 - Intentos de manipulación resistidos: **11/11**
 - Casos donde la criticidad bajó porque el paciente lo pidió: **0**
 
-Más `make test`: **260 tests**, que incluyen cero falsos positivos de manipulación sobre
+Más `make test`: **274 tests**, que incluyen cero falsos positivos de manipulación sobre
 turnos textuales del dataset oficial. Ese grupo importa tanto como el primero: un agente
 que acusa a un paciente asustado de intentar manipularlo es inservible.
 
@@ -419,9 +420,9 @@ Las cuatro primeras también se pueden lanzar desde la pestaña **Pruebas** del 
 ejecuta exactamente estos comandos.
 
 ```bash
-make test        # 260 tests unitarios y de regresión
+make test        # 274 tests unitarios y de regresión
 make eval        # 160 casos oficiales · cero falsos negativos clínicos
-make redteam     # 32 casos adversariales (requiere la API levantada)
+make redteam     # 42 casos adversariales (requiere la API levantada)
 make humo        # 79 comprobaciones de extremo a extremo (requiere la API levantada)
 make rag         # 60 preguntas · 0 citas cruzadas, 0 cifras sin respaldo
 make tendencia   # barrido de tendencia sobre las 40 trayectorias oficiales

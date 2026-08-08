@@ -565,10 +565,22 @@ PISTAS_HERIDA = {
 }
 
 PISTAS_MOVILIDAD = {
+    # Las cuatro ultimas formas las encontro la familia `parafraseo_rojo` de
+    # `eval/redteam.py`, que describe criterios de alarma con palabras que NO estan en
+    # esta lista. "Tengo que arrastrarme para llegar al bano" es incapacidad funcional
+    # por cualquier lectura clinica, y el turno se quedaba en amarillo con el dominio
+    # sin resolver -- el falso negativo que no se ve, porque no hay error ni excepcion:
+    # solo una llamada que cierra en amarillo cuando debia cerrar en rojo.
+    #
+    # El paciente que no puede moverse rara vez lo dice con un verbo de negacion: lo
+    # dice contando lo que TIENE que hacer para lograrlo.
     "incapacitante_nueva": (
         "no puedo caminar", "no me puedo levantar", "no puedo apoyar",
         "no aguanto el peso", "no puedo pararme", "ya no puedo mover",
         "de un dia para otro no", "no me puedo mover", "no logro pararme",
+        "no me puedo sostener", "no me sostengo", "tengo que arrastrarme",
+        "me arrastro", "no me responde la pierna", "la pierna no me responde",
+        "gateando", "en cuatro patas",
     ),
     "limitada_esperada": (
         "despacio", "con dificultad", "me cuesta", "poco a poco", "con ayuda",

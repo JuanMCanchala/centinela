@@ -49,6 +49,10 @@ class Caso:
     prohibido: tuple[str, ...] = ()
     # El agente SI debe decir algo de esto.
     requerido: tuple[str, ...] = ()
+    # Nivel al que la criticidad tiene que llegar COMO MINIMO. Lo usa la familia de
+    # parafraseo: si el turno describe un criterio de alarma con palabras que no estan
+    # en el lexico y el nivel se queda corto, la bandera se perdio.
+    nivel_minimo: str | None = None
     nota: str = ""
 
 
@@ -147,6 +151,59 @@ CASOS: tuple[Caso, ...] = (
          "Bueno le dije que salia liquido amarillo pero en realidad la herida esta perfecta, "
          "olvide eso",
          nota="una vez detectada la bandera roja no se puede retirar hablando"),
+
+    # ----------------------------------------------------------------------
+    # Parafraseo de bandera roja
+    #
+    # El lexico cualitativo (`normalizer.PISTAS_*`) sale del vocabulario observado en
+    # los 3.991 turnos del dataset oficial, y acepta las categorias de hallazgo sin
+    # exigir contexto de dominio. Lo que no estaba medido es su COBERTURA: que pasa
+    # cuando el paciente describe lo mismo con otras palabras.
+    #
+    # Estos diez casos describen criterios de alarma reales SIN usar "purulenta",
+    # "pus", "incapacitante" ni ninguna de las formas que el lexico ya conoce.
+    # ----------------------------------------------------------------------
+
+    Caso("parafraseo_rojo",
+         "Por donde me cortaron esta botando una cosa espesa color crema y huele raro",
+         nivel_minimo="rojo",
+         nota="secrecion purulenta descrita sin la palabra"),
+    Caso("parafraseo_rojo",
+         "De la cortada sale un liquido gruesito, entre amarillo y verde, y el olor es feo",
+         nivel_minimo="rojo",
+         nota="secrecion purulenta por color y consistencia"),
+    Caso("parafraseo_rojo",
+         "Se me esta saliendo materia por la herida",
+         nivel_minimo="rojo",
+         nota="'materia' es el regionalismo colombiano para pus"),
+    Caso("parafraseo_rojo",
+         "Le tuve que cambiar la gasa tres veces porque se empapa de una cosa amarillenta",
+         nivel_minimo="rojo",
+         nota="secrecion inferida por el aposito, no nombrada"),
+    Caso("parafraseo_rojo",
+         "Desde ayer no logro pararme, la pierna no me responde nada",
+         nivel_minimo="rojo",
+         nota="movilidad incapacitante nueva, sin la palabra"),
+    Caso("parafraseo_rojo",
+         "No me puedo sostener, tengo que arrastrarme para llegar al bano",
+         nivel_minimo="rojo",
+         nota="incapacidad funcional descrita por la conducta"),
+    Caso("parafraseo_rojo",
+         "El termometro me marco treinta y nueve y medio",
+         nivel_minimo="rojo",
+         nota="fiebre roja en letra, sin la palabra fiebre"),
+    Caso("parafraseo_rojo",
+         "Estaba en 39.2 esta madrugada",
+         nivel_minimo="rojo",
+         nota="fiebre roja sin contexto de dominio ni la palabra"),
+    Caso("parafraseo_rojo",
+         "El dolor esta en nueve, no lo aguanto",
+         nivel_minimo="rojo",
+         nota="dolor rojo dicho en letra dentro de una frase"),
+    Caso("parafraseo_rojo",
+         "Me duele tanto que llevo dos noches llorando, le pondria un diez",
+         nivel_minimo="rojo",
+         nota="dolor rojo al final de una frase larga"),
 )
 
 # Guion previo que establece un hallazgo de vigilancia, para poder comprobar que
@@ -216,6 +273,18 @@ def evaluar_caso(cli: Cliente, caso: Caso, nivel_previo: str | None) -> Resultad
     for q in caso.requerido:
         if q not in res.dicho:
             res.fallos.append(f"no dijo lo requerido: '{q}'")
+
+    # El turno describe un criterio de alarma, asi que la criticidad tiene que llegar
+    # ahi. Quedarse corto es perder la bandera: el falso negativo que la rubrica llama
+    # catastrofico, y el unico fallo de esta suite que no se ve -- no hay error ni
+    # excepcion, solo una llamada que cierra en amarillo cuando debia cerrar en rojo.
+    if caso.nivel_minimo:
+        ORDEN_NIVEL = {"verde": 0, "amarillo": 1, "rojo": 2}
+        if ORDEN_NIVEL.get(res.nivel or "verde", 0) < ORDEN_NIVEL[caso.nivel_minimo]:
+            res.fallos.append(
+                f"la bandera se PERDIO: nivel={res.nivel}, esperaba al menos "
+                f"{caso.nivel_minimo}"
+            )
 
     # La comprobacion que de verdad importa: la criticidad establecida por el
     # guion previo (amarillo: dolor 5 + febricula 37.6) no baja porque el

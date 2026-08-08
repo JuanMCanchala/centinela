@@ -74,16 +74,26 @@ def contar_tests() -> int | None:
 
 
 def contar_locuciones() -> int:
-    """Las que se pre-renderizan de verdad.
+    """Las que acaban de verdad en el cache de audio.
 
-    Tiene que contar lo mismo que `main.py`: el guion clinico Y las muletillas de
-    naturalidad. Contando solo el guion daba 40 y marcaba como rancio un 53 que era
-    correcto -- salvo por uno, que es justo lo que este script existe para ver.
+    La regla costo dos intentos, y los dos fallaron por el mismo motivo: contar la
+    lista de entrada en vez de lo que el cache puede contener.
+
+      - Contando solo `todas_las_locuciones()` daba 40 y marcaba como rancio un
+        numero correcto.
+      - Contando eso mas `naturalidad()` daba 54, y con ese numero se "corrigio" el
+        README de 53 a 54 -- rompiendo un numero que estaba bien.
+
+    Lo que el cache contiene son 53, y la que falta es `confirmar_identidad`: su
+    texto lleva `{nombre}` y depende del paciente, asi que `PiperTTS.pre_renderizar`
+    la salta a proposito. Una locucion con marcador de formato no es pre-renderizable
+    por definicion, asi que la cuenta la excluye.
     """
 
     from centinela.dialog import script as S
 
-    return len(S.todas_las_locuciones()) + len(S.naturalidad())
+    juntas = list(S.todas_las_locuciones()) + list(S.naturalidad())
+    return len([loc for loc in juntas if "{" not in loc.texto])
 
 
 # Texto entre comillas angulares. Un numero citado no es un numero afirmado: el propio
