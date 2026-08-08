@@ -256,7 +256,46 @@ survivors.pdf` y `ecommendations for follow-up…pdf` (mismo DOI, similitud 0.99
 
 ---
 
-## 4. Resultados medidos
+## 4. Capturas del demo
+
+### La llamada, escalada a rojo en el turno de la herida
+
+![Consola de Centinela durante una llamada que escala a rojo](capturas/01-llamada-escalada-a-rojo.jpg)
+
+Paciente `pac_42_00026`, colecistectomía, día 7 — el caso rojo del dataset. Se ven a la
+vez las cuatro cosas que hacen auditable la decisión:
+
+- **La tira** (arriba). El tiempo corre de izquierda a derecha y cada dominio clínico
+  tiene su carril, que se rellena en el turno en que se supo el dato. La línea de nivel
+  es una escalera que **solo puede subir**, y eso no es estética: es una propiedad del
+  motor con un test que la prueba. Se ve el salto a rojo en el turno 4.
+- **El registro**, con la transcripción literal de cada turno.
+- **La decisión** (derecha), con la regla que disparó —`R3_HERIDA`— el valor observado,
+  el umbral, y **el documento del corpus que la sustenta**: `PLAN DE CUIDADO
+  COLECISTECTOMIA.pdf`, pág. 4. Es la guía del procedimiento correcto, no de otro.
+- **La cola** (izquierda), ordenada por criticidad: rojo primero, porque es una lista de
+  trabajo.
+
+La respuesta del agente no tranquiliza: interrumpe el cuestionario, nombra el hallazgo,
+dice que necesita atención médica *"ahora, no mañana"*, y deja la alerta creada con su
+identificador.
+
+### La consola de pruebas
+
+![Pestaña de pruebas con el resultado del motor de decisión](capturas/02-consola-de-pruebas.jpg)
+
+Las cuatro suites del README se ejecutan desde el navegador como subprocesos, y **el
+veredicto es el código de salida del mismo comando que documenta el README** — no hay una
+segunda implementación de estas comprobaciones dentro del panel. Si el número de la
+pantalla difiere del número del informe, es que el informe está desactualizado.
+
+En la captura: los 160 casos oficiales, `152/160` con **0 falsos negativos clínicos**,
+en un segundo. Sirve como prueba de reproducibilidad: el jurado puede correrlas sin
+tocar la terminal.
+
+---
+
+## 5. Resultados medidos
 
 Todas las cifras las generan los arneses de evaluación. Ninguna se escribe a mano; ver
 `docs/metricas.md` y `scripts/render_metricas.py`.
@@ -281,9 +320,40 @@ regional 3/3 · hostil y asustado 4/4 · pide humano 2/2 · retirar hallazgo 1/1
 Intentos de manipulación resistidos: **11/11**. Casos donde la criticidad bajó porque el
 paciente lo pidió: **0**.
 
-### Tests (`make test`) — 55/55
+### Tests (`make test`) — 171/171
 
-Incluye cero falsos positivos de manipulación sobre turnos textuales del dataset.
+Incluye cero falsos positivos de manipulación sobre turnos textuales del dataset, la
+regresión del extractor malicioso, y la verificación de que el resumen de cierre
+contiene los seis elementos que exige la rúbrica.
+
+### Escucha sobre voz humana grabada (`make escucha`)
+
+Es la única prueba que mide si el sistema **oye**, y no solo si la tubería de voz
+funciona. Las demás sintetizan el audio con Piper: eso es el TTS del sistema hablándole
+a su propio Whisper, lo cual valida remuestreo, VAD, WebSocket y latencia, pero no la
+escucha — una voz sintética es limpia, va a volumen constante y no tiene acento.
+
+18 frases dichas por una persona, elegidas donde el STT es débil: respuestas de una
+palabra, números en letra, negación de fiebre, regionalismos colombianos y las dos
+banderas rojas.
+
+| Métrica | Valor |
+|---|---:|
+| WER medio | **0.053** |
+| WER máximo | 0.333 |
+| Descartados como "sin voz" | **0** |
+| Dato clínico incorrecto | **0** |
+| **Turnos que obligarían a repreguntar** | **0 de 18** |
+
+La última fila es la que importa: es lo que el paciente sufre cuando el agente no le
+entiende y vuelve a preguntar lo mismo. La salida completa está en
+[`capturas/03-prueba-de-escucha.txt`](capturas/03-prueba-de-escucha.txt).
+
+Medir con voz humana cambió el diagnóstico. Con voz sintética fallaban tres frases
+—"Ocho de diez", "treinta y siete cinco" y "Duermo bien"— y resultaron ser artefacto
+del TTS, no debilidad del sistema: con voz humana las tres dan su valor correcto. La
+voz sintética no está en la distribución con la que Whisper fue entrenado, así que sus
+números no servían como referencia.
 
 ### Latencia y consumo
 
@@ -311,7 +381,7 @@ código; el script hace ese trabajo antes.
 
 ---
 
-## 5. Cómo trabajamos con IA
+## 6. Cómo trabajamos con IA
 
 El desarrollo se hizo con Claude Code (Opus 5) como par de programación. Lo relevante para
 la evaluación no es que se usara IA, sino **qué encontró y cómo se verificó**.
@@ -362,7 +432,7 @@ documentada en el propio docstring, porque las dos versiones fallidas enseñan a
 
 ---
 
-## 6. Qué quedó cubierto y qué no
+## 7. Qué quedó cubierto y qué no
 
 ### Cubierto
 
@@ -397,7 +467,7 @@ documentada en el propio docstring, porque las dos versiones fallidas enseñan a
 
 ---
 
-## 7. Reproducir todo
+## 8. Reproducir todo
 
 ```bash
 git clone https://github.com/JuanMCanchala/centinela && cd centinela

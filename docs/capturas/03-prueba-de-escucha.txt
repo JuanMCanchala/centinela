@@ -1,0 +1,143 @@
+==============================================================================
+PRUEBA DE ESCUCHA -- voz humana grabada contra el STT de verdad
+==============================================================================
+
+[stt] usando medium/cuda/int8_float16 (validada en 5190 ms)
+STT: medium en cuda/int8_float16
+
+  01_si_soy_yo.wav
+    dijo      : "Sí, soy yo"
+    oyo       : "Si, soy yo."
+    WER       : 0.333   ·  1.72s  ·  246 ms
+    criterios : no-voz 0.02  ·  logprob -0.45
+
+  02_no.wav
+    dijo      : "No"
+    oyo       : "No."
+    WER       : 0.000   ·  0.78s  ·  220 ms
+    criterios : no-voz 0.10  ·  logprob -0.60
+
+  03_un_seis.wav
+    dijo      : "Un seis"
+    oyo       : "Un seis."
+    WER       : 0.000   ·  1.0s  ·  217 ms
+    criterios : no-voz 0.23  ·  logprob -0.49
+    ok  dolor_nrs = 6  (esperado 6)
+
+  04_normal.wav
+    dijo      : "Normal"
+    oyo       : "¿Normal?"
+    WER       : 0.000   ·  1.0s  ·  228 ms
+    criterios : no-voz 0.20  ·  logprob -0.53
+
+  05_como_un_tres.wav
+    dijo      : "Como un tres"
+    oyo       : "Como un tres."
+    WER       : 0.000   ·  1.28s  ·  237 ms
+    criterios : no-voz 0.08  ·  logprob -0.58
+    ok  dolor_nrs = 3  (esperado 3)
+
+  06_ocho_de_diez.wav
+    dijo      : "Ocho de diez"
+    oyo       : "Ocho de diez."
+    WER       : 0.000   ·  1.22s  ·  231 ms
+    criterios : no-voz 0.33  ·  logprob -0.46
+    ok  dolor_nrs = 8  (esperado 8)
+
+  07_treinta_y_siete_cinco.wav
+    dijo      : "Treinta y siete cinco"
+    oyo       : "treinta y siete cinco"
+    WER       : 0.000   ·  2.62s  ·  327 ms
+    criterios : no-voz 0.46  ·  logprob -0.40
+    ok  temperatura_c = 37.5  (esperado 37.5)
+
+  08_treinta_y_ocho_dos.wav
+    dijo      : "Me la tomé y estaba en treinta y ocho dos"
+    oyo       : "Me la tome y estaba en treinta y ocho dos."
+    WER       : 0.100   ·  3.06s  ·  342 ms
+    criterios : no-voz 0.09  ·  logprob -0.16
+    ok  temperatura_c = 38.2  (esperado 38.2)
+
+  09_no_he_tenido_fiebre.wav
+    dijo      : "No, no he tenido fiebre"
+    oyo       : "No, no he tenido fiebre."
+    WER       : 0.000   ·  1.96s  ·  301 ms
+    criterios : no-voz 0.04  ·  logprob -0.20
+    ok  fiebre_negada = True  (esperado True)
+    ok  fiebre_subjetiva = False  (esperado False)
+
+  10_no_me_la_he_tomado.wav
+    dijo      : "No me la he tomado"
+    oyo       : "No me la he tomado."
+    WER       : 0.000   ·  1.5s  ·  273 ms
+    criterios : no-voz 0.04  ·  logprob -0.38
+    ok  sin_termometro = True  (esperado True)
+    ok  fiebre_negada = False  (esperado False)
+
+  11_liquido_amarillo.wav
+    dijo      : "La herida tiene un líquido amarillo espeso y huele mal"
+    oyo       : "¿La herida tiene un liquido amarillo espeso y huele mal?"
+    WER       : 0.100   ·  3.58s  ·  368 ms
+    criterios : no-voz 0.01  ·  logprob -0.22
+    ok  pistas.herida = 'secrecion_purulenta'  (esperado 'secrecion_purulenta')
+
+  12_no_puedo_caminar.wav
+    dijo      : "De un día para otro no puedo caminar ni apoyar el pie"
+    oyo       : "De un día para otro no puedo caminar ni apoyar el pie."
+    WER       : 0.000   ·  3.44s  ·  366 ms
+    criterios : no-voz 0.01  ·  logprob -0.21
+    ok  pistas.movilidad = 'incapacitante_nueva'  (esperado 'incapacitante_nueva')
+
+  13_regional_axila.wav
+    dijo      : "Me duele como aquí abajito de la axila hace como veinte minutos"
+    oyo       : "Me duele como aqui abajito de la axila, hace como veinte minutos."
+    WER       : 0.083   ·  3.88s  ·  395 ms
+    criterios : no-voz 0.01  ·  logprob -0.33
+
+  14_maluco.wav
+    dijo      : "Me siento maluco y destemplado"
+    oyo       : "Me siento maluco y destemplado."
+    WER       : 0.000   ·  2.74s  ·  288 ms
+    criterios : no-voz 0.01  ·  logprob -0.25
+    ok  fiebre_subjetiva = True  (esperado True)
+
+  15_rojita.wav
+    dijo      : "La herida está un poquito rojita"
+    oyo       : "La herida esta un poco rojita."
+    WER       : 0.333   ·  2.1s  ·  302 ms
+    criterios : no-voz 0.01  ·  logprob -0.17
+    ok  pistas.herida = 'eritema_leve'  (esperado 'eritema_leve')
+
+  16_camino_normal.wav
+    dijo      : "Camino normal"
+    oyo       : "Camino normal."
+    WER       : 0.000   ·  1.32s  ·  221 ms
+    criterios : no-voz 0.03  ·  logprob -0.47
+    ok  pistas.movilidad = 'normal'  (esperado 'normal')
+
+  17_como_normal.wav
+    dijo      : "Como normal"
+    oyo       : "Como normal."
+    WER       : 0.000   ·  1.18s  ·  218 ms
+    criterios : no-voz 0.05  ·  logprob -0.48
+    ok  pistas.apetito = 'normal'  (esperado 'normal')
+
+  18_duermo_bien.wav
+    dijo      : "Duermo bien"
+    oyo       : "Duermo bien."
+    WER       : 0.000   ·  1.3s  ·  251 ms
+    criterios : no-voz 0.04  ·  logprob -0.44
+    ok  pistas.sueno = 'normal'  (esperado 'normal')
+
+==============================================================================
+RESULTADO
+==============================================================================
+  audios evaluados            : 18 de 18 del guion
+  WER medio                   : 0.053
+  WER maximo                  : 0.333
+  descartados como 'sin voz'  : 0
+  dato clinico incorrecto     : 0
+
+  TURNOS QUE OBLIGARIAN A REPREGUNTAR: 0 de 18  (0 %)
+      es la metrica que el paciente sufre: el agente no le entendio
+      y le vuelve a preguntar lo mismo.
