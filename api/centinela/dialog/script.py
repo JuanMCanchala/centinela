@@ -318,6 +318,80 @@ INTERRUPCION_ROJA = Locucion(
     "Voy a detener las preguntas aqui, porque lo que me acaba de contar es importante.",
 )
 
+# La instruccion de urgencias se cuenta entre las cosas que hay que decir dos veces si
+# la primera no se oyo. Cuando el paciente corta al agente justo ahi, esto es lo que
+# vuelve a abrir el hueco -- sin fingir que no lo habiamos dicho ya.
+RETOMAR_URGENCIA = Locucion(
+    "retomar_urgencia",
+    "Antes de colgar necesito que le quede clara una cosa.",
+)
+
+# --------------------------------------------------------------------------
+# Confirmar lo entendido, y aceptar una correccion
+# --------------------------------------------------------------------------
+
+# Que el agente lea de vuelta lo que entendio no es cortesia: es la practica que en
+# clinica se llama comunicacion de circuito cerrado, y existe porque el canal de voz
+# se equivoca. Aqui hay dos fuentes de error propias -- el reconocedor puede oir
+# "treinta y ocho" donde el paciente dijo "treinta y seis", y el extractor puede
+# convertir "me duele bastante" en un siete que el paciente nunca dijo -- y la unica
+# forma de atraparlas es preguntar.
+CONFIRMAR_ENTENDIDO = Locucion(
+    "confirmar_entendido",
+    "Le repito para estar seguro de que le entendi bien.",
+)
+
+CONFIRMAR_PREGUNTA = Locucion(
+    "confirmar_pregunta",
+    "Es correcto?",
+)
+
+CONFIRMACION_ACEPTADA = Locucion(
+    "confirmacion_aceptada",
+    "Gracias por confirmarlo.",
+)
+
+CONFIRMACION_DESMENTIDA = Locucion(
+    "confirmacion_desmentida",
+    "Entiendo, entonces lo apunte mal. Se lo pregunto otra vez.",
+)
+
+ACUSE_CORRECCION = Locucion(
+    "acuse_correccion",
+    "Corrijo entonces, gracias.",
+)
+
+
+def articulo_de(procedimiento: str) -> str:
+    """El articulo indeterminado que le corresponde al nombre del procedimiento.
+
+    Existe porque estaba fijo en femenino y el agente decia, en voz alta, "despues de
+    una reemplazo de cadera/rodilla". En texto es una falta; dicho por el TTS delante
+    de un paciente al que se le acaba de detectar una bandera roja, es la frase menos
+    creible posible en el peor momento posible.
+
+    La regla es la del castellano y no una tabla de los cinco procedimientos del
+    dataset: en -a femenino, en -o masculino, y las terminaciones que resuelven el
+    resto. Una tabla se queda corta el dia que entre un procedimiento nuevo, y este
+    texto lo lee un paciente, no un test.
+    """
+
+    limpio = procedimiento.strip().lower()
+    primera = limpio.split()[0] if limpio else ""
+    # Sufijos que en castellano marcan femenino sin depender de la vocal final:
+    # -cion (reseccion), -sion (incision), -dad, -tomia (mastectomia, colectomia).
+    femenino_por_sufijo = primera.endswith(("cion", "sion", "dad", "tomia", "tomía"))
+
+    if not primera:
+        articulo = "un"
+    elif femenino_por_sufijo:
+        articulo = "una"
+    elif primera.endswith(("a", "as")):
+        articulo = "una"
+    else:
+        articulo = "un"
+    return articulo
+
 
 def todas_las_locuciones() -> list[Locucion]:
     """Inventario completo para el pre-renderizado de audio."""
@@ -327,6 +401,8 @@ def todas_las_locuciones() -> list[Locucion]:
         CIERRE_VERDE, CIERRE_AMARILLO, CIERRE_ROJO,
         PEDIR_REPETIR, RELLENO_PENSANDO, ACEPTAR_TERCERO, FUERA_DE_MISION,
         INTENTO_MANIPULACION, SIN_INFORMACION, NO_SOY_MEDICO, INTERRUPCION_ROJA,
+        RETOMAR_URGENCIA, CONFIRMAR_ENTENDIDO, CONFIRMAR_PREGUNTA,
+        CONFIRMACION_ACEPTADA, CONFIRMACION_DESMENTIDA, ACUSE_CORRECCION,
     ]
     for p in PREGUNTAS:
         fijas.extend([p.inicial, p.reintento, p.profundizar])

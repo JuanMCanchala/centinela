@@ -50,6 +50,10 @@ class Pasaje:
     pagina: int
     texto: str
     tema: str | None
+    # Con que categoria se ingirio el documento. Interesa una en concreto:
+    # `complementario` marca material que NO viene del corpus del reto, y eso tiene que
+    # llegar hasta la cita para que la respuesta lo declare.
+    categoria: str | None = None
     similitud: float = 0.0
     rango_denso: int | None = None
     rango_lexico: int | None = None
@@ -195,6 +199,7 @@ class Retriever:
                     pagina=int(meta.get("pagina", 0)),
                     texto=texto or "",
                     tema=str(meta.get("tema") or "") or None,
+                    categoria=str(meta.get("categoria") or "") or None,
                     similitud=1.0 - float(dist),
                     rango_denso=rango,
                 )
@@ -222,6 +227,7 @@ class Retriever:
                             pagina=int(c["pagina"]),
                             texto=c["texto"],
                             tema=c.get("tema"),
+                            categoria=c.get("categoria"),
                             rango_lexico=rango,
                         )
                     )

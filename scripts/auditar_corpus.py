@@ -31,6 +31,9 @@ from collections import Counter, defaultdict
 from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parents[1]
+
+# Tiene que coincidir con `scripts/ingerir_complementario.py`.
+CATEGORIA_COMPLEMENTARIA = "complementario"
 sys.path.insert(0, str(RAIZ / "api"))
 
 from centinela.rag.ingest import (  # noqa: E402
@@ -110,7 +113,16 @@ def main() -> int:
                     })
 
     # ---------------- 3. cobertura por procedimiento ----------------------
-    por_tema = Counter(d["tema"] or "sin_clasificar" for d in docs)
+    #
+    # Esta auditoria es del material ENTREGADO, asi que el complementario -- guia publica
+    # anadida para tapar el hueco de mastectomia, ver `scripts/ingerir_complementario.py`
+    # -- se cuenta aparte. Sumarlo aqui haria que el informe afirmara que el corpus del
+    # reto cubre mastectomia, y no la cubre: sus 19 PDFs de `breast_cancer/` son de cuello
+    # uterino y eso sigue siendo cierto.
+    oficiales = [d for d in docs if (d["categoria"] or "") != CATEGORIA_COMPLEMENTARIA]
+    complementarios = [d for d in docs if (d["categoria"] or "") == CATEGORIA_COMPLEMENTARIA]
+    por_tema = Counter(d["tema"] or "sin_clasificar" for d in oficiales)
+    por_tema_compl = Counter(d["tema"] or "sin_clasificar" for d in complementarios)
     procedimientos = sorted({
         p for p in TEMA_POR_PROCEDIMIENTO if not any(ord(ch) > 127 for ch in p)
     })
@@ -121,6 +133,7 @@ def main() -> int:
             "tema_requerido": tema,
             "documentos_disponibles": por_tema.get(tema, 0),
             "cubierto": por_tema.get(tema, 0) > 0,
+            "documentos_complementarios": por_tema_compl.get(tema, 0),
         }
 
     con_ocr = [d for d in docs if d["paginas_ocr"]]
@@ -169,11 +182,18 @@ def main() -> int:
             print(f"  {d['similitud']:.3f}  {d['documento_a'][:52]}")
             print(f"          {d['documento_b'][:52]}")
 
-    print("\nCOBERTURA POR PROCEDIMIENTO:")
+    print("\nCOBERTURA POR PROCEDIMIENTO (solo el corpus entregado):")
     for proc, cob in cobertura.items():
         estado = "OK" if cob["cubierto"] else "SIN COBERTURA"
+        extra = ""
+        if cob["documentos_complementarios"]:
+            extra = f"   [+{cob['documentos_complementarios']} complementario(s)]"
         print(f"  {proc:30s} -> {cob['tema_requerido']:22s} "
-              f"{cob['documentos_disponibles']:3d} docs  {estado}")
+              f"{cob['documentos_disponibles']:3d} docs  {estado}{extra}")
+    if complementarios:
+        print()
+        print(f"  Material complementario indexado aparte: {len(complementarios)} doc(s).")
+        print("  No cuenta como cobertura del corpus entregado, y la cita lo declara.")
 
     destino_json = RAIZ / "docs" / "metrics" / "corpus_index.json"
     destino_json.parent.mkdir(parents=True, exist_ok=True)

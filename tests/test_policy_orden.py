@@ -27,7 +27,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "api"))
 
 from centinela.clinical.normalizer import normalizar_turno  # noqa: E402
 from centinela.clinical.triage_engine import TriageEngine  # noqa: E402
-from centinela.dialog.policy import DialogPolicy, Paciente  # noqa: E402
+from centinela.dialog.policy import DialogPolicy, EstadoLlamada, Paciente  # noqa: E402
 from centinela.clinical.extractor import ResultadoExtraccion  # noqa: E402
 from centinela.models import (  # noqa: E402
     ClinicalState,
@@ -107,7 +107,17 @@ async def test_turno_sin_sintomas_no_toca_el_estado(texto: str) -> None:
     # asi que el extractor no se invocaba nunca en la preparacion. Al corregir esa
     # heuristica el turno empezo a llegar al extractor, como debe, y el test se
     # quejo. Que se quejara es la senal de que la correccion funciono.
+    #
+    # Y hay que rebobinar tambien la MEMORIA de criticidad de la llamada, no solo el
+    # estado clinico. Desde `_con_piso_de_criticidad` el nivel no puede bajar dentro de
+    # una llamada -- para que "no, dije 35.8" no apague una bandera ya detectada -- asi
+    # que la contaminacion de la preparacion dejaria la llamada en rojo para siempre y
+    # este test estaria midiendo el rojo del turno anterior, no el del turno bajo prueba.
     policy.estado = ClinicalState()
+    policy.decisiones.clear()
+    policy.fase = EstadoLlamada.PREGUNTANDO
+    policy.escalado = False
+    policy.confirmacion_pendiente = None
     extractor.llamadas.clear()
 
     accion = await policy.procesar(texto)

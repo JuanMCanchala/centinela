@@ -76,6 +76,30 @@ PLANTILLA = (
 # oyendo una frase de una guia clinica, no una explicacion, y merece saberlo.
 PLANTILLA_EXTRACTIVA = "Le leo lo que dice {documento}: {frase}."
 
+# Categoria con la que se ingiere el material que NO viene del corpus del reto
+# (`scripts/ingerir_complementario.py`). Tiene que coincidir con la de alli.
+CATEGORIA_COMPLEMENTARIA = "complementario"
+
+FUENTE_OFICIAL = "corpus_oficial"
+FUENTE_COMPLEMENTARIA = "complementaria"
+
+
+def _fuente_de(pasaje) -> str:
+    """De donde sale el pasaje, para que la cita lo declare.
+
+    El corpus del reto no cubre mastectomia -- sus 19 PDFs de `breast_cancer/` son de
+    cuello uterino -- y ese hueco se tapo con guia publica de autoridades nombradas,
+    marcada aparte. Distinguirlas no es burocracia: permite publicar por separado lo que
+    cubre el material entregado y lo que cubre con el anadido, y eso es la diferencia
+    entre medir y inflar la medicion.
+    """
+
+    if (pasaje.categoria or "") == CATEGORIA_COMPLEMENTARIA:
+        fuente = FUENTE_COMPLEMENTARIA
+    else:
+        fuente = FUENTE_OFICIAL
+    return fuente
+
 # Por debajo de esto la cita no es una respuesta, es un fragmento.
 MIN_CARACTERES_CITA = 40
 
@@ -343,6 +367,7 @@ class ResponderClinico:
                     "documento": pasaje_usado.nombre,
                     "documento_sha256": doc.sha256 if doc else None,
                     "tema": pasaje_usado.tema,
+                    "fuente": _fuente_de(pasaje_usado),
                     "pagina": pasaje_usado.pagina,
                     "cita_textual": elegida,
                     "similitud": round(pasaje_usado.similitud, 4),
@@ -384,6 +409,10 @@ class ResponderClinico:
                     # comprobar desde fuera que no se cruzaron procedimientos
                     # (`eval/rag_cobertura.py`) sin volver a consultar el indice.
                     "tema": p.tema,
+                    # De donde sale el pasaje. Cuando no es del corpus del reto, la
+                    # respuesta lo dice: no se puede hacer pasar material anadido por
+                    # material entregado.
+                    "fuente": _fuente_de(p),
                     "pagina": p.pagina,
                     "cita_textual": frase_mas_relevante(p.texto, consulta),
                     "similitud": round(p.similitud, 4),

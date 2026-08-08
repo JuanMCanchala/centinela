@@ -201,9 +201,15 @@ class ContextoCierre:
     preguntas_sin_responder: list[str] = field(default_factory=list)
     incidentes: list[str] = field(default_factory=list)
     consultas_rag: int = 0
+    # Lo que se le leyo de vuelta al paciente y como respondio. Ver
+    # `dialog/confirmacion.py`.
+    confirmaciones: list[dict] = field(default_factory=list)
     # False cuando no hay ni un turno del paciente. `DialogPolicy` no tiene este
     # atributo y no le hace falta: si hay una policy viva, la llamada ocurrio.
     hubo_contacto: bool = True
+    # Si el paciente oyo entera la instruccion de irse a urgencias. `None` cuando no
+    # hubo ninguna, que es el caso de toda llamada que no escala.
+    urgencia_oida: bool | None = None
 
 
 class EscalationService:
@@ -890,7 +896,22 @@ class EscalationService:
                 "preguntas_sin_responder": policy.preguntas_sin_responder,
                 "incidentes_de_seguridad": policy.incidentes,
                 "citas_usadas": citas,
-                "proximos_pasos": self._proximos_pasos(decision),
+                # Lo que se le leyo de vuelta al paciente y como respondio. Un dato que
+                # desmintio no se borra -- la alerta ya salio y decide una persona -- se
+                # anota aqui para que quien reciba el caso lo vea.
+                "confirmaciones": list(getattr(policy, "confirmaciones", []) or []),
+                # Los valores que el paciente cambio a mitad de llamada, con las dos
+                # versiones. Una correccion no retira una alerta ya creada: si pudiera,
+                # bastaria decir un numero mas bajo para bajar la criticidad.
+                "correcciones": [c.model_dump(mode="json") for c in e.correcciones],
+                # Un rojo que el paciente no llego a oir no es el mismo rojo. La
+                # instruccion se pudo cortar porque interrumpio al agente, y quien
+                # recibe el caso tiene que saber si hay alguien yendo a urgencias o
+                # alguien que no se entero.
+                "urgencia_oida": getattr(policy, "urgencia_oida", None),
+                "proximos_pasos": self._proximos_pasos(
+                    decision, getattr(policy, "urgencia_oida", None)
+                ),
                 "consultas_rag": policy.consultas_rag,
                 "n_turnos": len(policy.turnos),
                 # La serie de las llamadas anteriores del mismo paciente. Va al
@@ -923,7 +944,8 @@ class EscalationService:
                     "priority": PRIORIDAD_FHIR[decision.nivel.value],
                     "subject": {"reference": f"Patient/{p.paciente_id}"},
                     "reasonCode": [{"text": decision.motivo}],
-                    "payload": [{"contentString": self._proximos_pasos(decision)}],
+                    "payload": [{"contentString": self._proximos_pasos(
+                        decision, getattr(policy, "urgencia_oida", None))}],
                     "occurrenceDateTime": ahora,
                 }
             })
@@ -931,13 +953,24 @@ class EscalationService:
         return resumen
 
     @staticmethod
-    def _proximos_pasos(decision: TriageDecision) -> str:
+    def _proximos_pasos(decision: TriageDecision, urgencia_oida: bool | None = None) -> str:
         if decision.nivel is Nivel.ROJO:
-            pasos = (
-                "Contacto clinico inmediato. Se indico al paciente acudir a urgencias "
-                "o llamar al 123. Requiere verificacion de que el paciente llego a "
-                "atencion."
-            )
+            # "Se indico al paciente acudir a urgencias" es una afirmacion, y solo es
+            # cierta si el paciente la oyo. Con barge-in puede haber cortado al agente
+            # justo ahi, y entonces lo que hay que hacer cambia: no es verificar que
+            # llego, es decirselo.
+            if urgencia_oida is False:
+                pasos = (
+                    "Contacto clinico inmediato. ATENCION: la indicacion de acudir a "
+                    "urgencias NO se alcanzo a decir completa -- el paciente interrumpio "
+                    "al agente. Hay que darsela por telefono antes de nada."
+                )
+            else:
+                pasos = (
+                    "Contacto clinico inmediato. Se indico al paciente acudir a urgencias "
+                    "o llamar al 123. Requiere verificacion de que el paciente llego a "
+                    "atencion."
+                )
         elif decision.nivel is Nivel.AMARILLO:
             pasos = (
                 "Contacto de enfermeria dentro de las proximas 24 horas. "
@@ -1027,6 +1060,33 @@ class EscalationService:
                 L.append(f"    - [{t['ticket_id']}] {t['nivel'].upper()} del {t['creado_en'][:16]}")
                 L.append(f"        {t['motivo'][:110]}")
 
+        if e.correcciones:
+            L.append("")
+            L.append("  DATOS QUE EL PACIENTE CORRIGIO DURANTE LA LLAMADA:")
+            for c in e.correcciones:
+                L.append(
+                    f"    - {c.dominio}: {c.valor_anterior} -> {c.valor_nuevo} "
+                    f"(turno {c.turno_idx})"
+                )
+                if c.cita_paciente:
+                    L.append(f"        dijo: «{c.cita_paciente[:110]}»")
+
+        # Lo desmentido va primero y con mayusculas, porque cambia como se lee todo lo
+        # de arriba: un hallazgo que el paciente nego al confirmarlo sigue en la alerta
+        # -- no se retira por una respuesta ambigua -- pero quien llame tiene que
+        # saberlo antes de repetirle al paciente un dato que el ya discutio.
+        desmentidas = [
+            c for c in (getattr(policy, "confirmaciones", []) or [])
+            if c.get("desenlace") in ("desmentido", "sin_respuesta")
+        ]
+        if desmentidas:
+            L.append("")
+            L.append("  LO QUE EL PACIENTE NO CONFIRMO AL RELEERSELO:")
+            for c in desmentidas:
+                que = "lo desmintio" if c["desenlace"] == "desmentido" else "no contesto"
+                L.append(f"    - «{c.get('leido')}» -- {que} (turno {c.get('turno_idx')})")
+            L.append("        El hallazgo se mantiene en la alerta: lo verifica una persona.")
+
         if policy.preguntas_sin_responder:
             L.append("")
             L.append("  PREGUNTAS DEL PACIENTE QUE QUEDARON SIN RESPONDER:")
@@ -1048,7 +1108,7 @@ class EscalationService:
                     L.append(f"    - {c.get('documento')} , pag. {c.get('pagina')}")
         L.append("")
         L.append("PROXIMOS PASOS")
-        L.append(f"  {self._proximos_pasos(decision)}")
+        L.append(f"  {self._proximos_pasos(decision, getattr(policy, 'urgencia_oida', None))}")
         return "\n".join(L)
 
     @staticmethod

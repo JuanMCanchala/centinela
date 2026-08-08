@@ -84,6 +84,26 @@ class Observacion(BaseModel):
         return not self.conocido or self.valor is None
 
 
+class Correccion(BaseModel):
+    """El paciente cambio un dato que ya habia dado.
+
+    Existe porque el estado clinico se sobrescribia sin dejar rastro: "no, dije 38.5,
+    no 35.8" reemplazaba el valor y la version anterior desaparecia. En una llamada
+    clinica eso es perder informacion dos veces -- se pierde lo que dijo primero, y se
+    pierde el hecho de que se corrigio, que es en si mismo un dato.
+
+    La correccion NO retira una alerta ya creada. Si pudiera, seria la puerta trasera
+    para bajar la criticidad: basta decir un numero mas bajo. El valor vigente se usa
+    para decidir, las dos versiones quedan en el registro, y decide una persona.
+    """
+
+    turno_idx: int
+    dominio: str
+    valor_anterior: float | str | None
+    valor_nuevo: float | str | None
+    cita_paciente: str = ""
+
+
 class ClinicalState(BaseModel):
     """El cuadro clinico tal como el agente lo ha podido reconstruir hablando.
 
@@ -115,6 +135,13 @@ class ClinicalState(BaseModel):
     sintomas_libres: list[str] = Field(
         default_factory=list,
         description="Sintomas mencionados fuera de los seis dominios del protocolo",
+    )
+    correcciones: list[Correccion] = Field(
+        default_factory=list,
+        description=(
+            "Valores que el paciente cambio a mitad de llamada. La observacion guarda "
+            "el vigente; aqui queda el rastro de los anteriores."
+        ),
     )
 
     def observacion(self, dominio: str) -> Observacion:

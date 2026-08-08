@@ -104,6 +104,18 @@ class Config:
     cierre_adaptativo: bool = os.environ.get("CENTINELA_CIERRE_ADAPTATIVO", "1") == "1"
     cierre_min_ms: float = float(os.environ.get("CENTINELA_CIERRE_MIN_MS", "450"))
 
+    # Cuanto se espera a que el navegador vuelva antes de dar la llamada por colgada.
+    # Un bache de red de dos segundos no es un paciente que cuelga, y hasta ahora las
+    # dos cosas se trataban igual: cierre forzado como "interrumpida". Con esta ventana
+    # la llamada sobrevive al bache con su estado clinico intacto.
+    #
+    # No debilita ninguna garantia: el cierre forzado sigue ocurriendo, solo se retrasa
+    # hasta que la ventana expira. Y el barredor de inactividad
+    # (`timeout_llamada_s`) sigue siendo la red de seguridad de ultimo recurso.
+    gracia_reconexion_s: float = float(
+        os.environ.get("CENTINELA_GRACIA_RECONEXION_S", "20")
+    )
+
     @property
     def ruta_metricas(self) -> Path:
         return self.dir_runtime / "metricas.jsonl"
@@ -135,6 +147,7 @@ class Config:
                 "bargein_ms_confirmacion": self.bargein_ms_confirmacion,
                 "cierre_adaptativo": self.cierre_adaptativo,
                 "cierre_min_ms": self.cierre_min_ms,
+                "gracia_reconexion_s": self.gracia_reconexion_s,
             },
             "acceso_protegido": bool(self.token_consola),
         }

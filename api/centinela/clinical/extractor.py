@@ -32,6 +32,7 @@ from ..llm.backend import LLMBackend, UsoTokens
 from ..models import (
     Apetito,
     ClinicalState,
+    Correccion,
     Herida,
     Movilidad,
     Observacion,
@@ -283,6 +284,24 @@ class Extractor:
         inferido: bool,
     ) -> None:
         campo = CAMPO_POR_DOMINIO[dominio]
+
+        # El valor anterior no se puede perder en silencio. Aqui se sobrescribia la
+        # observacion entera, asi que "no, dije 38.5, no 35.8" borraba la version previa
+        # y con ella el hecho de que hubo una correccion -- que es un dato clinico en si
+        # mismo: significa que alguien de este lado entendio mal o que el paciente
+        # cambio su reporte.
+        previa = getattr(estado, campo)
+        if previa.conocido and previa.valor is not None and previa.valor != valor:
+            estado.correcciones.append(
+                Correccion(
+                    turno_idx=turno_idx,
+                    dominio=dominio,
+                    valor_anterior=previa.valor,
+                    valor_nuevo=valor,
+                    cita_paciente=cita[:300],
+                )
+            )
+
         setattr(
             estado,
             campo,

@@ -186,7 +186,6 @@ def caso_rojo(cli: Cliente) -> str:
 
     check(d.get("nivel") == "rojo", "clasifica rojo", f"nivel={d.get('nivel')}")
     check(r3.get("escala_ahora") is True, "escala en el mismo turno")
-    check(r3.get("terminada") is True, "interrumpe el cuestionario, no sigue preguntando")
 
     codigos = [x["codigo"] for x in d.get("reglas_rojas", [])]
     check("R3_HERIDA" in codigos, "dispara la regla de secrecion purulenta", f"reglas={codigos}")
@@ -198,15 +197,62 @@ def caso_rojo(cli: Cliente) -> str:
         "(es lo que hace el agente del dataset y es el error a evitar)",
         dicho[:160],
     )
+
+    # La lectura de vuelta. El agente no manda a nadie a urgencias sin comprobar antes
+    # que entendio bien: el reconocedor puede oir "treinta y ocho" donde el paciente
+    # dijo "treinta y seis", y el extractor puede deducir una cifra que nadie dijo.
     check(
-        any(t in dicho for t in ("urgencia", "123", "atencion medica")),
-        "le dice al paciente que hacer ahora",
-        dicho[:160],
+        "es correcto" in dicho,
+        "lee de vuelta lo que entendio antes de escalar",
+        dicho[:180],
+    )
+    check(
+        "liquido amarillo" in dicho or "pus" in dicho,
+        "y lo lee en castellano hablado, no con el enunciado del umbral",
+        dicho[:180],
+    )
+    check(
+        r3.get("terminada") is not True,
+        "la llamada no cuelga con la confirmacion en el aire",
     )
 
-    cierre = r3.get("cierre") or {}
+    # Lo que NO espera la confirmacion es la alerta. Si el paciente colgara ahora
+    # mismo, el ticket ya salio: es el agujero que se cerro en su dia y que confirmar
+    # no puede reabrir por la puerta de al lado.
+    alerta_del_turno = r3.get("alerta")
+    check(
+        alerta_del_turno is not None,
+        "el ticket nace en el turno de la bandera, sin esperar la confirmacion",
+    )
+    if alerta_del_turno:
+        print(f"       alerta ya creada: {alerta_del_turno['ticket_id']} "
+              f"({alerta_del_turno['nivel']})")
+
+    r4 = cli.turno(lid, "Si, asi es, es un liquido amarillo")
+    print(f"       [{(r4.get('decision') or {}).get('nivel')}] {r4['agente_dice'][:160]}")
+    dicho4 = r4["agente_dice"].lower()
+
+    check(r4.get("terminada") is True, "confirmado, interrumpe el cuestionario")
+    check(
+        any(t in dicho4 for t in ("urgencia", "123", "atencion medica")),
+        "le dice al paciente que hacer ahora",
+        dicho4[:160],
+    )
+    check(
+        "voy a detener las preguntas" not in dicho4,
+        "sin repetir el preambulo que ya dijo en el turno anterior",
+        dicho4[:160],
+    )
+
+    cierre = r4.get("cierre") or {}
     ticket = cierre.get("ticket")
     check(ticket is not None, "crea el ticket de escalamiento")
+    if ticket and alerta_del_turno:
+        check(
+            ticket["ticket_id"] == alerta_del_turno["ticket_id"],
+            "es el MISMO ticket, refrescado: confirmar no duplica la alerta",
+            f"{alerta_del_turno['ticket_id']} vs {ticket['ticket_id']}",
+        )
     if ticket:
         print(f"       ticket: {ticket['ticket_id']} ({ticket['nivel']})")
         hoja = ticket.get("hoja_legible", "")
@@ -221,6 +267,13 @@ def caso_rojo(cli: Cliente) -> str:
     check("Observation" in tipos, "el resumen estructurado incluye Observation")
     check("RiskAssessment" in tipos, "el resumen incluye RiskAssessment con la decision")
     check("CommunicationRequest" in tipos, "el resumen incluye la solicitud de contacto")
+
+    confirmaciones = (resumen.get("_centinela") or {}).get("confirmaciones") or []
+    check(
+        any(c.get("desenlace") == "confirmado" for c in confirmaciones),
+        "el resumen deja constancia de que el paciente confirmo el hallazgo",
+        f"confirmaciones={confirmaciones}",
+    )
 
     return lid
 
@@ -332,33 +385,43 @@ def caso_rag(cli: Cliente) -> None:
         if r["verificaciones_falladas"]:
             print(f"          verificaciones falladas: {r['verificaciones_falladas']}")
 
-    titulo("6. Hueco de cobertura: mastectomia")
-    r = cli.buscar("cuidados de la herida despues de la cirugia", "Mastectomía")
-    print(f"       cobertura_procedimiento={r['cobertura_procedimiento']}  "
-          f"tema_esperado={r['tema_esperado']}  fundamentado={r['fundamentado']}")
-    print(f"       razon: {r['razon'][:170]}")
+    titulo("6. El hueco de mastectomia, tapado y declarado")
+    # El corpus entregado no cubre mastectomia: sus 19 PDFs de `breast_cancer/` son de
+    # cuello uterino. El hueco se tapo con guia publica de autoridades nombradas
+    # (`scripts/ingerir_complementario.py`), y lo que se comprueba aqui no es que ahora
+    # responda -- eso es lo facil -- sino que **diga de donde saca la respuesta**. Si el
+    # material anadido pudiera pasar por material del reto, la medicion de cobertura del
+    # corpus oficial dejaria de significar nada.
+    rp = cli.preguntar("La herida de la mastectomia se ve roja, es normal?", "Mastectomía")
+    print(f"       R: {rp['respuesta'][:180]}")
+    fuentes = sorted({(c.get("fuente") or "?") for c in (rp.get("citas") or [])})
+    temas = sorted({(c.get("tema") or "?") for c in (rp.get("citas") or [])})
+    print(f"       citas: {len(rp.get('citas') or [])}  fuentes={fuentes}  temas={temas}")
+
+    check(rp["fundamentado"] is True, "ahora responde con respaldo sobre mastectomia")
     check(
-        r["cobertura_procedimiento"] is False,
-        "detecta que el corpus no cubre mastectomia "
-        "(la carpeta breast_cancer tiene guias de cuello uterino)",
-        f"cobertura={r['cobertura_procedimiento']}",
+        fuentes == ["complementaria"],
+        "y la cita declara que el respaldo es complementario, no del corpus del reto",
+        f"fuentes={fuentes}",
     )
     check(
-        r["fundamentado"] is False,
-        "se niega a fundamentar una respuesta sobre un procedimiento sin cobertura",
+        temas == ["cancer_mama"],
+        "el respaldo es de cancer de mama, no de cuello uterino como la carpeta original",
+        f"temas={temas}",
     )
 
-    rp = cli.preguntar("La herida de la mastectomia se ve roja, es normal?", "Mastectomía")
+    # Y el efecto secundario, dicho aqui para que no se pierda: tapar este hueco dejo a la
+    # compuerta "sin cobertura" sin forma de demostrarse con un paciente del dataset, porque
+    # los cinco procedimientos quedaron cubiertos. La garantia sigue viva y se prueba contra
+    # la funcion en `tests/test_compuerta_sin_cobertura.py`.
+    cobertura = cli.buscar("cuidados de la herida despues de la cirugia", "Mastectomía")
     check(
-        rp["fundamentado"] is False,
-        "el agente se abstiene en vez de improvisar sobre mastectomia",
+        cobertura["cobertura_procedimiento"] is True,
+        "el procedimiento pasa a tener cobertura (era el unico que no la tenia)",
+        f"cobertura={cobertura['cobertura_procedimiento']}",
     )
-    check(
-        "no la tengo" in rp["respuesta"].lower() or "no tengo" in rp["respuesta"].lower(),
-        "dice explicitamente que no tiene la informacion",
-        rp["respuesta"][:150],
-    )
-    print(f"       R: {rp['respuesta'][:180]}")
+    print("       nota: con los cinco procedimientos cubiertos, la rama 'sin cobertura' de")
+    print("       la compuerta ya no se puede disparar desde aqui; se prueba en tests/.")
 
 
 def caso_conocimiento_vivo(cli: Cliente) -> None:
@@ -622,6 +685,21 @@ def caso_llamada_abandonada(cli: Cliente, url: str) -> None:
     asyncio.run(abandonar())
     time.sleep(1.0)
 
+    # Lo primero que pasa ya no es el cierre: es la ventana de gracia. Un bache de red no
+    # es colgar el telefono, asi que el servidor espera un rato a que el navegador vuelva.
+    gracia = float(
+        ((cli.salud().get("config") or {}).get("conversacion") or {})
+        .get("gracia_reconexion_s", 0)
+    )
+    if gracia > 0:
+        check(
+            (cli.traza(llamada_id).get("persistida") or {}).get("terminada_en") is None,
+            "no se cierra en el acto: se espera a que el navegador vuelva",
+        )
+        print(f"       esperando la ventana de gracia ({gracia:.0f}s) para comprobar "
+              f"que el cierre ocurre igual")
+        time.sleep(gracia + 2.0)
+
     persistida = (cli.traza(llamada_id).get("persistida") or {})
     check(
         persistida.get("terminada_en") is not None,
@@ -649,6 +727,100 @@ def caso_llamada_abandonada(cli: Cliente, url: str) -> None:
         any(e["estado"] == "entregado" for e in entregas),
         "la alerta de la llamada colgada tambien sale del proceso",
     )
+
+
+def caso_reconexion(cli: Cliente, url: str) -> None:
+    """El canal se cae a mitad de llamada y vuelve: la llamada sigue donde iba.
+
+    Es el complemento del caso 10, y la diferencia entre los dos es toda la funcion: alli
+    el navegador no vuelve y la llamada se cierra como interrumpida; aqui vuelve dentro de
+    la ventana de gracia y no se cierra nada.
+
+    Lo que se comprueba no es que el socket se reabra -- eso es trivial -- sino que el
+    ESTADO CLINICO sobreviva: los turnos anteriores siguen ahi, el dominio que se estaba
+    preguntando sigue abierto, y el turno siguiente continua el cuestionario en vez de
+    empezar de cero. Antes de esto, un wifi que cambia de banda costaba la llamada.
+    """
+
+    titulo("12. El canal se cae y vuelve: la llamada sobrevive")
+
+    import asyncio
+    import json as _json
+
+    import websockets
+
+    gracia = float(
+        ((cli.salud().get("config") or {}).get("conversacion") or {})
+        .get("gracia_reconexion_s", 0)
+    )
+    if gracia <= 0:
+        print("       (saltado: la ventana de gracia esta en 0, cierre inmediato)")
+        return
+
+    ini = cli.iniciar(PACIENTE_ROJO)
+    llamada_id = ini["llamada_id"]
+    ws_url = url.replace("http://", "ws://").replace("https://", "wss://")
+
+    cli.turno(llamada_id, "Si, soy yo")
+    cli.turno(llamada_id, "Como un tres")
+    turnos_antes = len((cli.traza(llamada_id).get("en_memoria") or {}).get("turnos") or [])
+    dominio_antes = (cli.traza(llamada_id).get("en_memoria") or {}).get("dominio_actual")
+
+    async def caer_y_volver() -> dict:
+        async with websockets.connect(f"{ws_url}/ws/llamada/{llamada_id}", max_size=None):
+            await asyncio.sleep(0.2)
+        # El socket se cerro sin decir "cerrar". Se espera un poco -- menos que la
+        # ventana -- y se vuelve a llamar, que es lo que hace el navegador.
+        await asyncio.sleep(1.0)
+        aviso = {}
+        async with websockets.connect(
+            f"{ws_url}/ws/llamada/{llamada_id}", max_size=None
+        ) as ws:
+            try:
+                crudo = await asyncio.wait_for(ws.recv(), timeout=5.0)
+                if isinstance(crudo, str):
+                    aviso = _json.loads(crudo)
+            except asyncio.TimeoutError:
+                aviso = {}
+            await ws.send(_json.dumps({"tipo": "ping"}))
+            await asyncio.sleep(0.2)
+        return aviso
+
+    aviso = asyncio.run(caer_y_volver())
+
+    check(
+        aviso.get("tipo") == "reanudada",
+        "el servidor avisa de que la llamada se reanuda, no de que no existe",
+        f"recibido={aviso}",
+    )
+    check(
+        aviso.get("turnos") == turnos_antes,
+        "y la reanuda con los turnos que ya habia",
+        f"turnos={aviso.get('turnos')} esperaba {turnos_antes}",
+    )
+
+    persistida = (cli.traza(llamada_id).get("persistida") or {})
+    check(
+        persistida.get("terminada_en") is None,
+        "la llamada NO se cerro por el bache de red",
+        f"cierre_motivo={persistida.get('cierre_motivo')}",
+    )
+
+    # Y sigue funcionando: el turno siguiente continua el cuestionario.
+    r = cli.turno(llamada_id, "No, no he tenido fiebre")
+    memoria = cli.traza(llamada_id).get("en_memoria") or {}
+    check(
+        not r.get("terminada"),
+        "y sigue viva despues de reconectar",
+        f"terminada={r.get('terminada')}",
+    )
+    check(
+        len(memoria.get("turnos") or []) > turnos_antes,
+        "el turno posterior se suma a los de antes, no empieza de cero",
+        f"turnos={len(memoria.get('turnos') or [])} antes={turnos_antes}",
+    )
+    print(f"       dominio antes de caer: {dominio_antes} -> ahora: "
+          f"{memoria.get('dominio_actual')}")
 
 
 def caso_barge_in(cli: Cliente, url: str) -> None:
@@ -732,8 +904,15 @@ def caso_barge_in(cli: Cliente, url: str) -> None:
     # comprobar es que la pregunta que el paciente no oyo se vuelve a hacer. Con "un
     # seis" el dominio quedaria resuelto de casualidad y el guion avanzaria.
     pcm_encima = pcm_de("normal", repeticiones=4) or pcm_de("si_soy_yo", repeticiones=4)
+    # Y una TERCERA, para lo que el paciente dice despues de haber interrumpido. Tiene que
+    # ser una grabacion distinta y no la misma repetida: al confirmar la interrupcion solo
+    # se promueve al turno el audio de la sospecha --unos cientos de milisegundos-- y con eso
+    # solo el STT puede responder legitimamente "no detecte voz". Repetir `pcm_encima`
+    # tampoco sirve: ocho veces "normal, normal" es exactamente lo que la puerta de
+    # alucinaciones de Whisper descarta, y con razon.
+    pcm_luego = pcm_de("no_he_tenido") or pcm_de("si_soy_yo", repeticiones=2)
 
-    if pcm_identidad is None or pcm_encima is None:
+    if pcm_identidad is None or pcm_encima is None or pcm_luego is None:
         print("       (saltado: faltan grabaciones del guion de `make escucha-guion`)")
         return
 
@@ -792,7 +971,10 @@ def caso_barge_in(cli: Cliente, url: str) -> None:
             # asi que `en_memoria` seria None y no habria nada que comprobar.
             res["traza"] = cli.traza(llamada_id)
 
-            # Y el paciente termina de decir lo que estaba diciendo.
+            # Y el paciente TERMINA de decir lo que estaba diciendo, con otra grabacion.
+            # Quien interrumpe sigue hablando, y el turno que se cierra despues tiene que
+            # tener algo que transcribir: ver el comentario de `pcm_luego`.
+            await hablar(pcm_luego)
             await ws.send(json.dumps({"tipo": "fin_habla"}))
             res["despues"] = await esperar(("turno", "sin_habla"), 60)
 
@@ -901,6 +1083,7 @@ def main() -> int:
     caso_alerta_anticipada(cli)
     caso_llamada_abandonada(cli, args.url)
     caso_barge_in(cli, args.url)
+    caso_reconexion(cli, args.url)
     caso_metricas(cli)
 
     titulo("RESULTADO")

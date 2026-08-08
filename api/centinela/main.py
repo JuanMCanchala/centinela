@@ -262,6 +262,56 @@ def _forzar_cierre(llamada_id: str, policy: DialogPolicy, motivo: str) -> bool:
     return cerrada
 
 
+def _cerrar_o_esperar_al_navegador(llamada_id: str, policy: DialogPolicy) -> None:
+    """El socket se cayo. Puede ser que el paciente colgo, o un bache de red.
+
+    Hasta ahora las dos cosas se trataban igual: cierre forzado inmediato como
+    "interrumpida". Es correcto cuando el paciente cuelga, y es una perdida cuando fue
+    un tunel, un wifi que se cambia de banda o un portatil que parpadea -- la llamada
+    moria con su estado clinico a medias y el paciente tenia que empezar de cero.
+
+    Aqui se abre una ventana de gracia. Lo importante es lo que NO cambia: el cierre
+    forzado sigue ocurriendo, solo se retrasa hasta que la ventana expira. Si el
+    navegador vuelve con el mismo `llamada_id`, la politica esta donde estaba y la
+    llamada continua. Si no vuelve, se cierra exactamente igual que antes y con el mismo
+    motivo. Ninguna alerta depende de esto: la roja ya salio en su turno.
+
+    Con la ventana a cero -- `CENTINELA_GRACIA_RECONEXION_S=0` -- la conducta es la de
+    antes, cierre inmediato.
+    """
+
+    if policy.fase is EstadoLlamada.TERMINADA or config.gracia_reconexion_s <= 0:
+        _forzar_cierre(llamada_id, policy, CIERRE_INTERRUMPIDA)
+    else:
+        anterior = E.setdefault("gracia_reconexion", {}).pop(llamada_id, None)
+        if anterior is not None and not anterior.done():
+            anterior.cancel()
+        E["gracia_reconexion"][llamada_id] = asyncio.create_task(
+            _esperar_al_navegador(llamada_id, policy)
+        )
+        log("canal_caido_en_gracia", llamada_id=llamada_id,
+            segundos=config.gracia_reconexion_s, turnos=len(policy.turnos))
+
+
+async def _esperar_al_navegador(llamada_id: str, policy: DialogPolicy) -> None:
+    """Duerme la ventana de gracia y cierra si el navegador no volvio.
+
+    La tarea se cancela desde `ws_llamada` cuando el cliente reconecta, asi que llegar
+    al final significa que no volvio.
+    """
+
+    try:
+        await asyncio.sleep(config.gracia_reconexion_s)
+    except asyncio.CancelledError:
+        # Volvio. No se cierra nada; quien cancelo ya se encarga.
+        pass
+    else:
+        E.get("gracia_reconexion", {}).pop(llamada_id, None)
+        if E["llamadas"].get(llamada_id) is policy:
+            log("gracia_agotada", llamada_id=llamada_id)
+            _forzar_cierre(llamada_id, policy, CIERRE_INTERRUMPIDA)
+
+
 def _cerrar_llamadas_en_vuelo(motivo: str) -> int:
     """Cierra las llamadas que este proceso tiene vivas en memoria."""
 
@@ -1370,6 +1420,20 @@ async def _emitir_voz(canal: CanalLlamada, accion, primeras: list[bytes]) -> int
 
     await canal.enviar_json({"tipo": "fin_voz", "bytes": total,
                              "fragmentos": canal.fragmentos_enviados})
+
+    # La llamada cuelga cuando el paciente ACABA DE OIR, no cuando el servidor decide.
+    #
+    # Esto llega aqui y no en el mensaje del turno porque el turno se manda ANTES de la
+    # voz -- a proposito, para que un ticket rojo no espere a que el agente termine de
+    # hablar. El cliente colgaba al recibirlo, y colgar cierra el socket por el que
+    # venia el resto de la locucion: el paciente oia la muletilla y se le cortaba la
+    # llamada justo antes de la unica frase que importaba, la de irse a urgencias.
+    #
+    # Si la locucion se cancela por una interrupcion, este mensaje no se envia porque
+    # esta funcion muere antes de llegar aqui. Es exactamente lo que se quiere: quien
+    # corto al agente no ha oido nada que permita colgar.
+    if accion.llamada_terminada:
+        await canal.enviar_json({"tipo": "fin_llamada"})
     return total
 
 
@@ -1756,6 +1820,16 @@ async def ws_llamada(ws: WebSocket, llamada_id: str) -> None:
         await ws.close()
         return
 
+    # El navegador vuelve tras un bache de red: se cancela el cierre que estaba en
+    # espera. La politica y el estado clinico estan intactos porque nunca salieron de
+    # memoria; lo unico que se pierde es el audio del turno que estaba en curso, y eso
+    # se pierde de todas formas cuando el microfono se corta.
+    espera = E.setdefault("gracia_reconexion", {}).pop(llamada_id, None)
+    reconectado = espera is not None and not espera.done()
+    if reconectado:
+        espera.cancel()
+        log("canal_reconectado", llamada_id=llamada_id, turnos=len(policy.turnos))
+
     canal = CanalLlamada(
         ws=ws,
         llamada_id=llamada_id,
@@ -1768,6 +1842,13 @@ async def ws_llamada(ws: WebSocket, llamada_id: str) -> None:
             ms_confirmacion=config.bargein_ms_confirmacion,
         ),
     )
+
+    if reconectado:
+        await canal.enviar_json({
+            "tipo": "reanudada",
+            "turnos": len(policy.turnos),
+            "dominio_abierto": policy.dominio_abierto,
+        })
 
     try:
         while True:
@@ -1783,10 +1864,10 @@ async def ws_llamada(ws: WebSocket, llamada_id: str) -> None:
 
             elif mensaje.get("type") == "websocket.disconnect":
                 # El cliente se fue sin decir "cerrar". Mismo caso que
-                # `WebSocketDisconnect`, por otro camino: hay que cerrar la llamada.
+                # `WebSocketDisconnect`, por otro camino.
                 canal.cerrado = True
                 canal.detener_voz()
-                _forzar_cierre(llamada_id, policy, CIERRE_INTERRUMPIDA)
+                _cerrar_o_esperar_al_navegador(llamada_id, policy)
                 break
 
     except WebSocketDisconnect:
@@ -1797,7 +1878,7 @@ async def ws_llamada(ws: WebSocket, llamada_id: str) -> None:
         #
         # Es el camino mas probable de todos: nadie pulsa "terminar llamada".
         canal.cerrado = True
-        _forzar_cierre(llamada_id, policy, CIERRE_INTERRUMPIDA)
+        _cerrar_o_esperar_al_navegador(llamada_id, policy)
     except Exception as e:  # noqa: BLE001
         log("ws_fallo", nivel="error", llamada_id=llamada_id,
             error=f"{type(e).__name__}: {e}")
@@ -1868,6 +1949,24 @@ async def _atender_control(canal: CanalLlamada, evento: dict) -> bool:
         # suena la ultima muestra, no hasta que se envia.
         canal.detector.soltar_la_palabra()
         canal.anillo.clear()
+        # Y por lo mismo, es el unico momento en que se puede afirmar que la instruccion
+        # de urgencias se OYO y no solo que se envio.
+        #
+        # El resumen se reescribe porque se persistio ANTES de sonar -- el ticket no
+        # espera a que el agente hable -- y por tanto no podia saber esto. Es la misma
+        # funcion de cierre, que es idempotente (UPDATE, y ticket derivado de llamada y
+        # nivel), asi que refrescarla deja una sola alerta con el dato completo. Va aqui
+        # y no en el camino cronometrado: la latencia se mide hasta el primer byte de
+        # audio, y esto ocurre despues del ultimo.
+        antes = canal.policy.urgencia_oida
+        canal.policy.anotar_reproduccion_completa()
+        if canal.policy.urgencia_oida and antes is not True:
+            accion = canal.policy.ultima_accion
+            decision = (accion.decision if accion else None) or canal.policy.decision_vigente
+            E["escalation"].cerrar_llamada(
+                canal.llamada_id, canal.policy, decision,
+                accion.citas if accion else [],
+            )
 
     elif tipo == "descartar":
         # El VAD del cliente decidio que lo captado no era voz.

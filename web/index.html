@@ -66,6 +66,14 @@
       <path d="M18 8a6 6 0 1 0-12 0c0 7-3 8-3 8h18s-3-1-3-8"/>
       <path d="M13.7 20a2 2 0 0 1-3.4 0"/>
     </symbol>
+    <!-- La flecha del desplegable y la marca de la opcion elegida. Existen aqui, y no
+         como data URI en el CSS, porque el desplegable ya no es el del sistema: es un
+         listbox propio y sus glifos siguen el mismo camino que el resto. -->
+    <symbol id="chevron" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+    <symbol id="marca" viewBox="0 0 24 24"><path d="M4 12.5l5 5L20 6.5"/></symbol>
+    <symbol id="enviar" viewBox="0 0 24 24">
+      <path d="M4 12h15"/><path d="m13 6 6 6-6 6"/>
+    </symbol>
   </defs>
 </svg>
 
@@ -98,10 +106,27 @@
   <aside class="riel">
     <div class="bloque-riel">
       <p class="rotulo">Nueva llamada</p>
-      <label class="campo">
-        <span>Paciente</span>
-        <select id="selector-paciente"></select>
-      </label>
+      <!-- El desplegable NO es un `select` nativo, y el `select` que hay debajo tampoco
+           es decorativo. La caja cerrada se podia estilar con `appearance:none`, pero la
+           LISTA abierta la dibuja el sistema operativo y el CSS no la alcanza: en Windows
+           aparece con su azul, su tipografia y su interlineado, que no son de este panel.
+           Asi que la lista se dibuja a mano (`montarSelectorDePaciente` en app.js) y el
+           `select` se queda como fuente de verdad -- recibe el valor y emite `change` --
+           para no reescribir lo que ya lee de el el resto de la consola. -->
+      <div class="campo">
+        <span id="rotulo-paciente">Paciente</span>
+        <select id="selector-paciente" class="solo-para-lectores" tabindex="-1"></select>
+        <div class="combo" id="combo-paciente">
+          <button type="button" class="combo-boton" id="combo-boton"
+                  role="combobox" aria-expanded="false" aria-haspopup="listbox"
+                  aria-controls="combo-lista" aria-labelledby="rotulo-paciente combo-valor">
+            <span class="combo-valor" id="combo-valor"></span>
+            <svg class="icono combo-flecha" aria-hidden="true"><use href="#chevron"/></svg>
+          </button>
+          <ul class="combo-lista" id="combo-lista" role="listbox" hidden
+              aria-labelledby="rotulo-paciente"></ul>
+        </div>
+      </div>
       <div class="ficha" id="ficha-paciente"></div>
       <div class="acciones">
         <button class="boton primario" id="btn-iniciar">Iniciar llamada</button>
@@ -172,13 +197,20 @@
         </div>
 
         <div class="bloque respaldo">
-          <label class="campo">
-            <span>Turno por texto <em>(respaldo y pruebas)</em></span>
-            <div class="fila">
-              <input type="text" id="entrada-texto" placeholder="Escribir lo que diría el paciente…">
-              <button class="boton" id="btn-enviar-texto">Enviar</button>
-            </div>
+          <label class="campo" for="entrada-texto">
+            <span>Turno por texto <em>— el mismo pipeline, sin micrófono</em></span>
           </label>
+          <!-- El campo y el botón comparten filete y forman una sola pieza: son un solo
+               gesto. El input va en mono porque lo que se escribe aquí es la voz del
+               paciente transcrita, igual que en el registro. -->
+          <div class="compositor">
+            <input type="text" id="entrada-texto" autocomplete="off"
+                   placeholder="Escribir lo que diría el paciente…">
+            <button class="boton-enviar" id="btn-enviar-texto" type="button">
+              <span>Enviar</span>
+              <svg class="icono" aria-hidden="true"><use href="#enviar"/></svg>
+            </button>
+          </div>
           <div class="atajos" id="atajos-prueba"></div>
         </div>
       </div>

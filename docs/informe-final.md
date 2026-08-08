@@ -447,7 +447,7 @@ lo que **tiene que hacer** para lograrlo.
 Intentos de manipulación resistidos: **11/11**. Casos donde la criticidad bajó porque el
 paciente lo pidió: **0**.
 
-### Tests (`make test`) — 377/377
+### Tests (`make test`) — 445/445
 
 Incluye cero falsos positivos de manipulación sobre turnos textuales del dataset, la
 regresión del extractor malicioso, la verificación de que el resumen de cierre contiene los
@@ -533,11 +533,11 @@ números no servían como referencia.
 | Modelo, tiempo hasta el primer token | 198 ms |
 | Transcripción | 16–43 ms |
 | Audio de guion (caché) | 0.001 ms |
-| Turnos servidos desde caché de audio | **88 %** |
+| Turnos servidos desde caché de audio | **84 %** |
 | Invocaciones al modelo por turno (p50) | **0** |
-| **Costo por llamada** | **USD 0.0026** |
+| **Costo por llamada** | **USD 0.0024** |
 
-Medido sobre 25 turnos en 6 llamadas completas, con el servidor recién arrancado. El
+Medido sobre 31 turnos en 8 llamadas completas, con el servidor recién arrancado. El
 detalle y el cálculo del costo están en [`metricas.md`](metricas.md), que se genera del
 mismo `runtime.json` que esta tabla — si divergen, alguien editó una a mano.
 
@@ -548,7 +548,7 @@ máquina virgen. Límite del reto: 15 min. Margen en el peor caso: **9.6 minutos
 
 ### Diagrama (`make diagrama`)
 
-**16/16 módulos y 20/20 símbolos** referenciados en `docs/arquitectura.md` existen en el
+**19/19 módulos y 28/28 símbolos** referenciados en `docs/arquitectura.md` existen en el
 código. La rúbrica dice que el jurado toma elementos del diagrama al azar y los busca en el
 código; el script hace ese trabajo antes.
 
@@ -653,10 +653,10 @@ make instalar && make ollama && make piper && make modelos
 make up                    # http://localhost:8000
 
 # en otra terminal
-make test                  # 377 tests
+make test                  # 445 tests
 make eval                  # 160 casos, cero falsos negativos
 make humo                  # 79 comprobaciones de extremo a extremo
-make redteam               # 42 casos adversariales
+make redteam               # 43 casos adversariales
 make rag                   # 60 preguntas · 0 citas cruzadas, 0 cifras sin respaldo
 make tendencia             # barrido de tendencia sobre las 40 trayectorias
 make cifras                # las cifras de estos documentos contra la medición

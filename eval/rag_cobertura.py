@@ -119,10 +119,19 @@ def medir(cli: httpx.Client, procedimiento: str, pregunta: str) -> dict:
         if esperado is not None and tema is not None and tema != esperado:
             cruzadas.append({"documento": c.get("documento"), "tema": tema})
 
+    # De donde sale el respaldo. El corpus entregado no cubre mastectomia, y ese hueco se
+    # tapo con guia publica de autoridades nombradas marcada aparte
+    # (`scripts/ingerir_complementario.py`). Contar las dos cosas juntas y publicar una
+    # sola cifra seria presentar como cobertura del material del reto algo que no lo es.
+    fuentes = {c.get("fuente") or "corpus_oficial" for c in citas}
+    solo_oficial = bool(citas) and fuentes == {"corpus_oficial"}
+
     return {
         "procedimiento": procedimiento,
         "pregunta": pregunta,
         "fundamentado": bool(d.get("fundamentado")),
+        "solo_corpus_oficial": solo_oficial,
+        "fuentes": sorted(fuentes),
         "extractiva": bool(d.get("extractiva")),
         "n_citas": len(citas),
         "texto": texto,
@@ -178,6 +187,8 @@ def main() -> int:
     # ------------------------------------------------------------------
     n = len(resultados)
     fundamentadas = [r for r in resultados if r["fundamentado"]]
+    con_oficial = [r for r in fundamentadas if r["solo_corpus_oficial"]]
+    con_complemento = [r for r in fundamentadas if not r["solo_corpus_oficial"]]
     extractivas = [r for r in fundamentadas if r["extractiva"]]
     cruzadas = [r for r in resultados if r["citas_cruzadas"]]
     cifras = [r for r in resultados if r["cifras_sin_respaldo"]]
@@ -192,6 +203,10 @@ def main() -> int:
           f"({len(fundamentadas) / n:.0%})")
     print(f"     de esas, generadas y verificadas: {len(fundamentadas) - len(extractivas)}")
     print(f"     de esas, cita literal del corpus: {len(extractivas)}")
+    print()
+    print("  y por origen del respaldo, que es la cifra honesta:")
+    print(f"     solo con el corpus OFICIAL del reto : {len(con_oficial)}/{n}")
+    print(f"     apoyadas en material complementario : {len(con_complemento)}/{n}")
     print(f"  abstenciones                   : {n - len(fundamentadas)} "
           f"({(n - len(fundamentadas)) / n:.0%})")
     print()
@@ -205,7 +220,11 @@ def main() -> int:
     for proc in procedimientos:
         suyas = [r for r in resultados if r["procedimiento"] == proc]
         ok = [r for r in suyas if r["fundamentado"]]
-        print(f"    {proc:30s} {len(ok)}/{len(suyas)} respondidas")
+        oficial = [r for r in ok if r["solo_corpus_oficial"]]
+        detalle = ""
+        if len(oficial) != len(ok):
+            detalle = f"   ({len(oficial)} con el corpus oficial, el resto con complemento)"
+        print(f"    {proc:30s} {len(ok)}/{len(suyas)} respondidas{detalle}")
 
     destino = RAIZ / "docs" / "metrics" / "rag_cobertura.json"
     destino.parent.mkdir(parents=True, exist_ok=True)
@@ -214,6 +233,8 @@ def main() -> int:
             {
                 "n_preguntas": n,
                 "fundamentadas": len(fundamentadas),
+                "fundamentadas_solo_corpus_oficial": len(con_oficial),
+                "fundamentadas_con_complemento": len(con_complemento),
                 "extractivas": len(extractivas),
                 "abstenciones": n - len(fundamentadas),
                 "citas_cruzadas": len(cruzadas),
@@ -224,6 +245,11 @@ def main() -> int:
                         "respondidas": len([
                             r for r in resultados
                             if r["procedimiento"] == proc and r["fundamentado"]
+                        ]),
+                        "respondidas_solo_corpus_oficial": len([
+                            r for r in resultados
+                            if r["procedimiento"] == proc and r["fundamentado"]
+                            and r["solo_corpus_oficial"]
                         ]),
                         "preguntas": len(PREGUNTAS),
                     }

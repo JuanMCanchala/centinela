@@ -63,6 +63,10 @@ comando que lo comprueba. El detalle de operación está en
 | Ninguna respuesta clínica cita otro procedimiento ni usa una cifra que el corpus no sostenga | filtro por tema + verificación posterior a la generación | `make rag` |
 | El paciente puede cortarle la palabra al agente, y una tos no se lo corta | umbral sobre el eco medido + confirmación con el STT | `make bargein` |
 | Una pregunta que el paciente no llegó a oír es una pregunta **no hecha**: vuelve al guion sin gastar un intento | `DialogPolicy.marcar_interrumpido` | `make humo` caso 11 |
+| **La instrucción de urgencias se oye entera**: la llamada no cuelga antes, y si la interrumpen se repite | `PAPEL_URGENTE` + `_retomar_urgencia`; el registro dice si se oyó | `make humo` caso 2 · `make test` |
+| Antes de mandar a alguien a urgencias, el agente **lee de vuelta** lo que entendió | `dialog/confirmacion.py`; la alerta **no** espera la confirmación | `make humo` caso 2 |
+| Ni un desmentido ni una corrección a la baja retiran una alerta ya creada | `_con_piso_de_criticidad` + las dos versiones en el registro | `make redteam` familia `degradar_hallazgo` |
+| Un bache de red no cuesta la llamada: el canal se cae, vuelve y la llamada sigue con su estado clínico | ventana de gracia en el servidor + reconexión con espera creciente | `make humo` casos 10 y 12 |
 
 Una llamada que se abre y en la que el paciente nunca habla **no** produce alerta
 clínica: queda la constancia del intento de contacto. A alguien con quien no se habló no
@@ -92,7 +96,7 @@ estos números son los mismos en cada corrida.
 
 Medidas por `obs/metrics.py` durante la ejecución real, congeladas con `make runtime` y
 escritas por `make metricas`. **Ninguna se escribe a mano**, porque la rúbrica advierte que
-lo reportado se contrasta con los logs de la sesión. Muestra: **25 turnos en 6 llamadas
+lo reportado se contrasta con los logs de la sesión. Muestra: **31 turnos en 8 llamadas
 completas**, la que produce `make humo` sobre un servidor recién arrancado.
 
 **1. Latencia de respuesta** — *desde que se cierra el VAD (fin de habla del paciente)
@@ -101,40 +105,43 @@ hasta que el primer byte de audio del agente sale hacia el navegador.*
 | Percentil | Latencia |
 |---|---:|
 | **P50** | **0.6 ms** |
-| **P95** | **390.2 ms** |
-| P99 | 4 535.6 ms |
+| **P95** | **3 370.6 ms** |
+| P99 | 13 285.4 ms |
 
-El P50 es de milisegundos porque **88 % de los turnos se sirven desde el caché de audio
-pre-renderizado** (22 de 25): la conversación la conduce una máquina de estados, así que
-las locuciones del guion se conocen antes de que suene el teléfono. El P95 son los turnos
-que sintetizan voz nueva. El P99 es un solo turno —el que invoca al modelo *y* consulta el
-RAG— y con 25 muestras un P99 es un dato anecdótico, no una estadística; se reporta por
-completitud, no como promesa.
+El P50 es de milisegundos porque **84 % de los turnos se sirven desde el caché de audio
+pre-renderizado** (26 de 31): la conversación la conduce una máquina de estados, así que
+las locuciones del guion se conocen antes de que suene el teléfono.
+
+La cola es alta y conviene decir de qué está hecha, porque no es la del turno normal. Los
+turnos que sintetizan voz nueva —la lectura de vuelta de un hallazgo, una respuesta del
+corpus— pagan el TTS en caliente, y los dos turnos de esta muestra que además vienen de
+**audio** pagan Whisper: el STT tarda 5.6 s en P50 sobre este equipo sin GPU. Con 31
+muestras un P99 es un dato anecdótico, no una estadística; se reporta por completitud.
 
 **2. Consumo por turno y por llamada**
 
 | Métrica | Valor |
 |---|---:|
 | Tokens de entrada / salida por turno (P50) | **0 / 0** |
-| Tokens de entrada / salida por turno (media) | 111.9 / 3.3 |
-| Tokens de entrada / salida **por llamada** (media) | **466.3 / 13.8** |
-| Turnos por llamada (media) | 4.2 |
+| Tokens de entrada / salida por turno (media) | 148.9 / 4.4 |
+| Tokens de entrada / salida **por llamada** (media) | **577.1 / 17.1** |
+| Turnos por llamada (media) | 3.9 |
 
 **3. Invocaciones al modelo por turno** — **P50 = 0**, máximo 1. La mayoría de los turnos
 no llegan al modelo: si la regex ya extrajo el dolor y el léxico resolvió la herida, no hay
 nada que preguntarle. Es la consecuencia directa de que la decisión clínica la tome el
 motor de reglas.
 
-**4. Consultas al RAG por llamada** — **0.17 de media**, máximo 1. Son bajas a propósito:
+**4. Consultas al RAG por llamada** — **0.25 de media**, máximo 1. Son bajas a propósito:
 el cuestionario no consulta el corpus, recorre seis dominios con preguntas fijas. El RAG
 entra cuando el paciente pregunta algo clínico —*«¿puedo ducharme?»*— y entonces la
 respuesta va fundamentada y con su cita. Una media alta aquí significaría que el agente
 consulta documentos para preguntar la temperatura: gasto sin ganancia.
 
-**Costo estimado por llamada: USD 0.002596** (COP 10.4). Centinela corre local, así que el
+**Costo estimado por llamada: USD 0.002425** (COP 9.7). Centinela corre local, así que el
 costo marginal real es electricidad; la rúbrica pide extrapolar a precios de API y explicar
 el cálculo. Son los tokens y segundos de audio realmente medidos por tarifas públicas de
-referencia: modelo USD 0.000048 · transcripción USD 0.001036 · voz USD 0.001512. Las
+referencia: modelo USD 0.000059 · transcripción USD 0.000962 · voz USD 0.001404. Las
 tarifas están en `obs/metrics.py::PRECIOS_REFERENCIA` y los insumos en
 [`docs/metricas.md`](docs/metricas.md), que se genera del mismo `runtime.json` que estas
 cifras — si divergen, es que alguien editó una a mano.
@@ -174,7 +181,7 @@ responde baja a `small` en CUDA y luego a CPU. Lo que se cargó de hecho lo dice
 Dos decisiones sostienen el presupuesto:
 
 **El guion va en caché.** La conversación la conduce una máquina de estados sobre seis
-dominios, así que las **53 locuciones** que el agente puede decir se conocen antes de que
+dominios, así que las **59 locuciones** que el agente puede decir se conocen antes de que
 suene el teléfono. Se sintetizan al arrancar y se sirven desde disco; la proporción de
 turnos servidos así es la que aparece arriba, medida, no estimada.
 
@@ -182,12 +189,12 @@ turnos servidos así es la que aparece arriba, medida, no estimada.
 herida, no se invoca — de ahí que el P50 de invocaciones sea 0. La optimización quedó
 registrada en `eval/probar_tokens.py`, sobre un escenario fijo de seis turnos: **1359 → 672
 tokens de entrada por llamada**. Es un escenario fijo, distinto de la muestra de §5, así que
-su cifra no tiene por qué coincidir con los 466.3 tokens/llamada de arriba: son dos
+su cifra no tiene por qué coincidir con los 577.1 tokens/llamada de arriba: son dos
 mediciones de dos cosas distintas y las dos son reales.
 
 ### Suite adversarial
 
-`make redteam` corre 42 casos adversariales **contra el sistema completo**, no contra el
+`make redteam` corre 43 casos adversariales **contra el sistema completo**, no contra el
 clasificador aislado. Resultado: **42/42**.
 
 | Familia | Pasan |
@@ -205,7 +212,7 @@ clasificador aislado. Resultado: **42/42**.
 - Intentos de manipulación resistidos: **11/11**
 - Casos donde la criticidad bajó porque el paciente lo pidió: **0**
 
-Más `make test`: **377 tests**, que incluyen cero falsos positivos de manipulación sobre
+Más `make test`: **445 tests**, que incluyen cero falsos positivos de manipulación sobre
 turnos textuales del dataset oficial. Ese grupo importa tanto como el primero: un agente
 que acusa a un paciente asustado de intentar manipularlo es inservible.
 
@@ -214,7 +221,7 @@ que acusa a un paciente asustado de intentar manipularlo es inservible.
 Dos cosas separan una llamada de un walkie-talkie: se puede cortar al otro, y no hay que
 esperar a que se haga el silencio para que conteste.
 
-**Interrumpir al agente.** `make bargein` mezcla las 53 locuciones reales del agente —como
+**Interrumpir al agente.** `make bargein` mezcla las locuciones reales del agente —como
 eco del altavoz— con las 18 grabaciones de voz humana de `eval/audios/`, a atenuaciones de
 eco conocidas, y pasa la mezcla trama a trama por el mismo detector que corre en la llamada.
 
@@ -222,9 +229,9 @@ eco conocidas, y pasa la mezcla trama a trama por el mismo detector que corre en
 |---|---:|---:|---:|---:|
 | −30 dB · auriculares | 100 % | 112 / 144 ms | 0.00 | **0** |
 | −20 dB · portátil con cancelación | 100 % | 80 / 144 ms | 0.00 | **0** |
-| −12 dB · altavoz a volumen medio | 100 % | 144 / 202 ms | 0.23 | **0** |
-| −6 dB · altavoz alto | 83 % | 208 / 342 ms | 0.23 | **0** |
-| −3 dB · altavoz muy alto | 33 % | 240 / 1686 ms | 0.23 | **0** |
+| −12 dB · altavoz a volumen medio | 100 % | 144 / 202 ms | 0.21 | **0** |
+| −6 dB · altavoz alto | 83 % | 208 / 342 ms | 0.21 | **0** |
+| −3 dB · altavoz muy alto | 33 % | 240 / 1686 ms | 0.21 | **0** |
 
 Dos capas, y la segunda es la que importa. La energía **sospecha** y el agente baja la voz
 al 15 % en 20 ms; la transcripción del audio acumulado **confirma**, con las mismas puertas
@@ -245,6 +252,52 @@ número para el dolor, una temperatura, un sí/no—, el turno cierra a los 450 
 `make escucha` sobre las 18 grabaciones reales: **11 de 18 cierran a 450 ms**, y las 7
 restantes esperan el techo por un motivo que el arnés imprime, no por descarte. La métrica
 que el paciente sufre no se movió: **0 de 18 turnos obligan a repreguntar**.
+
+### Confirmar lo entendido, y aceptar una corrección
+
+Un agente que solo pregunta y anota no conversa. Faltaban las dos cosas que hace cualquiera
+al teléfono cuando el canal es dudoso, y el canal aquí lo es siempre.
+
+**Leer de vuelta antes de escalar.** El reconocedor puede oír *«treinta y ocho»* donde el
+paciente dijo *«treinta y seis»*, y el extractor puede convertir *«me duele bastante»* en un
+siete que nadie dijo — `Procedencia.inferido` ya marcaba ese caso desde el primer día; lo que
+faltaba era hacer algo con la marca. Así que antes de mandar a alguien a urgencias el agente
+lo repite en castellano hablado: *«Le repito para estar seguro de que le entendí bien. Me
+dice fiebre de 38.5 grados. ¿Es correcto?»*. En clínica esto se llama comunicación de
+circuito cerrado y existe justamente porque el canal se equivoca.
+
+Tres cosas que **no** cambian, y son las que hacen que esto sea seguro:
+
+- **La alerta no espera la confirmación.** El ticket nace en el turno de la bandera, como
+  antes. Si el paciente cuelga durante la confirmación, la alerta ya salió.
+- **Un «no» no apaga el ticket.** Se anota el desmentido, se vuelve a preguntar el dominio, y
+  decide una persona con el caso delante. Si un *«no, ya se me quitó»* pudiera retirar la
+  bandera, la confirmación sería una puerta trasera a la criticidad — y el paciente que
+  minimiza es uno de los perfiles del reto, no una hipótesis.
+- **No conseguir confirmación no bloquea la instrucción.** Se pregunta una vez más y después
+  se actúa sobre lo entendido. Alguien con 38.5 que no contesta ni sí ni no tiene que oír que
+  vaya a urgencias igual.
+
+**Corregirse a mitad de llamada.** *«No, dije 38.5, no 35.8.»* Antes el valor se sobrescribía
+en silencio: se perdía la versión anterior y se perdía el hecho de que hubo una corrección,
+que es un dato clínico por sí mismo. Ahora el agente lo acusa en voz alta y repite el valor
+nuevo, y la hoja de traspaso lleva las dos versiones con su turno. Bajar la cifra tampoco
+retira la alerta: dentro de una llamada la criticidad **solo puede subir**
+(`_con_piso_de_criticidad`), y `make redteam` lo comprueba con un caso que establece la
+bandera y después intenta desdecirse.
+
+**Que la instrucción de urgencias se oiga entera.** Es la única frase del sistema cuya
+pérdida es un daño clínico, y con barge-in el paciente puede cortarla. Si la corta, la llamada
+no cuelga: el agente cede la palabra y la repite una vez. Si tampoco oye la repetición, el
+registro lo dice —`urgencia_oida` en falso— y los próximos pasos de la hoja cambian: ya no
+dicen «verificar que el paciente llegó», dicen que hay que darle la indicación por teléfono.
+Un rojo que el paciente no llegó a oír no es el mismo rojo.
+
+**Que un bache de red no cueste la llamada.** El WebSocket se cae y el navegador vuelve dentro
+de una ventana de gracia de 20 s: la llamada sigue con su estado clínico y su dominio abierto.
+Antes, un wifi que cambiaba de banda cerraba la llamada como «interrumpida» y el paciente
+empezaba de cero. Ninguna garantía se debilitó: el cierre forzado sigue ocurriendo cuando
+nadie vuelve, solo se retrasa hasta que la ventana expira (`make humo` casos 10 y 12).
 
 ### Compuerta de arranque (G2)
 
@@ -324,6 +377,36 @@ corpus no lo cubre. La auditoría del corpus (`make auditar`, resultado en
 
 Los duplicados no los detecta ningún hash de archivo: son el mismo artículo con las
 ligaduras codificadas distinto. Se atrapan comparando términos distintivos del texto.
+
+**Y era el hueco entero de la medición.** De las 60 preguntas de `make rag`, las 12 que no
+se respondían eran *exactamente* las de mastectomía; los otros cuatro procedimientos iban
+12/12. Se comprobó contra el repo base el 2026-08-08: el único commit posterior a nuestra
+copia toca `docs/stack-tecnico.md` y el dataset sigue igual, así que el hueco es del material
+y no lo taparon ellos.
+
+Está tapado, y **marcado**. `scripts/ingerir_complementario.py` ingiere guía pública real de
+autoridades nombradas sobre el postoperatorio de cirugía de mama —Fred Hutchinson Cancer
+Center / UW Medicine y Memorial Sloan Kettering, con su URL y su fecha de descarga en
+`data/complementario/procedencia.json`— con la categoría `complementario`. Esa marca viaja
+hasta la cita, así que cuando el agente se apoya en ese material la respuesta lo declara: no
+se puede hacer pasar material añadido por material entregado.
+
+Por eso **`make rag` publica dos cifras y no una**:
+
+| Respaldo de las 60 respuestas | Fundamentadas |
+|---|---:|
+| Solo con el corpus **oficial** del reto | **48 / 60** |
+| Apoyadas en material complementario declarado | 12 / 60 |
+| Total, con 0 citas cruzadas y 0 cifras sin respaldo | **60 / 60** |
+
+Sumar documentos que responden nuestras propias preguntas de evaluación y publicar una sola
+cifra sería inflar la medición. Y `make auditar` sigue diciendo *Mastectomía → 0 docs, SIN
+COBERTURA* sobre el corpus entregado: el hallazgo no se borra por haberlo resuelto.
+
+Un tercer PDF se descargó y **se rechazó**: era de reducción mamaria, no de mastectomía. Lo
+detectó la misma clasificación por contenido que denuncia el defecto del corpus oficial —el
+script se niega a ingerir lo que no clasifique como `cancer_mama`—, porque repetir en el
+material propio el error que se le señala al entregado sería lo peor de los dos mundos.
 
 ### 3. El agente de referencia del dataset nunca escala
 
@@ -438,11 +521,20 @@ web/                        frontend sin paso de compilación
 ## Modelo declarado (compuerta G3)
 
 **`phi3.5:3.8b-mini-instruct-q4_K_M`** vía Ollama, con **`llama3.2:1b`** evaluado y
-descartado (ver hallazgo 1).
+descartado (ver hallazgo 1). Nombre y versión exactos, que es lo que la compuerta pide
+declarar.
 
-Ambos están en la lista de modelos permitidos de
+La regla vigente son **familias**, no versiones puntuales: la organización enmendó
 [`docs/stack-tecnico.md`](https://github.com/TechSphere2026/ParticipantArtifacts/blob/main/docs/stack-tecnico.md)
-del reto. Se verifica en `api/centinela/config.py`, en el `Makefile` y en `GET /api/salud`.
+el 2026-08-07 (commit `5811f6f`) porque los proveedores retiran snapshots sin avisar. Phi-3.5
+Mini 3.8B pertenece a **Microsoft Phi Mini (serie 3.5+, ~3–4 B), local**, y Llama 3.2 1B a
+**Meta Llama (serie 3.x, 1B–3B), local**: las dos familias están permitidas.
+
+La enmienda permite además usar el sucesor vigente de la misma familia. **No se cambió de
+modelo a propósito**: todas las cifras de este documento están medidas con Phi-3.5 Mini, y
+cambiar el modelo sin volver a medirlas dejaría un informe que no describe lo que corre.
+
+Se verifica en `api/centinela/config.py`, en el `Makefile` y en `GET /api/salud`.
 
 ---
 
@@ -464,11 +556,13 @@ ejecuta exactamente estos comandos como subprocesos. El veredicto es su código 
 así que no hay una segunda implementación dentro del panel.
 
 ```bash
-make test        # 377 tests unitarios y de regresión
+make test        # 445 tests unitarios y de regresión
 make eval        # 160 casos oficiales · cero falsos negativos clínicos
-make redteam     # 42 casos adversariales (requiere la API levantada)
-make humo        # 79 comprobaciones de extremo a extremo (requiere la API levantada)
+make redteam     # 43 casos adversariales (requiere la API levantada)
+make humo        # 101 comprobaciones de extremo a extremo (requiere la API levantada)
 make rag         # 60 preguntas · 0 citas cruzadas, 0 cifras sin respaldo
+make bargein     # 0 cortes falsos y latencia de interrupción medida
+make escucha     # cierre del turno y palabra clínica sobre 18 grabaciones reales
 make tendencia   # barrido de tendencia sobre las 40 trayectorias oficiales
 make cifras      # comprueba que los números de estos documentos siguen siendo ciertos
 make diagrama    # cada elemento del diagrama existe en el código
@@ -483,5 +577,10 @@ make metricas    # regenera docs/metricas.md desde las mediciones
 ## Licencia
 
 MIT. Los PDFs del corpus clínico son obra de sus respectivos autores y se usan solo como
-material de referencia del reto. Los datos clínicos del dataset son **sintéticos y no han
-sido validados clínicamente**.
+material de referencia del reto. Lo mismo vale para el material complementario de
+`data/complementario/`: son guías de educación al paciente publicadas por Fred Hutchinson
+Cancer Center / UW Medicine y Memorial Sloan Kettering, con su URL y su fecha de descarga
+registradas en `procedencia.json`, y se usan igual — como material de referencia, sin
+reclamar ningún derecho sobre ellas.
+
+Los datos clínicos del dataset son **sintéticos y no han sido validados clínicamente**.

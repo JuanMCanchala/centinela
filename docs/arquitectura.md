@@ -154,10 +154,18 @@ flowchart TB
 
     EVAL["clinical/triage_engine.py<br/>TriageEngine.evaluar"] --> ROJO{"¿algún criterio<br/>de alarma?"}
 
-    ROJO -->|"fiebre ≥ 38.0<br/>dolor ≥ 7<br/>secreción purulenta<br/>movilidad incapacitante nueva"| INT["dialog/policy.py<br/>_interrumpir_por_bandera_roja"]
-    INT --> INSTR["instrucción de seguridad<br/>+ qué pasa ahora"]
-    INSTR --> TICKET["escalation/service.py<br/>ticket ROJO + resumen"]
-    TICKET --> FIN(["llamada terminada"])
+    ROJO -->|"fiebre ≥ 38.0<br/>dolor ≥ 7<br/>secreción purulenta<br/>movilidad incapacitante nueva"| INT["dialog/policy.py<br/>_confirmar_antes_de_escalar"]
+    INT --> TICKET["escalation/service.py<br/>ticket ROJO + resumen<br/>(no espera la confirmación)"]
+    INT --> LEER["dialog/confirmacion.py<br/>que_confirmar<br/>«me dice fiebre de 38.5,<br/>¿es correcto?»"]
+    LEER --> RESP{"dialog/confirmacion.py<br/>interpretar"}
+    RESP -->|"sí, o no contesta"| INSTR["instrucción de urgencias<br/>PAPEL_URGENTE"]
+    RESP -->|no| DESM["se anota el desmentido<br/>y se vuelve a preguntar<br/>el ticket NO se retira"]
+    DESM --> START
+    INSTR --> OIDA{"¿la oyó entera?<br/>fin_reproduccion"}
+    OIDA -->|no| REPITE["se repite una vez<br/>_retomar_urgencia"]
+    REPITE --> OIDA
+    OIDA -->|sí| FIN(["llamada terminada"])
+    TICKET --> FIN
 
     ROJO -->|no| CUENTA{"¿cuántas banderas<br/>de vigilancia?"}
 
@@ -397,6 +405,8 @@ Medido en `eval/redteam.py`: 33 casos adversariales, incluida la familia
 | `dialog/script.py` | Guion canónico; fuente del caché de audio | Decidir el flujo |
 | `dialog/policy.py` | **Conducir la llamada**; interrupción por bandera roja | Extraer datos |
 | `dialog/guardrails.py` | Intención del turno; detección de manipulación | Responder |
+| `dialog/confirmacion.py` | Qué leerle de vuelta al paciente y cómo interpretar su sí o su no | Decidir si se escala |
+| `dialog/completitud.py` | Si el turno del paciente ya se sostiene solo, para cerrarlo antes | Transcribir |
 | `rag/ingest.py` | PDF → chunks; OCR selectivo; tema por contenido | Recuperar |
 | `rag/store.py` | Persistencia, tombstones, generación, recibos de olvido | Rankear |
 | `rag/embedder.py` | Embeddings ONNX con prefijos E5 | Todo lo demás |

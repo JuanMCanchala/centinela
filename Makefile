@@ -88,6 +88,13 @@ extraer:
 umbrales:
 	$(PY) scripts/ground_thresholds.py
 
+# Tapa el unico hueco clinico del corpus entregado (mastectomia) con guia publica de
+# autoridades nombradas, marcada como complementaria para que la cita lo declare.
+# El indice ya viene con esto hecho; el objetivo existe para poder reproducirlo.
+.PHONY: complementario
+complementario:
+	$(PY) scripts/ingerir_complementario.py
+
 .PHONY: auditar
 auditar:
 	$(PY) scripts/auditar_corpus.py

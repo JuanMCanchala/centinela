@@ -1,30 +1,37 @@
 {
   "n_preguntas": 60,
-  "fundamentadas": 48,
-  "extractivas": 2,
-  "abstenciones": 12,
+  "fundamentadas": 60,
+  "fundamentadas_solo_corpus_oficial": 48,
+  "fundamentadas_con_complemento": 12,
+  "extractivas": 5,
+  "abstenciones": 0,
   "citas_cruzadas": 0,
   "cifras_sin_respaldo": 0,
   "cifras_mal_contextualizadas": 0,
   "por_procedimiento": {
     "Apendicectomía": {
       "respondidas": 12,
+      "respondidas_solo_corpus_oficial": 12,
       "preguntas": 12
     },
     "Colecistectomía": {
       "respondidas": 12,
+      "respondidas_solo_corpus_oficial": 12,
       "preguntas": 12
     },
     "Colectomía": {
       "respondidas": 12,
+      "respondidas_solo_corpus_oficial": 12,
       "preguntas": 12
     },
     "Reemplazo de cadera/rodilla": {
       "respondidas": 12,
+      "respondidas_solo_corpus_oficial": 12,
       "preguntas": 12
     },
     "Mastectomía": {
-      "respondidas": 0,
+      "respondidas": 12,
+      "respondidas_solo_corpus_oficial": 0,
       "preguntas": 12
     }
   },
@@ -33,9 +40,13 @@
       "procedimiento": "Apendicectomía",
       "pregunta": "¿Puedo ducharme o me tengo que esperar?",
       "fundamentado": true,
+      "solo_corpus_oficial": true,
+      "fuentes": [
+        "corpus_oficial"
+      ],
       "extractiva": false,
       "n_citas": 5,
-      "texto": "El contexto no proporciona instrucciones específicas sobre cuándo puedes bañarte después de la cirugía, por favor consulta con tu equipo médico para obtener orientación personalizada.",
+      "texto": "El documento no proporciona directrices específicas sobre cuándo puedes bañarte después de la cirugía, por favor consulta con tu equipo médico para obtener instrucciones personalizadas.",
       "cifras_sin_respaldo": [],
       "cifras_mal_contextualizadas": [],
       "citas_cruzadas": [],
@@ -45,9 +56,13 @@
       "procedimiento": "Apendicectomía",
       "pregunta": "¿Cuándo puedo volver a hacer ejercicio?",
       "fundamentado": true,
+      "solo_corpus_oficial": true,
+      "fuentes": [
+        "corpus_oficial"
+      ],
       "extractiva": false,
       "n_citas": 5,
-      "texto": "Puedes comenzar con actividades suaves según tu recuperación, pero consulte al médico antes de retomar deportes intensos para obtener recomendaciones personalizadas.",
+      "texto": "Puedes comenzar con actividades suaves según tu recuperación, pero consulte a tu médico antes de reanudar ejercicios intensos.",
       "cifras_sin_respaldo": [],
       "cifras_mal_contextualizadas": [],
       "citas_cruzadas": [],
@@ -57,9 +72,13 @@
       "procedimiento": "Apendicectomía",
       "pregunta": "¿Qué hago si me sale un líquido de la herida?",
       "fundamentado": true,
+      "solo_corpus_oficial": true,
+      "fuentes": [
+        "corpus_oficial"
+      ],
       "extractiva": false,
       "n_citas": 5,
-      "texto": "Si notas una salida de líquido desde la herida, es importante comunicarlo a tu equipo médico para que puedan evaluar y aconsejar sobre los siguientes pasos según su experiencia clínica postoperatoria.",
+      "texto": "Si notas salir líquido de la herida, es importante mantenerla limpia y vigila por signos de infección; consulta a tu equipo médico para orientación específica.",
       "cifras_sin_respaldo": [],
       "cifras_mal_contextualizadas": [],
       "citas_cruzadas": [],
@@ -69,6 +88,10 @@
       "procedimiento": "Apendicectomía",
       "pregunta": "¿Cuándo debo ir a urgencias?",
       "fundamentado": true,
+      "solo_corpus_oficial": true,
+      "fuentes": [
+        "corpus_oficial"
+      ],
       "extractiva": false,
       "n_citas": 5,
       "texto": "Si experimentas síntomas como fiebre, dolor abdominal persistente o dificultad respiratoria después del tercer día postoperatorio, consulta de inmediato al servicio de urgencias.",
@@ -81,9 +104,13 @@
       "procedimiento": "Apendicectomía",
       "pregunta": "¿Puedo manejar carro?",
       "fundamentado": true,
+      "solo_corpus_oficial": true,
+      "fuentes": [
+        "corpus_oficial"
+      ],
       "extractiva": false,
       "n_citas": 5,
-      "texto": "No se proporciona información específica sobre la capacidad de movilidad después de una apendicectomía; generalmente, recomienda consultar con su equipo médico para obtener orientación personalizada basada en su estado postoperatorio actual.",
+      "texto": "No se proporciona información específica sobre la capacidad de movilidad después de una apendicectomía; generalmente es recomendado esperar hasta que te hayan dado el alta por tu cirujano para evaluar tus habilidades motoras.",
       "cifras_sin_respaldo": [],
       "cifras_mal_contextualizadas": [],
       "citas_cruzadas": [],
@@ -93,9 +120,13 @@
       "procedimiento": "Apendicectomía",
       "pregunta": "¿Cuánto tiempo voy a estar incapacitado?",
       "fundamentado": true,
+      "solo_corpus_oficial": true,
+      "fuentes": [
+        "corpus_oficial"
+      ],
       "extractiva": false,
       "n_citas": 5,
-      "texto": "El documento no proporciona información específica sobre la duración del período de recuperación para pacientes postoperatorios después de una apendicectomía. Se recomienda consultar con el equipo médico del hospital para obtener orientación personalizada.",
+      "texto": "El documento no proporciona un tiempo específico de recuperación, pero indica que se debe seguir las directrices del equipo médico postoperatorio.",
       "cifras_sin_respaldo": [],
       "cifras_mal_contextualizadas": [],
       "citas_cruzadas": [],
@@ -105,9 +136,13 @@
       "procedimiento": "Apendicectomía",
       "pregunta": "¿Qué puedo comer estos días?",
       "fundamentado": true,
+      "solo_corpus_oficial": true,
+      "fuentes": [
+        "corpus_oficial"
+      ],
       "extractiva": false,
       "n_citas": 5,
-      "texto": "Consuma verduras cocidas sin grasa o purés, y al menos tres porciones de frutas diarias excluyendo manzana, pera o durazno si tien-es estreñimiento; evita alimentos crudos y levanta objetos pesados durante las primeras semanas después de la cirugía.",
+      "texto": "Consuma purés o cocinadas verduras sin grasa, y tres porciones de frutas al día evitando aquellas que pueden empeorar la estreñimiento como guayaba y pera.",
       "cifras_sin_respaldo": [],
       "cifras_mal_contextualizadas": [],
       "citas_cruzadas": [],
@@ -117,9 +152,13 @@
       "procedimiento": "Apendicectomía",
       "pregunta": "¿Es normal que me duela todavía?",
       "fundamentado": true,
+      "solo_corpus_oficial": true,
+      "fuentes": [
+        "corpus_oficial"
+      ],
       "extractiva": false,
       "n_citas": 5,
-      "texto": "Dolor postoperatorio puede ser parte del proceso de recuperación, pero si persiste más allá de lo esperado consulte a su equipo médico para evaluar y manejarlo adecuadamente.",
+      "texto": "El dolor postoperatorio puede persistir por varios días, pero si es intenso o prolongado, debe informarlo al equipo médico para una evaluación adecuada. No se proporciona información específica sobre la duración del dolor esperado en este caso.",
       "cifras_sin_respaldo": [],
       "cifras_mal_contextualizadas": [],
       "citas_cruzadas": [],
@@ -129,9 +168,13 @@
       "procedimiento": "Apendicectomía",
       "pregunta": "¿Cuándo me quitan los puntos?",
       "fundamentado": true,
+      "solo_corpus_oficial": true,
+      "fuentes": [
+        "corpus_oficial"
+      ],
       "extractiva": false,
       "n_citas": 5,
-      "texto": "Generalmente, la retirada de los puntos se evalúa durante una cita de control a los 15 días postoperatorios según las directrices del estándar clínico basado en evidencia (ECBE). Sin embargo, consulta con tu equipo médico para obtener información específica adaptada al protocolo de su centro hospitalario.",
+      "texto": "Los puntos suelen ser retirados durante la cita de control a los 15 días postoperatorio, según las directrices del estándar clínico basado en evidencia (ECBE). Sin embargo, verifica con tu equipo médico para obtener instrucciones específicas adaptadas al manejo de tu caso.",
       "cifras_sin_respaldo": [],
       "cifras_mal_contextualizadas": [],
       "citas_cruzadas": [],
@@ -141,9 +184,13 @@
       "procedimiento": "Apendicectomía",
       "pregunta": "¿Puedo cargar a mi nieto?",
       "fundamentado": true,
+      "solo_corpus_oficial": true,
+      "fuentes": [
+        "corpus_oficial"
+      ],
       "extractiva": false,
       "n_citas": 5,
-      "texto": "No hay información específica sobre la situación postoperatoria del paciente para interactuar con niños; consulta al equipo médico antes de cualquier actividad física.",
+      "texto": "No hay información específica sobre la situación postoperatoria del paciente para interactuar con niños, consulte al equipo médico antes de planificar cargar a tu nieto.",
       "cifras_sin_respaldo": [],
       "cifras_mal_contextualizadas": [],
       "citas_cruzadas": [],
@@ -153,21 +200,29 @@
       "procedimiento": "Apendicectomía",
       "pregunta": "¿Qué temperatura ya es fiebre y tengo que llamar?",
       "fundamentado": true,
-      "extractiva": true,
-      "n_citas": 1,
-      "texto": "Le leo lo que dice diagnóstico, tratamiento y seguimiento del paciente adulto con apendicitis aguda en el Hospital Universitario Nacional de Colombia.pdf: - Reclamar patología en primer piso de HUN y llevar reporte a cita de control programada 2 semanas posterior a egreso - Asistir a servicio de urgencias/ consulta prioritaria si presenta alguno de los siguientes síntomas: Náuseas, vomita todo lo que come, dolor abdominal que no mejore con analgés ico, fiebre (temperatura mayor de 38 grados) o escalofríos, abdomen inflamado; ausencia de deposic.",
+      "solo_corpus_oficial": true,
+      "fuentes": [
+        "corpus_oficial"
+      ],
+      "extractiva": false,
+      "n_citas": 5,
+      "texto": "No se proporciona una temperatura específica en los documentos, por lo que no puedo confirmar si ya tiene fiebre. Se recomienda consultar a su médico para evaluar sus síntomas.",
       "cifras_sin_respaldo": [],
       "cifras_mal_contextualizadas": [],
       "citas_cruzadas": [],
-      "razon": "cita literal del corpus tras descartar el texto generado: cifras con una unidad que no aparece asi en el contexto: 75.43 %"
+      "razon": "Fundamentado: similitud maxima 0.858, solape lexico 0.500."
     },
     {
       "procedimiento": "Apendicectomía",
       "pregunta": "¿Me puedo tomar algo para el dolor?",
       "fundamentado": true,
+      "solo_corpus_oficial": true,
+      "fuentes": [
+        "corpus_oficial"
+      ],
       "extractiva": false,
       "n_citas": 5,
-      "texto": "No se ha documentado la administración de analgésico, consulta con tu médico sobre opciones seguras según tus necesidades actuales de recuperación postoperatoria.",
+      "texto": "No se ha descrito analgésico específico, pero la atención postoperatoria recomienda evitar levantar objetos pesados y realizar ejercicios respiratorios para manejar el dolor; consulte con su equipo médico.",
       "cifras_sin_respaldo": [],
       "cifras_mal_contextualizadas": [],
       "citas_cruzadas": [],
@@ -177,9 +232,13 @@
       "procedimiento": "Colecistectomía",
       "pregunta": "¿Puedo ducharme o me tengo que esperar?",
       "fundamentado": true,
+      "solo_corpus_oficial": true,
+      "fuentes": [
+        "corpus_oficial"
+      ],
       "extractiva": false,
       "n_citas": 5,
-      "texto": "No se proporciona información específica sobre la cuestión de bañarse después del procedimiento quirúrgico, consulta con tu equipo médico para obtener orientación personalizada.",
+      "texto": "No se proporciona información específica sobre cuándo puedes bañarte después de la cirugía, consulta con tu equipo médico para orientación personalizada.",
       "cifras_sin_respaldo": [],
       "cifras_mal_contextualizadas": [],
       "citas_cruzadas": [],
@@ -189,9 +248,13 @@
       "procedimiento": "Colecistectomía",
       "pregunta": "¿Cuándo puedo volver a hacer ejercicio?",
       "fundamentado": true,
+      "solo_corpus_oficial": true,
+      "fuentes": [
+        "corpus_oficial"
+      ],
       "extractiva": false,
       "n_citas": 5,
-      "texto": "Según los criterios de Tokio III, no se menciona una fecha específica para retomar actividades físicas; la decisión depende del estado postoperatorio y recuperación individualizada del paciente. Consulta con tu equipo médico sobre el progreso antes de volver a ejercicio.",
+      "texto": "Según los criterios de Tokio III, no se menciona una fecha específica para la recuperación física; sin embargo, es importante que te mantengas hidratado y sigas las instrucciones del equipo médico antes de reanudar actividades como el ejercicio.",
       "cifras_sin_respaldo": [],
       "cifras_mal_contextualizadas": [],
       "citas_cruzadas": [],
@@ -201,9 +264,13 @@
       "procedimiento": "Colecistectomía",
       "pregunta": "¿Qué hago si me sale un líquido de la herida?",
       "fundamentado": true,
+      "solo_corpus_oficial": true,
+      "fuentes": [
+        "corpus_oficial"
+      ],
       "extractiva": false,
       "n_citas": 5,
-      "texto": "La herida debe mantenerse limpia y seca, evitando cualquier fuga. Si notas una fuga, debes acudir a tu centro asistencial de urgencia para obtener orientación profesional.",
+      "texto": "Si notas una fuga de líquido desde la herida, mantén la zona limpia con toques suaves y consulta a tu equipo médico inmediatamente para obtener orientación adicional.",
       "cifras_sin_respaldo": [],
       "cifras_mal_contextualizadas": [],
       "citas_cruzadas": [],
@@ -213,9 +280,13 @@
       "procedimiento": "Colecistectomía",
       "pregunta": "¿Cuándo debo ir a urgencias?",
       "fundamentado": true,
+      "solo_corpus_oficial": true,
+      "fuentes": [
+        "corpus_oficial"
+      ],
       "extractiva": false,
       "n_citas": 5,
-      "texto": "Si presentas fiebre superior a 38°C, enrojecimiento o secreción por las lasheridas, dolor abdominal intenso o ictericia (coloración amarilla de piel o ojos), acude inmediatamente al servicio de urgencias.",
+      "texto": "Si experimentas fiebre superior a 38°C, enrojecimiento o secreción por lasheridas, dolor abdominal intenso o ictericia, acude inmediatamente al servicio de urgencias.",
       "cifras_sin_respaldo": [],
       "cifras_mal_contextualizadas": [],
       "citas_cruzadas": [],
@@ -225,9 +296,13 @@
       "procedimiento": "Colecistectomía",
       "pregunta": "¿Puedo manejar carro?",
       "fundamentado": true,
+      "solo_corpus_oficial": true,
+      "fuentes": [
+        "corpus_oficial"
+      ],
       "extractiva": false,
       "n_citas": 5,
-      "texto": "No hay información específica sobre la capacidad del paciente para conducir después de una colecistectomía, consulta con tu equipo médico antes de volver a manejar vehículos.",
+      "texto": "No se proporciona información específica sobre la capacidad del paciente para conducir después de una colecistectomía, por lo que no puedo dar una respuesta basada en los datos dados. Se recomienda consultar con un profesional de salud.",
       "cifras_sin_respaldo": [],
       "cifras_mal_contextualizadas": [],
       "citas_cruzadas": [],
@@ -237,6 +312,10 @@
       "procedimiento": "Colecistectomía",
       "pregunta": "¿Cuánto tiempo voy a estar incapacitado?",
       "fundamentado": true,
+      "solo_corpus_oficial": true,
+      "fuentes": [
+        "corpus_oficial"
+      ],
       "extractiva": true,
       "n_citas": 1,
       "texto": "Le leo lo que dice Estándar Clínico Basado en la Evidencia- Diagnóstico y tratamiento del paciente con colecistitis aguda calculosa en el Hospital Universitario Nacional.pdf: Considerando estos aspectos, el grupo de trabajo decidió que para el caso de la colecistitis aguda calculosa se espera que en un tiempo aproximado de tres a cinco años se publique nueva evidencia que afecte la manera de llevar a cabo el proceso de diagnóstico y tratamiento de la enfermedad y que por lo tanto este será el periodo máximo d e actualización de este documento.",
@@ -249,6 +328,10 @@
       "procedimiento": "Colecistectomía",
       "pregunta": "¿Qué puedo comer estos días?",
       "fundamentado": true,
+      "solo_corpus_oficial": true,
+      "fuentes": [
+        "corpus_oficial"
+      ],
       "extractiva": false,
       "n_citas": 5,
       "texto": "Debes consumir proteínas bajas en grasa, carbohidratos complejos y bebidas como soya o avena; evita vegetales crudos, azúcares simples y alimentos ricos en grasa.",
@@ -261,9 +344,13 @@
       "procedimiento": "Colecistectomía",
       "pregunta": "¿Es normal que me duela todavía?",
       "fundamentado": true,
+      "solo_corpus_oficial": true,
+      "fuentes": [
+        "corpus_oficial"
+      ],
       "extractiva": false,
       "n_citas": 5,
-      "texto": "El dolor postoperatorio puede ser esperado, pero si persiste, es importante informarlo al equipo médico para una evaluación y manejo adecuados según las recomendaciones de expertos sobre analgesia en colecistitis aguda calculosa.",
+      "texto": "El dolor postoperatorio puede ser parte del proceso de recuperación, pero si persiste más allá de lo esperado según las directrices clínicas, se recomienda consultar al equipo médico para una evaluación adicional y manejo adecuado.",
       "cifras_sin_respaldo": [],
       "cifras_mal_contextualizadas": [],
       "citas_cruzadas": [],
@@ -273,6 +360,10 @@
       "procedimiento": "Colecistectomía",
       "pregunta": "¿Cuándo me quitan los puntos?",
       "fundamentado": true,
+      "solo_corpus_oficial": true,
+      "fuentes": [
+        "corpus_oficial"
+      ],
       "extractiva": false,
       "n_citas": 5,
       "texto": "Los puntos se retiran después de 10 días de la cirugía, siempre asegurándose que la línea de sutura permanezca limpia y seca.",
@@ -285,9 +376,13 @@
       "procedimiento": "Colecistectomía",
       "pregunta": "¿Puedo cargar a mi nieto?",
       "fundamentado": true,
+      "solo_corpus_oficial": true,
+      "fuentes": [
+        "corpus_oficial"
+      ],
       "extractiva": false,
       "n_citas": 5,
-      "texto": "No puedes realizar actividades físicamente exigentes como llevar a tu nieto hasta que hayas recuperado completamente, siguiendo las instrucciones postoperatorias del equipo médico.",
+      "texto": "No puedes realizar actividades físicamente extenuantes como cargar a tu nieto hasta que hayas recuperado completamente, siguiendo las instrucciones postoperatorias del equipo médico.",
       "cifras_sin_respaldo": [],
       "cifras_mal_contextualizadas": [],
       "citas_cruzadas": [],
@@ -297,9 +392,13 @@
       "procedimiento": "Colecistectomía",
       "pregunta": "¿Qué temperatura ya es fiebre y tengo que llamar?",
       "fundamentado": true,
+      "solo_corpus_oficial": true,
+      "fuentes": [
+        "corpus_oficial"
+      ],
       "extractiva": false,
       "n_citas": 5,
-      "texto": "Según los extractos, no hay una temperatura específica mencionada para definir la fiebre; por lo tanto, no puedo confirmar si ya tien-es febril sin esa información. Siempre consulta con tu equipo médico o enfermero para evaluar cualquier cambio en tu condición.",
+      "texto": "Según los extractos, no se menciona una temperatura específica para definir la fiebre; por lo tanto, no puedo confirmar si ya tien-es febril sin esa información. Recomiendo monitorear tu temperatura y consultar con el equipo médico del hospital sobre cualquier preocupación.",
       "cifras_sin_respaldo": [],
       "cifras_mal_contextualizadas": [],
       "citas_cruzadas": [],
@@ -309,9 +408,13 @@
       "procedimiento": "Colecistectomía",
       "pregunta": "¿Me puedo tomar algo para el dolor?",
       "fundamentado": true,
+      "solo_corpus_oficial": true,
+      "fuentes": [
+        "corpus_oficial"
+      ],
       "extractiva": false,
       "n_citas": 5,
-      "texto": "Según la guía, se recomienda una dieta líquida clara y evitar alimentos con alto contenido lipídico hasta que te sientas mejor postoperatorio. No hay información específica sobre analgésicos en este extracto.",
+      "texto": "Según la guía, se recomienda una dieta líquida clara y evitar alimentos con alto contenido lipídico hasta que te recuperes por completo del procedimiento quirúrgico. Consulta a tu equipo médico antes de introducir cualquier alimento o medicamento para el dolor.",
       "cifras_sin_respaldo": [],
       "cifras_mal_contextualizadas": [],
       "citas_cruzadas": [],
@@ -321,21 +424,29 @@
       "procedimiento": "Colectomía",
       "pregunta": "¿Puedo ducharme o me tengo que esperar?",
       "fundamentado": true,
-      "extractiva": false,
-      "n_citas": 5,
-      "texto": "No se menciona específicamente un tiempo para la ducha, pero generalmente te recomendarán evitar baños calientes hasta que tu cirujano confirme cuándo puedes hacerlo de manera segura postoperatoria. Consulta con el equipo médico en su centro asistencial.",
+      "solo_corpus_oficial": true,
+      "fuentes": [
+        "corpus_oficial"
+      ],
+      "extractiva": true,
+      "n_citas": 1,
+      "texto": "Le leo lo que dice GUÍA DE MANEJO PARA EL DIAGNÓSTICO, TRATAMIENTO, SEGUIMIENTO Y PALIACIÓN DEL CÁNCER DE COLON Y RECTO.pdf: Dependiendo de la gravedad de la enfermedad y la posibilidad de recuperación, también puede obligarlo a hacer cambios en su futuro y lidiar con la posibilidad de morir.",
       "cifras_sin_respaldo": [],
       "cifras_mal_contextualizadas": [],
       "citas_cruzadas": [],
-      "razon": "Fundamentado: similitud maxima 0.855, solape lexico 0.250."
+      "razon": "cita literal del corpus tras descartar el texto generado: cifras con una unidad que no aparece asi en el contexto: 1 vez"
     },
     {
       "procedimiento": "Colectomía",
       "pregunta": "¿Cuándo puedo volver a hacer ejercicio?",
       "fundamentado": true,
+      "solo_corpus_oficial": true,
+      "fuentes": [
+        "corpus_oficial"
+      ],
       "extractiva": false,
       "n_citas": 5,
-      "texto": "Según la guía, se recomienda considerar rehabilitación física después de cirugías oncológicas; sin embargo, es una medida excepcional y debe ser ajustada según las necesidades del paciente específicas. Consulta con tu equipo médico para obtener un plan personalizado.",
+      "texto": "Según la guía, se recomienda un programa de rehabilitación como medida excepcional y debe ser evaluado por su equipo médico; no hay una fecha específica mencionada en los extractos proporcionados.",
       "cifras_sin_respaldo": [],
       "cifras_mal_contextualizadas": [],
       "citas_cruzadas": [],
@@ -345,9 +456,13 @@
       "procedimiento": "Colectomía",
       "pregunta": "¿Qué hago si me sale un líquido de la herida?",
       "fundamentado": true,
+      "solo_corpus_oficial": true,
+      "fuentes": [
+        "corpus_oficial"
+      ],
       "extractiva": false,
       "n_citas": 5,
-      "texto": "Si notas salir líquido de la herida, es importante informarlo a tu equipo médico para que puedan evaluar y recomendar los pasos adecuados según las pautas postoperatorias del hospital. Evita manipular o presionar la zona para prevenir complicaciones adicionales.",
+      "texto": "Si notas una fuga de líquido desde la herida, comunícate con tu equipo médico lo antes posible para obtener orientación y seguimiento adecuado según las pautas del protocolo ERAS en uso. Evita manipular o presionar la zona afectada para prevenir complicaciones adicionales.",
       "cifras_sin_respaldo": [],
       "cifras_mal_contextualizadas": [],
       "citas_cruzadas": [],
@@ -357,9 +472,13 @@
       "procedimiento": "Colectomía",
       "pregunta": "¿Cuándo debo ir a urgencias?",
       "fundamentado": true,
+      "solo_corpus_oficial": true,
+      "fuentes": [
+        "corpus_oficial"
+      ],
       "extractiva": false,
       "n_citas": 5,
-      "texto": "No debes ir a urgencias si no presentas síntomas como ascitis loculada, coagulopatía o infección de cavidad peritoneal; consulta con tu equipo médico para cualquier preocupación adicional.",
+      "texto": "Si experimentas síntomas como ascitis recurrente y refractaria al tratamiento, o complicaciones peritoneales por paracentesis repetida, busca aten- tendente de urgencia tan pronto como sea posible. Asegúrate que tu cuidador entrenado esté presente para el manejo en casa.",
       "cifras_sin_respaldo": [],
       "cifras_mal_contextualizadas": [],
       "citas_cruzadas": [],
@@ -369,9 +488,13 @@
       "procedimiento": "Colectomía",
       "pregunta": "¿Puedo manejar carro?",
       "fundamentado": true,
+      "solo_corpus_oficial": true,
+      "fuentes": [
+        "corpus_oficial"
+      ],
       "extractiva": false,
       "n_citas": 5,
-      "texto": "No se proporciona información específica sobre la capacidad del paciente para conducir después de una colectomía, pero generalmente recomiendan esperar hasta que hayas sido evaluado por tu equipo médico y te sientas estable antes de manejar vehículos.",
+      "texto": "No se proporciona información específica sobre la capacidad del paciente para conducir después de una colectomía, es necesario consultar con el equipo médico o un fisioterapeuta especializado en rehabilita- miento postoperatorio.",
       "cifras_sin_respaldo": [],
       "cifras_mal_contextualizadas": [],
       "citas_cruzadas": [],
@@ -381,9 +504,13 @@
       "procedimiento": "Colectomía",
       "pregunta": "¿Cuánto tiempo voy a estar incapacitado?",
       "fundamentado": true,
+      "solo_corpus_oficial": true,
+      "fuentes": [
+        "corpus_oficial"
+      ],
       "extractiva": false,
       "n_citas": 5,
-      "texto": "El contexto no proporciona información específica sobre la duración de la incapacidad del paciente después de una colectomía. Se recomienda consultar con el equipo médico para obtener detalles personalizados basados en su caso individual.",
+      "texto": "El texto no proporciona información específica sobre la duración de la incapacidad del paciente después de una colectomía. Se recomienda consultar con el equipo médico para obtener detalles personalizados basados en su caso individual.",
       "cifras_sin_respaldo": [],
       "cifras_mal_contextualizadas": [],
       "citas_cruzadas": [],
@@ -393,9 +520,13 @@
       "procedimiento": "Colectomía",
       "pregunta": "¿Qué puedo comer estos días?",
       "fundamentado": true,
+      "solo_corpus_oficial": true,
+      "fuentes": [
+        "corpus_oficial"
+      ],
       "extractiva": false,
       "n_citas": 5,
-      "texto": "Según la guía, se debe orientar al cuidado nutricional para satisfacer los deseos del paciente postoperatorio y asegurar una recuperación adecuada; sin embargo, no se proporcionan detalles específicos sobre dietas. Es recomendable consultar con el equipo de enfermería o un profesional de nutrición para obtener instrucciones personalizadas.",
+      "texto": "Según la guía, se debe orientar al cuidado nutricional para satisfacer los deseos del paciente postoperatorio y asegurar una recuperación adecuada; sin embargo, no se proporcionan detalles específicos sobre dieta en este contexto. Es recomendable consultar con el equipo de enfermería o un nutricionista para obtener instrucciones personalizadas.",
       "cifras_sin_respaldo": [],
       "cifras_mal_contextualizadas": [],
       "citas_cruzadas": [],
@@ -405,9 +536,13 @@
       "procedimiento": "Colectomía",
       "pregunta": "¿Es normal que me duela todavía?",
       "fundamentado": true,
+      "solo_corpus_oficial": true,
+      "fuentes": [
+        "corpus_oficial"
+      ],
       "extractiva": false,
       "n_citas": 5,
-      "texto": "El dolor puede persistir, pero según la guía ERAS, es importante escuchar tu cuerpo y tomar descansos si es necesario; consulta con tu equipo médico para una evaluación personalizada de tus síntomas.",
+      "texto": "El dolor puede persistir, pero según la guía ERAS, es importante escuchar tu cuerpo y tomar descansos si es necesario; consulta con tu equipo de atención para un manejo adecuado del dolor en este punto de recuperación.",
       "cifras_sin_respaldo": [],
       "cifras_mal_contextualizadas": [],
       "citas_cruzadas": [],
@@ -417,18 +552,26 @@
       "procedimiento": "Colectomía",
       "pregunta": "¿Cuándo me quitan los puntos?",
       "fundamentado": true,
-      "extractiva": false,
-      "n_citas": 5,
-      "texto": "Según la guía, no hay un tiempo específico mencionado para retirar los puntos después de una colectomía; esto se determina por el criterio médico del tratante basado en las condiciones actuales del paciente.",
+      "solo_corpus_oficial": true,
+      "fuentes": [
+        "corpus_oficial"
+      ],
+      "extractiva": true,
+      "n_citas": 1,
+      "texto": "Le leo lo que dice GUÍA DE MANEJO PARA EL DIAGNÓSTICO, TRATAMIENTO, SEGUIMIENTO Y PALIACIÓN DEL CÁNCER DE COLON Y RECTO.pdf: Puntos de buena práctica clínica: Evidencia seleccionada 5.6.",
       "cifras_sin_respaldo": [],
       "cifras_mal_contextualizadas": [],
       "citas_cruzadas": [],
-      "razon": "Fundamentado: similitud maxima 0.838, solape lexico 0.500."
+      "razon": "cita literal del corpus tras descartar el texto generado: cifras con una unidad que no aparece asi en el contexto: 5 semana"
     },
     {
       "procedimiento": "Colectomía",
       "pregunta": "¿Puedo cargar a mi nieto?",
       "fundamentado": true,
+      "solo_corpus_oficial": true,
+      "fuentes": [
+        "corpus_oficial"
+      ],
       "extractiva": false,
       "n_citas": 5,
       "texto": "El documento no proporciona información específica sobre la situación del paciente postoperatorio y las directrices para su cuidado personal, incluida la carga de familiares. Se recomienda consultar con el equipo médico o enfermería para obtener orientación adecuada.",
@@ -441,18 +584,26 @@
       "procedimiento": "Colectomía",
       "pregunta": "¿Qué temperatura ya es fiebre y tengo que llamar?",
       "fundamentado": true,
+      "solo_corpus_oficial": true,
+      "fuentes": [
+        "corpus_oficial"
+      ],
       "extractiva": false,
       "n_citas": 5,
-      "texto": "El contexto proporcionado no incluye información sobre la temperatura del paciente ni criterios para determinar una fiebre, por lo que no se puede responder a esta pregunta basándose únicamente en el contexto dado.",
+      "texto": "Una temperatura superior a 38°C o 100°F se considera fiebre, por lo que si tu temperatura está arriba de este valor, debes llamar para obtener asesoramiento.",
       "cifras_sin_respaldo": [],
       "cifras_mal_contextualizadas": [],
       "citas_cruzadas": [],
-      "razon": "Fundamentado: similitud maxima 0.854, solape lexico 0.250."
+      "razon": "Fundamentado: similitud maxima 0.855, solape lexico 0.250."
     },
     {
       "procedimiento": "Colectomía",
       "pregunta": "¿Me puedo tomar algo para el dolor?",
       "fundamentado": true,
+      "solo_corpus_oficial": true,
+      "fuentes": [
+        "corpus_oficial"
+      ],
       "extractiva": false,
       "n_citas": 5,
       "texto": "Utiliza escalas validadas como EVA o PAINAD y sigue la escalera analgésica de la OMS, pero no puedo recomendar un medicamento específico sin una evaluación médica completa.",
@@ -465,21 +616,29 @@
       "procedimiento": "Reemplazo de cadera/rodilla",
       "pregunta": "¿Puedo ducharme o me tengo que esperar?",
       "fundamentado": true,
-      "extractiva": false,
-      "n_citas": 5,
-      "texto": "No debas bañarte hasta que tu cirujano te lo autorice, normalmente después de los primeros 10 a 1pandas del postoperatorio. Mantén la herida seca durante este tiempo para promover una curación adecuada.",
+      "solo_corpus_oficial": true,
+      "fuentes": [
+        "corpus_oficial"
+      ],
+      "extractiva": true,
+      "n_citas": 1,
+      "texto": "Le leo lo que dice Reemplazo total de cadera Guía para el paciente .pdf: ¿Puedo esperar para hacerme el reemplazo total de cadera?.",
       "cifras_sin_respaldo": [],
       "cifras_mal_contextualizadas": [],
       "citas_cruzadas": [],
-      "razon": "Fundamentado: similitud maxima 0.862, solape lexico 0.500."
+      "razon": "cita literal del corpus tras descartar el texto generado: cifras sin respaldo en el contexto: 16; cifras con una unidad que no aparece asi en el contexto: 16 dia"
     },
     {
       "procedimiento": "Reemplazo de cadera/rodilla",
       "pregunta": "¿Cuándo puedo volver a hacer ejercicio?",
       "fundamentado": true,
+      "solo_corpus_oficial": true,
+      "fuentes": [
+        "corpus_oficial"
+      ],
       "extractiva": false,
       "n_citas": 5,
-      "texto": "Puedes comenzar con ejercicios suaves como caminar y luego, según la guía de fisioterapia, agregar actividades moderadas después del alta hospitalaria, generalmente dentro de las primeras semanas postoperatorias. Consulta a tu fisioterapeuta para un plan personalizado.",
+      "texto": "Puedes comenzar con ejercicios suaves como caminar y luego, después de consultar con tu fisioterapeuta, incorporar actividades moderadas como andar en bicicleta o nadar dentro de las primeras semanas postoperatorias. Siempre sigue sus recomendaciones para una recuperación segura.",
       "cifras_sin_respaldo": [],
       "cifras_mal_contextualizadas": [],
       "citas_cruzadas": [],
@@ -489,9 +648,13 @@
       "procedimiento": "Reemplazo de cadera/rodilla",
       "pregunta": "¿Qué hago si me sale un líquido de la herida?",
       "fundamentado": true,
+      "solo_corpus_oficial": true,
+      "fuentes": [
+        "corpus_oficial"
+      ],
       "extractiva": false,
       "n_citas": 5,
-      "texto": "Si nota sangrado o secreción desde la herida, contacte a su equipo de enfermería inmediatamente para obtener orientación y cuidados adecuados. Mantenga siempre limpia y seca la herida según las instrucciones proporcionadas por el personal médico.",
+      "texto": "Si nota sangrado o secreción desde la herida, contacte a su equipo de enfermería inmediatamente para obtener orientación y cuidados adecuados. Mantenga siempre la herida limpia y seca según las instrucciones proporcionadas por el personal médico.",
       "cifras_sin_respaldo": [],
       "cifras_mal_contextualizadas": [],
       "citas_cruzadas": [],
@@ -501,9 +664,13 @@
       "procedimiento": "Reemplazo de cadera/rodilla",
       "pregunta": "¿Cuándo debo ir a urgencias?",
       "fundamentado": true,
+      "solo_corpus_oficial": true,
+      "fuentes": [
+        "corpus_oficial"
+      ],
       "extractiva": false,
       "n_citas": 5,
-      "texto": "Si experimenta dolor o hinchazón severos, debilidad nueva u otros síntomas graves, contacte al servicio de urgencia localmente inmediatamente. Para consultas no críticas, comuníquese con su ortopedista a través del correo proporcionado en la cartilla educacional.",
+      "texto": "Si experimenta dolor o hinchazón severos, fiebre u otros síntomas graves, contacte al servicio de urgencia localizado en la Calle 119 # 7-03 inmediatamente. Para consultas no críticas, comuníquese con el ortopedista del Departamento de Ortopedia y Traumatología a través del correo: reemplazo.articular@fsfb.org.co",
       "cifras_sin_respaldo": [],
       "cifras_mal_contextualizadas": [],
       "citas_cruzadas": [],
@@ -513,9 +680,13 @@
       "procedimiento": "Reemplazo de cadera/rodilla",
       "pregunta": "¿Puedo manejar carro?",
       "fundamentado": true,
+      "solo_corpus_oficial": true,
+      "fuentes": [
+        "corpus_oficial"
+      ],
       "extractiva": false,
       "n_citas": 5,
-      "texto": "No puedes conducir un automóvil hasta que hayas completado tu programa de ejercicios y te hayan dado instrucciones por escrito para la alta hospitalaria; normalmente, se recomienda usar una ambulancia o transporte alternativo durante el periodo inicial de recuperación.",
+      "texto": "No se menciona específicamente tu capacidad para conducir un carro después del día 3 postoperatorio, pero te recomienda usar una silla con apoyabrazos y evitar sofás o sillas bajas durante la recuperación.",
       "cifras_sin_respaldo": [],
       "cifras_mal_contextualizadas": [],
       "citas_cruzadas": [],
@@ -525,9 +696,13 @@
       "procedimiento": "Reemplazo de cadera/rodilla",
       "pregunta": "¿Cuánto tiempo voy a estar incapacitado?",
       "fundamentado": true,
+      "solo_corpus_oficial": true,
+      "fuentes": [
+        "corpus_oficial"
+      ],
       "extractiva": false,
       "n_citas": 5,
-      "texto": "Generalmente, se recomienda evitar ciertos movimientos durante al menos 6 semanas después de la cirugía; sin embargo, las capacidades individuales pueden variar según su caso específico y plan de rehabilitación del equipo médico. Consulta con tu profesional para obtener una guía personalizada sobre tus actividades diarias.",
+      "texto": "Generalmente, se recomienda evitar ciertas actividades durante al menos 6 semanas después de la cirugía; sin embargo, las capacidades individuales pueden variar según su caso específico y progreso en rehabilitación. Consulta con tu equipo médico para una guía personalizada.",
       "cifras_sin_respaldo": [],
       "cifras_mal_contextualizadas": [],
       "citas_cruzadas": [],
@@ -537,9 +712,13 @@
       "procedimiento": "Reemplazo de cadera/rodilla",
       "pregunta": "¿Qué puedo comer estos días?",
       "fundamentado": true,
+      "solo_corpus_oficial": true,
+      "fuentes": [
+        "corpus_oficial"
+      ],
       "extractiva": false,
       "n_citas": 5,
-      "texto": "Come artículos pequeños y fáciles de transportar, como alimentos o bebidas en recipientes cerrados colocados sobre un repasador para facilitar su transporte sin esforzar la cadera afectada.",
+      "texto": "Come artículos pequeños y fáciles de transportar, como alimentos o bebidas en recipientes cerrados colocados en una bolsa o canasta para facilitar la movilidad. Evita comidas pesadas que puedan complicar tu recuperación inicial.",
       "cifras_sin_respaldo": [],
       "cifras_mal_contextualizadas": [],
       "citas_cruzadas": [],
@@ -549,9 +728,13 @@
       "procedimiento": "Reemplazo de cadera/rodilla",
       "pregunta": "¿Es normal que me duela todavía?",
       "fundamentado": true,
+      "solo_corpus_oficial": true,
+      "fuentes": [
+        "corpus_oficial"
+      ],
       "extractiva": false,
       "n_citas": 5,
-      "texto": "El dolor postoperatorio puede ser esperado, pero infórmenme si está dentro de lo común para su tipo de procedimiento y etapa de recuperación. Consulta con tu equipo médico o fisioterapeuta sobre tus preocupaciones específicas.",
+      "texto": "El dolor postoperatorio puede ser esperado, pero informa a su equipo médico si siente un dolor severo o persistente para una evaluación adecuada.",
       "cifras_sin_respaldo": [],
       "cifras_mal_contextualizadas": [],
       "citas_cruzadas": [],
@@ -561,9 +744,13 @@
       "procedimiento": "Reemplazo de cadera/rodilla",
       "pregunta": "¿Cuándo me quitan los puntos?",
       "fundamentado": true,
+      "solo_corpus_oficial": true,
+      "fuentes": [
+        "corpus_oficial"
+      ],
       "extractiva": false,
       "n_citas": 5,
-      "texto": "Los detalles específicos sobre la duración del tiempo de sutura no se proporcionan; consulta con tu equipo médico para obtener instrucciones personalizadas basadas en tu estado postoperatorio actualizado.",
+      "texto": "Los detalles específicos sobre la duración del tiempo de drenaje no se proporcionan; consulta con tu equipo médico para obtener instrucciones personalizadas basadas en tu situación postoperatoria.",
       "cifras_sin_respaldo": [],
       "cifras_mal_contextualizadas": [],
       "citas_cruzadas": [],
@@ -573,9 +760,13 @@
       "procedimiento": "Reemplazo de cadera/rodilla",
       "pregunta": "¿Puedo cargar a mi nieto?",
       "fundamentado": true,
+      "solo_corpus_oficial": true,
+      "fuentes": [
+        "corpus_oficial"
+      ],
       "extractiva": false,
       "n_citas": 5,
-      "texto": "Según la guía, se recomienda evitar levantar objetos pesados y usar ayuda para transportar artículos pequeños; por lo tanto, no es aconsejable cargar a tu nieto sin soporte adecuado.",
+      "texto": "Según la guía, es recomendable evitar levantar objetos pesados durante tu recuperación; por lo tanto, no se aconseja cargar a un niño hasta que te hayas recuperado completamente.",
       "cifras_sin_respaldo": [],
       "cifras_mal_contextualizadas": [],
       "citas_cruzadas": [],
@@ -585,9 +776,13 @@
       "procedimiento": "Reemplazo de cadera/rodilla",
       "pregunta": "¿Qué temperatura ya es fiebre y tengo que llamar?",
       "fundamentado": true,
+      "solo_corpus_oficial": true,
+      "fuentes": [
+        "corpus_oficial"
+      ],
       "extractiva": false,
       "n_citas": 5,
-      "texto": "Tu debe comunicarte con tu proveedor de atención médica si experimentas una fiebre superior a 38 °C después del procedimiento.",
+      "texto": "Tu debe comunicarte con tu proveedor de atención médica si experimentas una fiebre, específicamente cuando la temperatura supere los 38 ºC.",
       "cifras_sin_respaldo": [],
       "cifras_mal_contextualizadas": [],
       "citas_cruzadas": [],
@@ -597,9 +792,13 @@
       "procedimiento": "Reemplazo de cadera/rodilla",
       "pregunta": "¿Me puedo tomar algo para el dolor?",
       "fundamentado": true,
+      "solo_corpus_oficial": true,
+      "fuentes": [
+        "corpus_oficial"
+      ],
       "extractiva": false,
       "n_citas": 5,
-      "texto": "Puede comenzar a usar los analgésicos recetados y calificar su nivel de dolor, informando al equipo médico si aumenta. Asegúrese de seguir las instrucciones para la administración del sistema de infusión intravenosa si se le ha proporcionado uno.",
+      "texto": "Puede comenzar a usar los analgésicos recetados, y si necesita más, comuníquese con su equipo de enfermería al menos dos días antes para obtener las recetas adicionales. Asegúrese de seguir sus instrucciones sobre cómo administrarse el medicamento.",
       "cifras_sin_respaldo": [],
       "cifras_mal_contextualizadas": [],
       "citas_cruzadas": [],
@@ -608,146 +807,194 @@
     {
       "procedimiento": "Mastectomía",
       "pregunta": "¿Puedo ducharme o me tengo que esperar?",
-      "fundamentado": false,
+      "fundamentado": true,
+      "solo_corpus_oficial": false,
+      "fuentes": [
+        "complementaria"
+      ],
       "extractiva": false,
-      "n_citas": 0,
-      "texto": "Esa es una buena pregunta y le voy a ser honesto: no la tengo en la informacion clinica que maneja. Prefiero decirselo asi que darle un dato que no me consta. La dejo anotada para que el equipo clinico se la responda.",
+      "n_citas": 5,
+      "texto": "No puedes bañarte hasta que tu equipo de atención te lo indique, generalmente durante las primeras 24 horas después de la cirugía para evitar infeciones.",
       "cifras_sin_respaldo": [],
       "cifras_mal_contextualizadas": [],
       "citas_cruzadas": [],
-      "razon": "El corpus cargado no cubre el procedimiento del paciente (tema requerido: cancer_mama). Responder con otro tema seria clinicamente inseguro."
+      "razon": "Fundamentado: similitud maxima 0.885, solape lexico 0.250."
     },
     {
       "procedimiento": "Mastectomía",
       "pregunta": "¿Cuándo puedo volver a hacer ejercicio?",
-      "fundamentado": false,
+      "fundamentado": true,
+      "solo_corpus_oficial": false,
+      "fuentes": [
+        "complementaria"
+      ],
       "extractiva": false,
-      "n_citas": 0,
-      "texto": "Esa es una buena pregunta y le voy a ser honesto: no la tengo en la informacion clinica que maneja. Prefiero decirselo asi que darle un dato que no me consta. La dejo anotada para que el equipo clinico se la responda.",
+      "n_citas": 5,
+      "texto": "Puede comenzar con los ejercicios de restricción de amplitud y círculos cuando se sienta mejor, pero consulte al proveedor antes del dia 3 para obtener instrucciones específicas.",
       "cifras_sin_respaldo": [],
       "cifras_mal_contextualizadas": [],
       "citas_cruzadas": [],
-      "razon": "El corpus cargado no cubre el procedimiento del paciente (tema requerido: cancer_mama). Responder con otro tema seria clinicamente inseguro."
+      "razon": "Fundamentado: similitud maxima 0.990, solape lexico 0.500."
     },
     {
       "procedimiento": "Mastectomía",
       "pregunta": "¿Qué hago si me sale un líquido de la herida?",
-      "fundamentado": false,
+      "fundamentado": true,
+      "solo_corpus_oficial": false,
+      "fuentes": [
+        "complementaria"
+      ],
       "extractiva": false,
-      "n_citas": 0,
-      "texto": "Esa es una buena pregunta y le voy a ser honesto: no la tengo en la informacion clinica que maneja. Prefiero decirselo asi que darle un dato que no me consta. La dejo anotada para que el equipo clinico se la responda.",
+      "n_citas": 5,
+      "texto": "Si te salen líquidos de la herida, verifica su color y olor; si es turbio o tiene mal olor, busca atención médica lo antes posible según las instrucciones postoperatorias proporcionadas en tu guía clínica.",
       "cifras_sin_respaldo": [],
       "cifras_mal_contextualizadas": [],
       "citas_cruzadas": [],
-      "razon": "El corpus cargado no cubre el procedimiento del paciente (tema requerido: cancer_mama). Responder con otro tema seria clinicamente inseguro."
+      "razon": "Fundamentado: similitud maxima 0.867, solape lexico 0.250."
     },
     {
       "procedimiento": "Mastectomía",
       "pregunta": "¿Cuándo debo ir a urgencias?",
-      "fundamentado": false,
+      "fundamentado": true,
+      "solo_corpus_oficial": false,
+      "fuentes": [
+        "complementaria"
+      ],
       "extractiva": false,
-      "n_citas": 0,
-      "texto": "Esa es una buena pregunta y le voy a ser honesto: no la tengo en la informacion clinica que maneja. Prefiero decirselo asi que darle un dato que no me consta. La dejo anotada para que el equipo clinico se la responda.",
+      "n_citas": 5,
+      "texto": "Si tienes escalofríos, fiebre o signos de infección como enrojecimiento y aumento del dolor alrededor de la herida, debes considerar ir a urgencias. También si te sientes mareado, inestable o notas pisos resbalosos durante el transporte desde el hospital.",
       "cifras_sin_respaldo": [],
       "cifras_mal_contextualizadas": [],
       "citas_cruzadas": [],
-      "razon": "El corpus cargado no cubre el procedimiento del paciente (tema requerido: cancer_mama). Responder con otro tema seria clinicamente inseguro."
+      "razon": "Fundamentado: similitud maxima 0.860, solape lexico 0.500."
     },
     {
       "procedimiento": "Mastectomía",
       "pregunta": "¿Puedo manejar carro?",
-      "fundamentado": false,
+      "fundamentado": true,
+      "solo_corpus_oficial": false,
+      "fuentes": [
+        "complementaria"
+      ],
       "extractiva": false,
-      "n_citas": 0,
-      "texto": "Esa es una buena pregunta y le voy a ser honesto: no la tengo en la informacion clinica que maneja. Prefiero decirselo asi que darle un dato que no me consta. La dejo anotada para que el equipo clinico se la responda.",
+      "n_citas": 5,
+      "texto": "No hay información específica sobre la capacidad de conducir después de una mastectomía en los extractos proporcionados; se recomienda consultar con su equipo médico para obtener orientación personalizada.",
       "cifras_sin_respaldo": [],
       "cifras_mal_contextualizadas": [],
       "citas_cruzadas": [],
-      "razon": "El corpus cargado no cubre el procedimiento del paciente (tema requerido: cancer_mama). Responder con otro tema seria clinicamente inseguro."
+      "razon": "Fundamentado: similitud maxima 0.843, solape lexico 0.333."
     },
     {
       "procedimiento": "Mastectomía",
       "pregunta": "¿Cuánto tiempo voy a estar incapacitado?",
-      "fundamentado": false,
+      "fundamentado": true,
+      "solo_corpus_oficial": false,
+      "fuentes": [
+        "complementaria"
+      ],
       "extractiva": false,
-      "n_citas": 0,
-      "texto": "Esa es una buena pregunta y le voy a ser honesto: no la tengo en la informacion clinica que maneja. Prefiero decirselo asi que darle un dato que no me consta. La dejo anotada para que el equipo clinico se la responda.",
+      "n_citas": 5,
+      "texto": "El contexto no especifica un período exacto de recuperación, pero recomienda planificar ayuda y discutir limitaciones con el cirujano antes de la operación.",
       "cifras_sin_respaldo": [],
       "cifras_mal_contextualizadas": [],
       "citas_cruzadas": [],
-      "razon": "El corpus cargado no cubre el procedimiento del paciente (tema requerido: cancer_mama). Responder con otro tema seria clinicamente inseguro."
+      "razon": "Fundamentado: similitud maxima 0.990, solape lexico 0.500."
     },
     {
       "procedimiento": "Mastectomía",
       "pregunta": "¿Qué puedo comer estos días?",
-      "fundamentado": false,
+      "fundamentado": true,
+      "solo_corpus_oficial": false,
+      "fuentes": [
+        "complementaria"
+      ],
       "extractiva": false,
-      "n_citas": 0,
-      "texto": "Esa es una buena pregunta y le voy a ser honesto: no la tengo en la informacion clinica que maneja. Prefiero decirselo asi que darle un dato que no me consta. La dejo anotada para que el equipo clinico se la responda.",
+      "n_citas": 5,
+      "texto": "Consulte con su equipo de atención sobre la comida adecuada y evite alimentos que empeoren el estreñimiento, como algunos suplementos de fibra. No se proporciona información específica sobre dieta en los extractos dados.",
       "cifras_sin_respaldo": [],
       "cifras_mal_contextualizadas": [],
       "citas_cruzadas": [],
-      "razon": "El corpus cargado no cubre el procedimiento del paciente (tema requerido: cancer_mama). Responder con otro tema seria clinicamente inseguro."
+      "razon": "Fundamentado: similitud maxima 0.848, solape lexico 0.333."
     },
     {
       "procedimiento": "Mastectomía",
       "pregunta": "¿Es normal que me duela todavía?",
-      "fundamentado": false,
+      "fundamentado": true,
+      "solo_corpus_oficial": false,
+      "fuentes": [
+        "complementaria"
+      ],
       "extractiva": false,
-      "n_citas": 0,
-      "texto": "Esa es una buena pregunta y le voy a ser honesto: no la tengo en la informacion clinica que maneja. Prefiero decirselo asi que darle un dato que no me consta. La dejo anotada para que el equipo clinico se la responda.",
+      "n_citas": 5,
+      "texto": "Tiene dolor más allá del esperado, consulte con su equipo de atención para un plan adecuado de manejo. Comience los ejercicios gradualmente según lo recomendado después de la recuperación inicial.",
       "cifras_sin_respaldo": [],
       "cifras_mal_contextualizadas": [],
       "citas_cruzadas": [],
-      "razon": "El corpus cargado no cubre el procedimiento del paciente (tema requerido: cancer_mama). Responder con otro tema seria clinicamente inseguro."
+      "razon": "Fundamentado: similitud maxima 0.859, solape lexico 0.333."
     },
     {
       "procedimiento": "Mastectomía",
       "pregunta": "¿Cuándo me quitan los puntos?",
-      "fundamentado": false,
+      "fundamentado": true,
+      "solo_corpus_oficial": false,
+      "fuentes": [
+        "complementaria"
+      ],
       "extractiva": false,
-      "n_citas": 0,
-      "texto": "Esa es una buena pregunta y le voy a ser honesto: no la tengo en la informacion clinica que maneja. Prefiero decirselo asi que darle un dato que no me consta. La dejo anotada para que el equipo clinico se la responda.",
+      "n_citas": 5,
+      "texto": "El guia no especifica un tiempo exacto para la retirada de los puntos, pero indica que las incisiones se cierran con suturas disolubles o pegamento y hay instrucciones sobre drenajes en casa antes del alta hospitalaria. Consulta a tu equipo de aten- ción para obtener más información personalizada.",
       "cifras_sin_respaldo": [],
       "cifras_mal_contextualizadas": [],
       "citas_cruzadas": [],
-      "razon": "El corpus cargado no cubre el procedimiento del paciente (tema requerido: cancer_mama). Responder con otro tema seria clinicamente inseguro."
+      "razon": "Fundamentado: similitud maxima 0.990, solape lexico 0.500."
     },
     {
       "procedimiento": "Mastectomía",
       "pregunta": "¿Puedo cargar a mi nieto?",
-      "fundamentado": false,
+      "fundamentado": true,
+      "solo_corpus_oficial": false,
+      "fuentes": [
+        "complementaria"
+      ],
       "extractiva": false,
-      "n_citas": 0,
-      "texto": "Esa es una buena pregunta y le voy a ser honesto: no la tengo en la informacion clinica que maneja. Prefiero decirselo asi que darle un dato que no me consta. La dejo anotada para que el equipo clinico se la responda.",
+      "n_citas": 5,
+      "texto": "Tu equipo de atención te dirá cuándo es seguro comenzar actividades como levantar objetos, pero hasta ese momento, evita movimientos que puedan causarte inestabilidad o dolor. Siempre consulta con tu médico antes de realizar cualquier carga física.",
       "cifras_sin_respaldo": [],
       "cifras_mal_contextualizadas": [],
       "citas_cruzadas": [],
-      "razon": "El corpus cargado no cubre el procedimiento del paciente (tema requerido: cancer_mama). Responder con otro tema seria clinicamente inseguro."
+      "razon": "Fundamentado: similitud maxima 0.851, solape lexico 0.000."
     },
     {
       "procedimiento": "Mastectomía",
       "pregunta": "¿Qué temperatura ya es fiebre y tengo que llamar?",
-      "fundamentado": false,
+      "fundamentado": true,
+      "solo_corpus_oficial": false,
+      "fuentes": [
+        "complementaria"
+      ],
       "extractiva": false,
-      "n_citas": 0,
-      "texto": "Esa es una buena pregunta y le voy a ser honesto: no la tengo en la informacion clinica que maneja. Prefiero decirselo asi que darle un dato que no me consta. La dejo anotada para que el equipo clinico se la responda.",
+      "n_citas": 5,
+      "texto": "No se especifica una temperatura para la fiebre; si siente escalofríos junto con fiebre, consulte a su equipo de atención antes de tomar medicamentos para bajarla. No hay un umbral numérico en el contexto proporcionado.",
       "cifras_sin_respaldo": [],
       "cifras_mal_contextualizadas": [],
       "citas_cruzadas": [],
-      "razon": "El corpus cargado no cubre el procedimiento del paciente (tema requerido: cancer_mama). Responder con otro tema seria clinicamente inseguro."
+      "razon": "Fundamentado: similitud maxima 0.889, solape lexico 0.500."
     },
     {
       "procedimiento": "Mastectomía",
       "pregunta": "¿Me puedo tomar algo para el dolor?",
-      "fundamentado": false,
-      "extractiva": false,
-      "n_citas": 0,
-      "texto": "Esa es una buena pregunta y le voy a ser honesto: no la tengo en la informacion clinica que maneja. Prefiero decirselo asi que darle un dato que no me consta. La dejo anotada para que el equipo clinico se la responda.",
+      "fundamentado": true,
+      "solo_corpus_oficial": false,
+      "fuentes": [
+        "complementaria"
+      ],
+      "extractiva": true,
+      "n_citas": 1,
+      "texto": "Le leo lo que dice fredhutch_guia_operacion_de_mama.pdf: • Hable con su equipo de atención antes de dejar de tomar medicamentos .",
       "cifras_sin_respaldo": [],
       "cifras_mal_contextualizadas": [],
       "citas_cruzadas": [],
-      "razon": "El corpus cargado no cubre el procedimiento del paciente (tema requerido: cancer_mama). Responder con otro tema seria clinicamente inseguro."
+      "razon": "cita literal del corpus tras descartar el texto generado: contiene lenguaje de diagnostico o prescripcion: 'tome'"
     }
   ]
 }

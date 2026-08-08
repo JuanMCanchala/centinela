@@ -25,6 +25,7 @@ Están en [`api/centinela/config.py`](../api/centinela/config.py) y se publican 
 | `CENTINELA_BARGEIN_MS_CONF` | `250` | Cuánto audio se acumula antes de preguntarle al STT si eso era voz |
 | `CENTINELA_CIERRE_ADAPTATIVO` | `1` | El turno cierra en cuanto la respuesta se sostiene sola. A `0`, siempre el techo |
 | `CENTINELA_CIERRE_MIN_MS` | `450` | Plazo mínimo: por debajo no se cierra ni con la respuesta más clara |
+| `CENTINELA_GRACIA_RECONEXION_S` | `20` | Cuánto se espera a que el navegador vuelva antes de dar la llamada por colgada. A `0`, cierre inmediato como antes |
 | `CENTINELA_LLM_MODEL` | `phi3.5:3.8b-mini-instruct-q4_K_M` | Modelo declarado (compuerta G3) |
 | `CENTINELA_DIR_RUNTIME` | `data/runtime` | Dónde vive la base de datos de llamadas |
 
@@ -37,6 +38,18 @@ contrario.
 **No hay variable de techo del turno.** El techo de 900 ms lo pone el VAD del navegador,
 que es quien mide el silencio en el micrófono (`web/app.js`, `VAD.msSilencioParaCerrar`).
 Publicar aquí un `CENTINELA_CIERRE_MAX_MS` sería ofrecer un mando desconectado.
+
+**La ventana de gracia no debilita el cierre.** El cierre forzado por socket caído sigue
+ocurriendo con el mismo motivo (`interrumpida`); lo único que cambia es que se retrasa hasta
+que la ventana expira, para que un bache de red de dos segundos no cueste la llamada. El
+barredor de inactividad (`CENTINELA_TIMEOUT_LLAMADA_S`) sigue siendo la red de último
+recurso, y `make humo` comprueba las dos mitades: el caso 10 que nadie vuelve y la llamada
+se cierra, y el caso 12 que sí vuelve y la llamada sigue.
+
+**No hay variable para apagar la confirmación.** El agente lee de vuelta lo que entendió
+antes de escalar, y eso no es configurable a propósito: es una comprobación de seguridad
+clínica, no una preferencia de estilo. Lo que sí está garantizado es que no retrasa la
+alerta — el ticket nace en el turno de la bandera, con o sin confirmación.
 
 ---
 
@@ -102,6 +115,41 @@ la hoja de traspaso se lee del registro durable. Se puede comparar lo uno con lo
 lado del otro, y deben decir lo mismo.
 
 `make test` · `tests/test_deuda_interrupcion.py` · `make humo` caso 11.
+
+### La instrucción de urgencias se oye entera, o el registro lo dice
+
+Es la única frase del sistema cuya pérdida es un daño clínico: si el paciente no oye
+*«diríjase al servicio de urgencias más cercano»*, no sabe que tiene que salir de su casa. Y
+con barge-in puede cortarla.
+
+Tres mecanismos, en orden:
+
+1. **La llamada no cuelga antes de que suene.** El JSON del turno viaja *antes* de la voz —a
+   propósito, para que el ticket no espere a que el agente hable— así que la interfaz espera a
+   que su cola de audio se vacíe antes de cerrar. Hubo un fallo aquí y se veía exactamente
+   como «se cayó la llamada»: colgaba al recibir el turno, parando los nodos de audio ya
+   programados y cerrando el socket por el que venía el resto de la locución.
+2. **Si la cortan, se repite.** El fragmento lleva `PAPEL_URGENTE`; si queda sin decir, la
+   llamada no termina y `_retomar_urgencia` lo vuelve a decir. **Una vez**: insistir una
+   tercera no informa a nadie y suena a máquina atascada.
+3. **Y si tampoco se oye, el registro lo dice.** `urgencia_oida` queda en falso —lo afirma el
+   cliente al vaciarse su cola, no el servidor al enviar— y los próximos pasos de la hoja de
+   traspaso cambian: en vez de «verificar que el paciente llegó a atención», dicen que la
+   indicación **no** se alcanzó a dar y hay que darla por teléfono.
+
+`make test` · `tests/test_urgencia_oida.py` · `make humo` caso 2.
+
+### Lo que se le leyó de vuelta, y lo que desmintió
+
+El agente repite lo entendido antes de escalar. Los dos desenlaces quedan en el resumen
+(`_centinela.confirmaciones`) y en la hoja de traspaso, y el desmentido va con mayúsculas y
+antes que el resto, porque cambia cómo se lee todo lo de arriba: el hallazgo **sigue** en la
+alerta —no se retira por una respuesta ambigua— pero quien llame tiene que saber que el
+paciente ya lo discutió.
+
+Lo mismo con las correcciones: `_centinela.correcciones` lleva las dos versiones con su turno,
+y el nivel no baja aunque la cifra sí (`_con_piso_de_criticidad`). Dentro de una llamada la
+criticidad solo sube. `make redteam`, familia `degradar_hallazgo`.
 
 ---
 
@@ -201,6 +249,24 @@ umbral lo arregla —el altavoz está tapando al paciente— y hacen falta auric
 
 Si hay que apagarlo del todo, `CENTINELA_BARGEIN=0` deja la voz saliendo entera, que es la
 conducta con la que se midió todo lo anterior.
+
+### «Se cayó la llamada justo cuando me estaba diciendo qué hacer»
+
+Es el fallo que dio origen a `tests/test_urgencia_oida.py`, y se ve así: el paciente reporta
+fiebre alta, el agente empieza a hablar, se detiene a media locución y la interfaz cuelga. En
+el registro está el texto completo; el paciente no lo oyó.
+
+La causa está en el orden del protocolo, no en el audio. El mensaje `turno` viaja **antes** de
+la voz, y viene marcado `terminada: true`; si la interfaz cuelga al recibirlo, para los nodos
+de audio ya programados y cierra el socket por el que venía el resto de la locución.
+
+Cómo diagnosticarlo si vuelve a pasar:
+
+| Señal | Qué significa |
+|---|---|
+| El registro tiene el texto completo y el paciente oyó solo el principio | La interfaz colgó antes de tiempo: el turno terminado no debe cerrar, lo cierra `fin_voz` con la cola vacía |
+| Llega `fin_llamada` pero la consola sigue en «El agente habla» | Un trozo de voz no se decodificó; el perro guardián cierra a los 20 s y lo dice en el registro |
+| `urgencia_oida: false` en el resumen | El paciente cortó la instrucción. Es dato, no fallo: la hoja de traspaso ya avisa de que hay que darla por teléfono |
 
 ### El arranque tarda más de lo normal
 

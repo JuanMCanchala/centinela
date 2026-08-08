@@ -461,17 +461,19 @@ input[type="text"]:focus, select:focus, input[type="file"]:focus {
 
 /* ------------------------- el desplegable, a mano -------------------------
  *
- * `appearance: none` mata el control del sistema operativo -- en Windows el
- * select nativo trae su propio gris, su propio borde y su propia flecha, y ni uno
- * de los tres pertenece a este sistema de diseno. La flecha se repone como SVG
- * embebido: no se puede usar `var(--texto-medio)` dentro de un data URI, asi que
- * el color va literal (#4c5764) y hay que acordarse de las dos cosas si cambia.
+ * `appearance: none` mata el control del sistema operativo -- en Windows el select
+ * nativo trae su propio gris, su propio borde y su propia flecha, y ni uno de los tres
+ * pertenece a este sistema de diseno.
  *
- * La LISTA desplegada la sigue dibujando el navegador; de eso solo se puede
- * gobernar el color de fondo y del texto de las opciones, y es lo que se hace
- * abajo. Reemplazarla entera exigiria reimplementar el desplegable en JS, con su
- * navegacion por teclado y su accesibilidad, y en un panel clinico no vale la
- * pena romper un control que ya funciona bien con teclado y lector de pantalla.
+ * Pero eso solo alcanza a la caja CERRADA. La lista desplegada la dibuja el sistema
+ * operativo y el CSS no la toca: aparece con su azul, su tipografia y su interlineado en
+ * medio de un panel que no tiene ni uno de los tres. La unica forma de gobernarla es no
+ * usarla, asi que el `select` del selector de paciente esta escondido y sirve de fuente
+ * de verdad, y la lista la dibuja `montarSelectorDePaciente` (app.js) como un listbox
+ * propio, con su navegacion por teclado y sus atributos ARIA.
+ *
+ * Estas reglas siguen aqui porque el `select` sigue existiendo para cualquier otro campo
+ * que no tenga lista rica.
  */
 select {
   appearance: none;
@@ -490,6 +492,143 @@ select option {
   background: var(--superficie);
   color: var(--texto);
 }
+
+/* Fuera de la vista pero dentro del arbol: sigue siendo el valor del formulario y sigue
+ * existiendo para un lector de pantalla que llegue por otro camino. `display:none` lo
+ * sacaria de los dos. */
+.solo-para-lectores {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.combo { position: relative; }
+
+.combo-boton {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  background: var(--superficie);
+  border: 1px solid var(--linea-viva);
+  border-radius: var(--radio-chico);
+  color: var(--texto);
+  font-family: var(--mono);
+  font-size: var(--t11);
+  text-align: left;
+  padding: 7px 9px;
+  cursor: pointer;
+  transition: border-color 0.12s ease;
+}
+
+.combo-boton:hover { border-color: var(--linea-fuerte); }
+.combo-boton[aria-expanded="true"] { border-color: var(--texto); }
+
+.combo-valor {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.combo-flecha {
+  width: 11px;
+  height: 11px;
+  flex: 0 0 auto;
+  color: var(--texto-medio);
+  transition: transform 0.12s ease;
+}
+
+.combo-boton[aria-expanded="true"] .combo-flecha { transform: rotate(180deg); }
+
+/* La lista flota sobre el contenido y no empuja el riel: en un panel denso, abrir un
+ * desplegable no puede mover de sitio lo que hay debajo. */
+.combo-lista {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 3px);
+  left: 0;
+  right: 0;
+  max-height: 300px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 3px;
+  list-style: none;
+  background: var(--superficie);
+  border: 1px solid var(--linea-fuerte);
+  border-radius: var(--radio-chico);
+  box-shadow: 0 6px 18px rgba(17, 24, 32, 0.13);
+}
+
+.combo-opcion {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 6px 8px;
+  border-radius: var(--radio-chico);
+  cursor: pointer;
+  /* Un filete a la izquierda marca la fila activa sin usar relleno de color, que en esta
+   * consola esta reservado a otra cosa. */
+  border-left: 2px solid transparent;
+}
+
+.combo-opcion.activa {
+  background: var(--superficie-alta);
+  border-left-color: var(--texto);
+}
+
+.combo-marca {
+  width: 12px;
+  height: 12px;
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: var(--texto);
+  visibility: hidden;
+}
+
+.combo-opcion.elegida .combo-marca { visibility: visible; }
+.combo-cuerpo { min-width: 0; }
+
+.combo-linea-uno {
+  font-family: var(--mono);
+  font-size: var(--t11);
+  color: var(--texto);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.combo-opcion.elegida .combo-linea-uno { font-weight: 700; }
+
+.combo-linea-dos {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin-top: 2px;
+  font-size: var(--t11);
+  color: var(--texto-tenue);
+}
+
+/* El desenlace esperado del dataset. Texto coloreado y sin relleno, y con la palabra
+ * escrita: mismo criterio que `.fila-cola .chip`. Quien no distinga el color lee
+ * "rojo en el dataset" igual. */
+.combo-desenlace {
+  font-family: var(--mono);
+  font-size: 0.5625rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--texto-tenue);
+}
+
+.combo-opcion[data-nivel="rojo"] .combo-desenlace     { color: var(--rojo); }
+.combo-opcion[data-nivel="amarillo"] .combo-desenlace { color: var(--ambar); }
+.combo-opcion[data-nivel="verde"] .combo-desenlace    { color: var(--verde); }
 
 /* --------------------- el selector de archivo, a mano --------------------- */
 
@@ -1173,11 +1312,108 @@ input[type="file"]::file-selector-button:hover {
   letter-spacing: 0;
 }
 
-/* ============================== atajos ================================= */
+/* ==================== el turno por texto y sus atajos ==================== */
 
-.atajos { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
+/* El campo y el boton como una sola pieza. Antes eran un input generico y un boton
+ * suelto separados por un hueco, y se leian como dos controles sin relacion; son un solo
+ * gesto -- escribir y mandar -- y tienen que verse asi. */
+.compositor {
+  display: flex;
+  align-items: stretch;
+  border: 1px solid var(--linea-viva);
+  border-radius: var(--radio-chico);
+  background: var(--superficie);
+  overflow: hidden;
+  transition: border-color 0.12s ease;
+}
 
-.atajos .boton { font-size: 0.625rem; padding: 3px 7px; }
+.compositor:hover { border-color: var(--linea-fuerte); }
+.compositor:focus-within { border-color: var(--texto); }
+
+/* El borde del input se anula: el filete de la pieza ya esta en el contenedor, y dos
+ * bordes concentricos es justo lo que hacia que esto pareciera un formulario suelto. */
+.compositor > input[type="text"] {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  font-family: var(--mono);
+  font-size: var(--t12);
+  padding: 8px 10px;
+}
+
+.compositor > input[type="text"]:hover,
+.compositor > input[type="text"]:focus {
+  border: 0;
+  outline: none;
+}
+
+.boton-enviar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  background: var(--superficie-alta);
+  border: 0;
+  border-left: 1px solid var(--linea);
+  color: var(--texto);
+  font-family: var(--display);
+  font-size: var(--t11);
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  padding: 0 12px;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.boton-enviar:hover { background: var(--superficie-presion); }
+.boton-enviar .icono { width: 13px; height: 13px; color: var(--texto-medio); }
+.boton-enviar:hover .icono { color: var(--texto); }
+
+/* Los atajos, por lo que ejercitan. Once botones en fila no dicen para que esta cada
+ * uno; en tres grupos rotulados la tira se lee como un banco de pruebas. */
+.atajos { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 12px 18px; }
+
+.grupo-atajos { min-width: 0; }
+
+.rotulo-atajos {
+  font-size: var(--t11);
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--texto-tenue);
+  margin: 0 0 5px;
+}
+
+.fila-atajos { display: flex; flex-wrap: wrap; gap: 4px; }
+
+.atajo {
+  font-family: var(--mono);
+  font-size: 0.625rem;
+  background: var(--superficie);
+  border: 1px solid var(--linea);
+  border-radius: var(--radio-chico);
+  color: var(--texto-medio);
+  padding: 4px 8px;
+  cursor: pointer;
+  transition: border-color 0.12s ease, color 0.12s ease;
+}
+
+.atajo:hover { border-color: var(--linea-fuerte); color: var(--texto); }
+
+/* El grupo adversarial se distingue por FILETE, no por color: aqui el color saturado
+ * significa criticidad clinica del paciente y usarlo para "esta entrada es un ataque"
+ * seria gastar el unico canal que no se puede gastar. */
+.grupo-atajos.adversarial .rotulo-atajos { color: var(--texto-medio); }
+
+.grupo-atajos.adversarial .atajo {
+  border-style: dashed;
+  border-color: var(--linea-viva);
+}
+
+.grupo-atajos.adversarial .atajo:hover { border-color: var(--texto-medio); }
 
 .respaldo { margin-top: 4px; }
 
