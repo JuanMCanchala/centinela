@@ -50,8 +50,12 @@ MOTIVO_INFERIDO = "valor_inferido"
 # Como se dice cada dominio en voz alta. El texto de la regla no sirve: "fiebre igual o
 # mayor a 38.0 grados centigrados" es el enunciado de un umbral, no algo que una persona
 # le diga a otra por telefono.
+# Van con tildes porque esto se pronuncia: sin ellas, espeak-ng pone la tonica donde
+# no va ("esta" en vez de "está"). Los diccionarios de mas abajo -- los que reconocen
+# lo que dice el PACIENTE -- van sin tildes a proposito, porque se comparan contra la
+# salida del normalizador, que las quita.
 _HERIDA = {
-    "secrecion_purulenta": "liquido amarillo o pus saliendo de la herida",
+    "secrecion_purulenta": "líquido amarillo o pus saliendo de la herida",
     "eritema_leve": "la herida un poco enrojecida",
     "normal": "la herida sin novedad",
 }
@@ -63,13 +67,13 @@ _MOVILIDAD = {
 }
 
 _APETITO = {
-    "muy_disminuido": "que casi no esta comiendo",
-    "levemente_disminuido": "que esta comiendo menos",
-    "normal": "que esta comiendo normal",
+    "muy_disminuido": "que casi no está comiendo",
+    "levemente_disminuido": "que está comiendo menos",
+    "normal": "que está comiendo normal",
 }
 
 _SUENO = {
-    "muy_alterado": "que casi no esta durmiendo",
+    "muy_alterado": "que casi no está durmiendo",
     "levemente_alterado": "que duerme peor de lo normal",
     "normal": "que duerme normal",
 }
@@ -189,6 +193,40 @@ def que_confirmar(
     return confirmacion
 
 
+def hallazgos_como_al_hablar(estado: ClinicalState, reglas) -> str:
+    """Las banderas rojas dichas en el idioma del paciente, no en el del protocolo.
+
+    Existe porque el anuncio de la bandera le leia al paciente el enunciado del umbral:
+    *"Lo que me describe -- fiebre igual o mayor a 38.0 grados centigrados -- es un signo
+    de alarma"*. Eso esta escrito para el registro clinico y para la enfermera que lo
+    revisa, no para decirselo a alguien por telefono.
+
+    Y era incoherente consigo mismo: en el turno anterior el agente acaba de leer de
+    vuelta "me dice fiebre de 38.5 grados", asi que decia lo mismo de dos maneras
+    distintas en dos turnos seguidos.
+
+    Si un hallazgo no tiene forma hablada se cae a su descripcion. Perder informacion
+    clinica por sonar mejor no es un intercambio aceptable.
+    """
+
+    partes: list[str] = []
+    vistos: set[str] = set()
+
+    for regla in reglas:
+        if regla.dominio not in vistos:
+            vistos.add(regla.dominio)
+            partes.append(frase_de(regla.dominio, _valor_de(estado, regla))
+                          or regla.descripcion.lower())
+
+    if len(partes) > 1:
+        texto = ", ".join(partes[:-1]) + f" y {partes[-1]}"
+    elif partes:
+        texto = partes[0]
+    else:
+        texto = ""
+    return texto
+
+
 def _valor_de(estado: ClinicalState, regla) -> float | str | None:
     """El valor del estado, no el de la regla: es el que el paciente reporto.
 
@@ -197,10 +235,20 @@ def _valor_de(estado: ClinicalState, regla) -> float | str | None:
     """
 
     valor = regla.valor_observado
+
     if regla.dominio:
-        obs = estado.observacion(regla.dominio)
-        if not obs.falta:
+        try:
+            obs = estado.observacion(regla.dominio)
+        except KeyError:
+            # Un umbral con un dominio que `models` no conoce es un error de
+            # programacion, pero el sitio donde estallaria es el anuncio de una bandera
+            # roja: la llamada se caeria justo antes de mandar al paciente a urgencias.
+            # Se cae al valor de la regla, que es informacion suficiente para el aviso.
+            obs = None
+
+        if obs is not None and not obs.falta:
             valor = obs.valor
+
     return valor
 
 

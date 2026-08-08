@@ -1,7 +1,7 @@
 {
-  "documentos_indexados": 108,
-  "total_paginas": 2173,
-  "total_chunks": 6829,
+  "documentos_indexados": 107,
+  "total_paginas": 2097,
+  "total_chunks": 6690,
   "documentos_con_ocr": [
     {
       "nombre": "Acute Appendicitis Evidence Based Medicine Guideline.pdf",
@@ -104,12 +104,6 @@
       "carpeta": "breast_cancer",
       "paginas_ocr": 7,
       "paginas": 86
-    },
-    {
-      "nombre": "fredhutch_guia_operacion_de_mama.pdf",
-      "carpeta": "complementario",
-      "paginas_ocr": 1,
-      "paginas": 76
     }
   ],
   "incoherencias_de_tema": [
@@ -264,7 +258,7 @@
       "artroplastia": 22
     },
     "complementario": {
-      "cancer_mama": 2
+      "cancer_mama": 1
     }
   },
   "cobertura_por_procedimiento": {
@@ -290,7 +284,7 @@
       "tema_requerido": "cancer_mama",
       "documentos_disponibles": 0,
       "cubierto": false,
-      "documentos_complementarios": 2
+      "documentos_complementarios": 1
     },
     "Reemplazo de cadera/rodilla": {
       "tema_requerido": "artroplastia",

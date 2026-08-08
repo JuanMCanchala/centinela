@@ -28,6 +28,13 @@ Están en [`api/centinela/config.py`](../api/centinela/config.py) y se publican 
 | `CENTINELA_GRACIA_RECONEXION_S` | `20` | Cuánto se espera a que el navegador vuelva antes de dar la llamada por colgada. A `0`, cierre inmediato como antes |
 | `CENTINELA_LLM_MODEL` | `phi3.5:3.8b-mini-instruct-q4_K_M` | Modelo declarado (compuerta G3) |
 | `CENTINELA_DIR_RUNTIME` | `data/runtime` | Dónde vive la base de datos de llamadas |
+| `CENTINELA_TTS_VELOCIDAD` | `1.0` | `length_scale` de Piper. Queda en 1.0 porque el ruido de duración del modelo es del 3 % y un ajuste del 5 % no se distingue de él: medido, 1.0 da 5.117 s y 1.05 da 5.083 s sobre la misma frase. Con 1.15 o más sí se oye. `make muestras` genera el A/B |
+
+**Si se cambia `CENTINELA_TTS_VELOCIDAD`, el caché de audio se regenera solo.** La velocidad
+entra en la firma de `data/audio_cache/manifiesto.json`, así que al arrancar se vuelven a
+sintetizar las 59 locuciones (~18 s) en vez de servir las viejas. Lo mismo pasa al editar el
+texto de una locución. `pre_renderizado.renovadas_por_cambio_de_texto` en `/api/salud` dice
+cuántas se rehicieron.
 
 El `1.8` del margen de eco lo eligió el barrido de `make bargein-barrido`, y
 `tests/test_bargein.py` comprueba que la configuración no se separe del módulo: tener el

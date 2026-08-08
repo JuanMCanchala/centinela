@@ -1,28 +1,39 @@
-"""Tapa el unico hueco clinico del corpus entregado, sin disimularlo.
+"""Demuestra la ingesta de material marcado, sin fingir que tapa el hueco del corpus.
 
-**El hueco.** `dataset/textos/breast_cancer/` trae 19 PDFs y ninguno es de cancer de mama:
-todos son de cuello uterino. Mientras tanto el dataset tiene 8 pacientes con procedimiento
-Mastectomia, el 20 % de la poblacion. Se comprobo contra el repo base
-(`TechSphere2026/ParticipantArtifacts`) el 2026-08-08: el unico commit posterior a nuestra
-copia toca `docs/stack-tecnico.md` y el dataset sigue igual. El hueco es del material.
+**El hueco, y lo que resulto ser.** `dataset/textos/breast_cancer/` trae 19 PDFs y ninguno
+es de cancer de mama: todos son de cuello uterino. Mientras tanto el dataset tiene 8
+pacientes con procedimiento Mastectomia, el 20 % de la poblacion.
 
-Y es el hueco entero de la medicion: de las 60 preguntas de `eval/rag_cobertura.py`, las 12
-que no se responden son **exactamente** las de mastectomia. Los otros cuatro procedimientos
-van 12/12.
+**La organizacion lo confirmo por correo el 2026-08-08: el desajuste era INTENCIONAL**,
+puesto ahi "para evaluar el criterio y la capacidad analitica de cada concursante". Y sobre
+complementar con guia publica marcada dijeron que esta bien planteado, "sin embargo, ten en
+cuenta que el enfoque correcto debe ser corregir y ajustar el modelo en si".
 
-**Que hace este script.** Ingiere material publico real de autoridades nombradas sobre el
-postoperatorio de cirugia de mama, con su procedencia registrada y marcado como
-`complementario`. La marca no es decorativa: viaja hasta la cita, asi que cuando el agente
-se apoya en este material lo dice, y `eval/rag_cobertura.py` puede informar las dos cifras
-por separado -- lo que cubre el corpus oficial y lo que cubre con el complemento.
+Eso cambia lo que este script significa. La respuesta correcta al hueco **no** es traer
+documentos: es que el sistema detecte que no tiene cobertura y se niegue a responder. Eso
+ya lo hace, y por dos caminos que no dependen de la carpeta:
+
+  - `rag/ingest.py` clasifica el tema por el TEXTO del documento, no por el directorio, asi
+    que los 19 PDFs mal archivados quedan clasificados como cuello uterino y nunca se
+    ofrecen a un paciente de mama.
+  - `rag/retriever.py` se abstiene cuando el corpus no cubre el procedimiento, con la razon
+    registrada. Medido: 11 de las 12 preguntas de mastectomia terminan en abstencion
+    honesta, 0 citas cruzadas.
+
+**Que queda entonces de este script.** Un solo folleto (23 fragmentos), como demostracion
+de que el sistema puede ingerir material externo con su procedencia declarada y que la
+marca `complementario` viaja hasta la cita. El de Fred Hutchinson se retiro a
+`data/complementario/retirados/`: aportaba 139 fragmentos y 2.3 MB para una cobertura que,
+segun la propia organizacion, no es lo que se evalua.
 
 **Por que las dos cifras y no una.** Sumar documentos que responden nuestras propias
 preguntas de evaluacion y presentar el resultado como una sola cifra seria inflar la
-medicion. La cifra del corpus oficial sigue siendo la que compara con el material que el
-reto entrego.
+medicion. La cifra del corpus oficial -- 48/60 -- sigue siendo la que compara con el
+material que el reto entrego.
 
 **Lo que NO se toca.** `make auditar` sigue reportando los 18 documentos mal archivados del
-corpus entregado. El hallazgo no se borra por haberlo resuelto.
+corpus entregado. Ahora se sabe que estaban puestos a proposito, y el hallazgo es
+precisamente lo que habia que encontrar.
 
     python scripts/ingerir_complementario.py [--listar]
 """
@@ -52,15 +63,6 @@ CATEGORIA = "complementario"
 # De donde salio cada documento. Va al manifiesto y de ahi al informe: una fuente clinica
 # sin procedencia no es una fuente, es un texto.
 FUENTES = {
-    "fredhutch_guia_operacion_de_mama.pdf": {
-        "titulo": "Guia para la operacion de mama",
-        "autoridad": "Fred Hutchinson Cancer Center / UW Medicine (Seattle)",
-        "url": "https://patient-education.fredhutch.org/documents/"
-               "Guide%20to%20Your%20Breast%20Surgery_Spanish.pdf",
-        "descargado_en": "2026-08-08",
-        "que_cubre": "preoperatorio, drenajes, cuidado de la herida, ducha, actividad, "
-                     "cuando llamar al equipo clinico",
-    },
     "mskcc_ejercicios_tras_mastectomia.pdf": {
         "titulo": "Ejercicios para hacer despues de su mastectomia o reconstruccion de mama",
         "autoridad": "Memorial Sloan Kettering Cancer Center",
@@ -69,6 +71,22 @@ FUENTES = {
         "descargado_en": "2026-08-08",
         "que_cubre": "movilidad del brazo y del hombro, progresion de la actividad, "
                      "senales de alarma al ejercitarse",
+    },
+}
+
+# Retirado del indice, no borrado. Sigue en `data/complementario/retirados/` con su
+# procedencia por si hiciera falta reponerlo: `make complementario` no lo mira porque el
+# script solo recorre los PDF de `data/complementario/`.
+RETIRADOS = {
+    "fredhutch_guia_operacion_de_mama.pdf": {
+        "titulo": "Guia para la operacion de mama",
+        "autoridad": "Fred Hutchinson Cancer Center / UW Medicine (Seattle)",
+        "url": "https://patient-education.fredhutch.org/documents/"
+               "Guide%20to%20Your%20Breast%20Surgery_Spanish.pdf",
+        "retirado_en": "2026-08-08",
+        "por_que": "139 fragmentos y 2.3 MB para cubrir un hueco que la organizacion "
+                   "confirmo intencional y que se evalua por la abstencion, no por la "
+                   "cobertura",
     },
 }
 

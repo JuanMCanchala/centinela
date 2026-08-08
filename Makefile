@@ -20,6 +20,7 @@ help:
 	@echo "  make instalar    entorno virtual + dependencias"
 	@echo "  make modelos     descarga modelos de voz y embeddings"
 	@echo "  make piper       descarga el binario de Piper y las voces en espanol"
+	@echo "  make muestras    genera el A/B de voz para juzgar la prosodia por oido"
 	@echo "  make up          arranca la API + interfaz web en :$(PUERTO)"
 	@echo ""
 	@echo "  make index       reconstruye el indice del corpus (lento, ~1 h)"
@@ -55,6 +56,13 @@ modelos:
 .PHONY: piper
 piper:
 	$(PY) scripts/fetch_piper.py
+
+# Genera el A/B de voz en data/muestras_prosodia/. Existe porque dos cosas de la voz no se
+# pueden decidir midiendo -- la velocidad y el modelo -- y la pareja 1_antes / 2_despues
+# deja oir el efecto de escribir el guion con tildes.
+.PHONY: muestras
+muestras:
+	$(PY) scripts/muestras_prosodia.py
 
 .PHONY: ollama
 ollama:

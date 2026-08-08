@@ -2,18 +2,6 @@
   "categoria": "complementario",
   "documentos": [
     {
-      "doc_id": "f3e03c9e27b42d674bae9d47777ce7c7",
-      "nombre": "fredhutch_guia_operacion_de_mama.pdf",
-      "sha256": "f3e03c9e27b42d674bae9d47777ce7c733e3c161f085bf99996cbb9168dbf4ec",
-      "n_chunks": 139,
-      "n_paginas": 76,
-      "titulo": "Guia para la operacion de mama",
-      "autoridad": "Fred Hutchinson Cancer Center / UW Medicine (Seattle)",
-      "url": "https://patient-education.fredhutch.org/documents/Guide%20to%20Your%20Breast%20Surgery_Spanish.pdf",
-      "descargado_en": "2026-08-08",
-      "que_cubre": "preoperatorio, drenajes, cuidado de la herida, ducha, actividad, cuando llamar al equipo clinico"
-    },
-    {
       "doc_id": "8a4b742e50a87a13c8fffb4817f2f84d",
       "nombre": "mskcc_ejercicios_tras_mastectomia.pdf",
       "sha256": "8a4b742e50a87a13c8fffb4817f2f84dc0f709a39ba35fb7bd47d0d77e1c3610",
@@ -25,5 +13,6 @@
       "descargado_en": "2026-08-08",
       "que_cubre": "movilidad del brazo y del hombro, progresion de la actividad, senales de alarma al ejercitarse"
     }
-  ]
+  ],
+  "nota": "Reducido a un folleto el 2026-08-08. La organizacion confirmo que el desajuste de dataset/textos/breast_cancer/ era intencional y que el enfoque correcto es ajustar el modelo, no el corpus: lo que se evalua es la abstencion. El de Fred Hutchinson esta en retirados/."
 }

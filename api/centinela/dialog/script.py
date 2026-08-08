@@ -32,10 +32,21 @@ from ..models import DOMINIOS
 
 @dataclass(frozen=True)
 class Locucion:
-    """Una linea que el agente puede decir. `clave` nombra su archivo de audio."""
+    """Una linea que el agente puede decir. `clave` nombra su archivo de audio.
+
+    **El texto va con tildes y con ñ, y eso no es cosmetica.** Piper fonemiza con
+    espeak-ng, que deduce la silaba tonica de la ortografia. Escrito sin tildes, este
+    mismo guion decia en voz alta `swˈeno` por "sueño", `atˈɛnsjon` por "atención" y
+    `meðˈika` -- el verbo "medica" -- por "médica". Comprobado con `piper --debug`; hay
+    un caso de cada uno en `tests/test_ortografia_hablada.py`.
+
+    `enfasis` marca lo que se sintetiza con el perfil lento y nitido de
+    `tts/piper.py`: hoy, solo la instruccion de urgencias.
+    """
 
     clave: str
     texto: str
+    enfasis: bool = False
 
 
 @dataclass(frozen=True)
@@ -52,14 +63,14 @@ class PreguntaDominio:
 
 SALUDO = Locucion(
     "saludo",
-    "Buenos dias, le habla Centinela, del equipo de seguimiento postoperatorio. "
-    "Lo llamo para saber como se ha sentido despues de su cirugia. "
-    "Son unas preguntas cortas, no toma mas de tres minutos. Le parece bien?",
+    "Buenos días, le habla Centinela, del equipo de seguimiento postoperatorio. "
+    "Lo llamo para saber cómo se ha sentido después de su cirugía. "
+    "Son unas preguntas cortas, no toma más de tres minutos. ¿Le parece bien?",
 )
 
 CONFIRMACION_IDENTIDAD = Locucion(
     "confirmar_identidad",
-    "Antes de empezar, confirmo con quien hablo. Es usted {nombre}?",
+    "Antes de empezar, confirmo con quién hablo. ¿Es usted {nombre}?",
 )
 
 TRANSICION_A_PREGUNTAS = Locucion(
@@ -69,7 +80,7 @@ TRANSICION_A_PREGUNTAS = Locucion(
 
 CIERRE_VERDE = Locucion(
     "cierre_verde",
-    "Todo lo que me cuenta va dentro de lo esperado para su recuperacion. "
+    "Todo lo que me cuenta va dentro de lo esperado para su recuperación. "
     "Siga con las indicaciones que le dieron al salir. "
     "Si aparece fiebre, si el dolor aumenta o si la herida cambia, llame de inmediato. "
     "Gracias por su tiempo, que siga mejor.",
@@ -77,18 +88,23 @@ CIERRE_VERDE = Locucion(
 
 CIERRE_AMARILLO = Locucion(
     "cierre_amarillo",
-    "Hay un par de cosas que conviene que revise el equipo clinico. "
-    "No es una emergencia, pero si quiero que quede en seguimiento. "
-    "Voy a dejar reportado lo que me conto y una enfermera lo va a contactar hoy mismo. "
+    "Hay un par de cosas que conviene que revise el equipo clínico. "
+    "No es una emergencia, pero sí quiero que quede en seguimiento. "
+    "Voy a dejar reportado lo que me contó y una enfermera lo va a contactar hoy mismo. "
     "Mientras tanto, si algo empeora, llame sin esperar.",
 )
 
+# `enfasis`: es la unica frase de la llamada cuya perdida es daño clinico, asi que se
+# sintetiza con el perfil lento y nitido. Y "llame al 123" pasa por `tts/hablado.py`,
+# que lo dice "uno dos tres": leido como "ciento veintitres" -- que es lo que hacia --
+# el paciente no reconoce la linea de emergencias.
 CIERRE_ROJO = Locucion(
     "cierre_rojo",
-    "Lo que me acaba de describir necesita atencion medica ahora, no manana. "
-    "Ya deje una alerta al equipo clinico con sus datos y lo que me conto. "
-    "Por favor no espere a que lo llamen: dirijase al servicio de urgencias mas cercano "
-    "o llame al 123 si no tiene como desplazarse.",
+    "Lo que me acaba de describir necesita atención médica ahora, no mañana. "
+    "Ya dejé una alerta al equipo clínico con sus datos y lo que me contó. "
+    "Por favor no espere a que lo llamen: diríjase al servicio de urgencias más cercano "
+    "o llame al 123 si no tiene cómo desplazarse.",
+    enfasis=True,
 )
 
 # --------------------------------------------------------------------------
@@ -97,23 +113,23 @@ CIERRE_ROJO = Locucion(
 
 PEDIR_REPETIR = Locucion(
     "pedir_repetir",
-    "Perdone, no le escuche bien. Me lo puede repetir?",
+    "Perdone, no le escuché bien. ¿Me lo puede repetir?",
 )
 
 RELLENO_PENSANDO = Locucion(
     "relleno_pensando",
-    "Permitame revisar eso un momento.",
+    "Permítame revisar eso un momento.",
 )
 
 ACEPTAR_TERCERO = Locucion(
     "aceptar_tercero",
-    "Claro que si, con mucho gusto. Cuenteme usted entonces.",
+    "Claro que sí, con mucho gusto. Cuénteme usted entonces.",
 )
 
 FUERA_DE_MISION = Locucion(
     "fuera_de_mision",
     "Eso se sale de lo que yo puedo ayudarle. Mi trabajo es hacerle el seguimiento "
-    "de su cirugia. Volvamos a eso, le parece?",
+    "de su cirugía. Volvamos a eso, ¿le parece?",
 )
 
 # Respuesta a intentos de manipular las instrucciones del agente. Es fija: no la
@@ -121,22 +137,23 @@ FUERA_DE_MISION = Locucion(
 # componente que la inyeccion esta atacando.
 INTENTO_MANIPULACION = Locucion(
     "intento_manipulacion",
-    "Entiendo que quiera oir que todo esta bien, y ojala fuera asi de simple. "
-    "Pero yo no puedo cambiar lo que reporto ni decirle que esta bien si lo que me "
+    "Entiendo que quiera oír que todo está bien, y ojalá fuera así de simple. "
+    "Pero yo no puedo cambiar lo que reporto ni decirle que está bien si lo que me "
     "cuenta indica otra cosa. Sigamos con el seguimiento.",
 )
 
+# "que maneja" no tenia sujeto: dicho en voz alta se oia como una frase a medias.
 SIN_INFORMACION = Locucion(
     "sin_informacion",
-    "Esa es una buena pregunta y le voy a ser honesto: no la tengo en la informacion "
-    "clinica que maneja. Prefiero decirselo asi que darle un dato que no me consta. "
-    "La dejo anotada para que el equipo clinico se la responda.",
+    "Esa es una buena pregunta y le voy a ser honesto: no la tengo en la información "
+    "clínica que manejo. Prefiero decírselo así que darle un dato que no me consta. "
+    "La dejo anotada para que el equipo clínico se la responda.",
 )
 
 NO_SOY_MEDICO = Locucion(
     "no_soy_medico",
-    "Yo no puedo darle un diagnostico ni cambiarle un medicamento, eso lo define su "
-    "medico. Lo que si hago es dejar reportado lo que usted me cuenta para que lo revisen.",
+    "Yo no puedo darle un diagnóstico ni cambiarle un medicamento, eso lo define su "
+    "médico. Lo que sí hago es dejar reportado lo que usted me cuenta para que lo revisen.",
 )
 
 
@@ -149,17 +166,17 @@ PREGUNTAS: tuple[PreguntaDominio, ...] = (
         dominio="dolor",
         inicial=Locucion(
             "dolor_inicial",
-            "Cuenteme, como ha estado el dolor desde la cirugia? "
-            "Si cero es nada y diez es el peor dolor que ha sentido, en que numero lo pondria?",
+            "Cuénteme, ¿cómo ha estado el dolor desde la cirugía? "
+            "Si cero es nada y diez es el peor dolor que ha sentido, ¿en qué número lo pondría?",
         ),
         reintento=Locucion(
             "dolor_reintento",
-            "Volvamos al dolor un momento. Si tuviera que ponerle un numero del cero al diez, "
-            "cual seria?",
+            "Volvamos al dolor un momento. Si tuviera que ponerle un número del cero al diez, "
+            "¿cuál sería?",
         ),
         profundizar=Locucion(
             "dolor_profundizar",
-            "Y ese dolor, le cede con las pastillas que le formularon, o sigue igual "
+            "Y ese dolor, ¿le cede con las pastillas que le formularon, o sigue igual "
             "aunque se las tome?",
         ),
     ),
@@ -167,16 +184,16 @@ PREGUNTAS: tuple[PreguntaDominio, ...] = (
         dominio="fiebre",
         inicial=Locucion(
             "fiebre_inicial",
-            "Ha tenido fiebre o se ha sentido caliente o con escalofrios? "
-            "Se ha podido tomar la temperatura?",
+            "¿Ha tenido fiebre o se ha sentido caliente o con escalofríos? "
+            "¿Se ha podido tomar la temperatura?",
         ),
         reintento=Locucion(
             "fiebre_reintento",
-            "Sobre la temperatura: alguien se la ha tomado en estos dias, o no ha habido forma?",
+            "Sobre la temperatura: ¿alguien se la ha tomado en estos días, o no ha habido forma?",
         ),
         profundizar=Locucion(
             "fiebre_profundizar",
-            "Si no tiene termometro no hay problema. Digame mas bien: ha tenido escalofrios, "
+            "Si no tiene termómetro no hay problema. Dígame más bien: ¿ha tenido escalofríos, "
             "o lo ha sentido alguien caliente al tocarlo?",
         ),
     ),
@@ -184,62 +201,63 @@ PREGUNTAS: tuple[PreguntaDominio, ...] = (
         dominio="movilidad",
         inicial=Locucion(
             "movilidad_inicial",
-            "Como se ha sentido para moverse y caminar? Lo hace normal, "
+            "¿Cómo se ha sentido para moverse y caminar? ¿Lo hace normal, "
             "le cuesta un poco, o no ha podido?",
         ),
         reintento=Locucion(
             "movilidad_reintento",
-            "Sobre moverse: ha podido levantarse y caminar por la casa?",
+            "Sobre moverse: ¿ha podido levantarse y caminar por la casa?",
         ),
         profundizar=Locucion(
             "movilidad_profundizar",
-            "Y eso de moverse con dificultad, es igual que ayer o ha empeorado de un dia para otro?",
+            "Y eso de moverse con dificultad, ¿es igual que ayer o ha empeorado "
+            "de un día para otro?",
         ),
     ),
     PreguntaDominio(
         dominio="herida",
         inicial=Locucion(
             "herida_inicial",
-            "Hablemos de la herida. Como la ha visto? "
-            "Nota enrojecimiento, hinchazon, o que le salga algun liquido?",
+            "Hablemos de la herida. ¿Cómo la ha visto? "
+            "¿Nota enrojecimiento, hinchazón, o que le salga algún líquido?",
         ),
         reintento=Locucion(
             "herida_reintento",
-            "Volviendo a la herida: la ha podido mirar? Como se ve?",
+            "Volviendo a la herida: ¿la ha podido mirar? ¿Cómo se ve?",
         ),
         profundizar=Locucion(
             "herida_profundizar",
-            "Ese liquido que sale, de que color es, y tiene mal olor?",
+            "Ese líquido que sale, ¿de qué color es, y tiene mal olor?",
         ),
     ),
     PreguntaDominio(
         dominio="apetito",
         inicial=Locucion(
             "apetito_inicial",
-            "Como ha estado el apetito? Ha podido comer normal o lo ha notado bajito?",
+            "¿Cómo ha estado el apetito? ¿Ha podido comer normal o lo ha notado bajito?",
         ),
         reintento=Locucion(
             "apetito_reintento",
-            "Sobre la comida: ha logrado comer en estos dias?",
+            "Sobre la comida: ¿ha logrado comer en estos días?",
         ),
         profundizar=Locucion(
             "apetito_profundizar",
-            "Y ha podido tomar liquidos, o tampoco le pasan?",
+            "¿Y ha podido tomar líquidos, o tampoco le pasan?",
         ),
     ),
     PreguntaDominio(
         dominio="sueno",
         inicial=Locucion(
             "sueno_inicial",
-            "Por ultimo, como ha dormido? Ha logrado descansar o se despierta a cada rato?",
+            "Por último, ¿cómo ha dormido? ¿Ha logrado descansar o se despierta a cada rato?",
         ),
         reintento=Locucion(
             "sueno_reintento",
-            "Sobre el sueno: ha podido dormir en estas noches?",
+            "Sobre el sueño: ¿ha podido dormir en estas noches?",
         ),
         profundizar=Locucion(
             "sueno_profundizar",
-            "Y lo que no lo deja dormir, es el dolor o es otra cosa?",
+            "Y lo que no lo deja dormir, ¿es el dolor o es otra cosa?",
         ),
     ),
 )
@@ -315,7 +333,7 @@ def naturalidad() -> list[Locucion]:
 # exactamente lo que no queremos.
 INTERRUPCION_ROJA = Locucion(
     "interrupcion_roja",
-    "Voy a detener las preguntas aqui, porque lo que me acaba de contar es importante.",
+    "Voy a detener las preguntas aquí, porque lo que me acaba de contar es importante.",
 )
 
 # La instruccion de urgencias se cuenta entre las cosas que hay que decir dos veces si
@@ -338,12 +356,12 @@ RETOMAR_URGENCIA = Locucion(
 # forma de atraparlas es preguntar.
 CONFIRMAR_ENTENDIDO = Locucion(
     "confirmar_entendido",
-    "Le repito para estar seguro de que le entendi bien.",
+    "Le repito para estar seguro de que le entendí bien.",
 )
 
 CONFIRMAR_PREGUNTA = Locucion(
     "confirmar_pregunta",
-    "Es correcto?",
+    "¿Es correcto?",
 )
 
 CONFIRMACION_ACEPTADA = Locucion(
@@ -353,7 +371,7 @@ CONFIRMACION_ACEPTADA = Locucion(
 
 CONFIRMACION_DESMENTIDA = Locucion(
     "confirmacion_desmentida",
-    "Entiendo, entonces lo apunte mal. Se lo pregunto otra vez.",
+    "Entiendo, entonces lo apunté mal. Se lo pregunto otra vez.",
 )
 
 ACUSE_CORRECCION = Locucion(

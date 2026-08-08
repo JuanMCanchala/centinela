@@ -89,6 +89,7 @@ def test_con_cobertura_y_buen_pasaje_si_fundamenta() -> None:
     class Pasaje:
         similitud = 0.9
         solape_lexico = 0.4
+        categoria = None  # del corpus oficial del reto
 
     fundamentado, _ = r._evaluar_fundamentacion(
         [Pasaje()], cobertura=True, tema_esperado="cancer_mama",
@@ -107,3 +108,87 @@ def test_sin_pasajes_no_se_fundamenta_nada() -> None:
 
     assert fundamentado is False
     assert razon
+
+
+# ==========================================================================
+# El liston del material complementario
+#
+# El corpus complementario se redujo a un solo folleto (23 fragmentos) porque los
+# organizadores confirmaron que el desajuste de `dataset/textos/breast_cancer/` era
+# INTENCIONAL, para evaluar el criterio analitico, y que el enfoque correcto es ajustar
+# el modelo y no el corpus.
+#
+# Esa reduccion destapo un defecto de la compuerta: con `similitud OR solape`, la
+# similitud daba luz verde siempre. Medido sobre ese folleto, las siete preguntas de
+# prueba caen entre 0.843 y 0.883 de similitud -- todas por encima del 0.82 -- mientras
+# el solape lexico separa limpio (0.00-0.25 lo que no cubre, 0.50-0.75 lo que si). El
+# sintoma: a "que hago si me sale liquido de la herida" el agente contestaba "bombee con
+# el puño 10 veces", que es un ejercicio de linfedema.
+# ==========================================================================
+
+def _pasaje(similitud: float, solape: float, categoria: str | None):
+    class Pasaje:
+        pass
+    p = Pasaje()
+    p.similitud = similitud
+    p.solape_lexico = solape
+    p.categoria = categoria
+    return p
+
+
+def test_el_complemento_solo_no_responde_si_el_solape_es_bajo() -> None:
+    """El caso real y peligroso: similitud alta, solape 0.25, tema correcto."""
+
+    r = _recuperador({"cancer_mama"})
+
+    fundamentado, razon = r._evaluar_fundamentacion(
+        [_pasaje(0.859, 0.25, "complementario")], cobertura=True,
+        tema_esperado="cancer_mama", tema_filtrado="cancer_mama",
+    )
+
+    assert fundamentado is False
+    assert "complementario" in razon
+
+
+def test_el_complemento_si_responde_lo_que_de_verdad_cubre() -> None:
+    """La contraparte: "que ejercicios puedo hacer con el brazo" da 0.883 / 0.75."""
+
+    r = _recuperador({"cancer_mama"})
+
+    fundamentado, _ = r._evaluar_fundamentacion(
+        [_pasaje(0.883, 0.75, "complementario")], cobertura=True,
+        tema_esperado="cancer_mama", tema_filtrado="cancer_mama",
+    )
+
+    assert fundamentado is True
+
+
+def test_el_corpus_oficial_conserva_el_criterio_permisivo() -> None:
+    """El liston nuevo es SOLO para el complemento.
+
+    En el corpus oficial el `or` es correcto: cubre el tema entero, asi que una pregunta
+    parafraseada puede tener poco solape lexico y estar bien respondida. Subirle el
+    liston romperia las 48 preguntas que hoy se responden.
+    """
+
+    r = _recuperador({"apendicitis"})
+
+    fundamentado, _ = r._evaluar_fundamentacion(
+        [_pasaje(0.86, 0.05, "oficial")], cobertura=True,
+        tema_esperado="apendicitis", tema_filtrado="apendicitis",
+    )
+
+    assert fundamentado is True
+
+
+def test_un_pasaje_oficial_entre_complementarios_no_activa_el_liston() -> None:
+    """El liston pide que TODO el soporte sea complementario."""
+
+    r = _recuperador({"cancer_mama"})
+
+    fundamentado, _ = r._evaluar_fundamentacion(
+        [_pasaje(0.86, 0.05, "complementario"), _pasaje(0.86, 0.05, None)],
+        cobertura=True, tema_esperado="cancer_mama", tema_filtrado="cancer_mama",
+    )
+
+    assert fundamentado is True

@@ -42,6 +42,7 @@ from .confirmacion import (
     NIEGA,
     Confirmacion,
     frase_de,
+    hallazgos_como_al_hablar,
     interpretar,
     que_confirmar,
 )
@@ -573,8 +574,8 @@ class DialogPolicy:
         self.fase = EstadoLlamada.CERRANDO
         texto = (
             "Con mucho gusto. No soy la persona indicada para eso, pero voy a dejar "
-            "reportado que usted pidio hablar con el equipo clinico y lo van a contactar. "
-            "Antes de colgar, hay algo de su recuperacion que quiera que quede anotado?"
+            "reportado que usted pidió hablar con el equipo clínico y lo van a contactar. "
+            "Antes de colgar, ¿hay algo de su recuperación que quiera que quede anotado?"
         )
         accion = AccionAgente(
             fragmentos=[Fragmento(texto)],
@@ -609,7 +610,7 @@ class DialogPolicy:
                 self.intentos[dominio] = MAX_INTENTOS_POR_DOMINIO
             fragmentos = [
                 Fragmento(
-                    "Parece que la linea no esta muy buena. Sigamos y luego "
+                    "Parece que la línea no está muy buena. Sigamos y luego "
                     "volvemos sobre eso."
                 )
             ]
@@ -897,7 +898,7 @@ class DialogPolicy:
             accion = AccionAgente(
                 fragmentos=[
                     Fragmento(f"Perdone, se lo pregunto de otra forma. Me dice "
-                              f"{conf.frase if conf else 'eso'}, verdad?"),
+                              f"{conf.frase if conf else 'eso'}, ¿verdad?"),
                     Fragmento(S.CONFIRMAR_PREGUNTA.texto, S.CONFIRMAR_PREGUNTA.clave,
                               papel=PAPEL_PREGUNTA),
                 ],
@@ -1009,7 +1010,9 @@ class DialogPolicy:
         self.escalado = True
         self.fase = EstadoLlamada.ESCALANDO
 
-        hallazgos = ", ".join(h.descripcion.lower() for h in decision.reglas_rojas)
+        # En el idioma del paciente, no en el del protocolo: `h.descripcion` es el
+        # enunciado del umbral y esta escrito para la enfermera que lee el registro.
+        hallazgos = hallazgos_como_al_hablar(self.estado, decision.reglas_rojas)
         procedimiento = self.paciente.procedimiento.lower()
         fragmentos: list[Fragmento] = []
         if con_preambulo:
@@ -1019,7 +1022,7 @@ class DialogPolicy:
         fragmentos.extend([
             Fragmento(
                 f"Lo que me describe -- {hallazgos} -- es un signo de alarma "
-                f"despues de {S.articulo_de(procedimiento)} {procedimiento}."
+                f"después de {S.articulo_de(procedimiento)} {procedimiento}."
             ),
             # El unico fragmento URGENTE del sistema. Si el paciente lo corta, la
             # llamada no cuelga hasta haberlo repetido.

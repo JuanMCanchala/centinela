@@ -185,6 +185,67 @@ dominios, así que las **59 locuciones** que el agente puede decir se conocen an
 suene el teléfono. Se sintetizan al arrancar y se sirven desde disco; la proporción de
 turnos servidos así es la que aparece arriba, medida, no estimada.
 
+El caché se invalida por **contenido**, no por nombre de archivo: `data/audio_cache/manifiesto.json`
+guarda de qué texto y con qué tratamiento salió cada WAV. Antes la clave nombraba el
+archivo, así que editar una locución no cambiaba lo que el paciente oía — el WAV viejo
+seguía en disco y se servía igual.
+
+### Cómo habla el agente
+
+Cuatro cosas medibles separan «una voz sintética» de «alguien al teléfono», y ninguna es el
+timbre del modelo.
+
+**1. El fonemizador lee la ortografía.** Piper fonemiza con espeak-ng, que deduce la sílaba
+tónica de cómo está escrita la palabra. El guion estuvo escrito sin tildes y sin ñ, y eso se
+oía. Comprobado con `piper --debug`:
+
+| escrito | fonemas que producía | correcto |
+|---|---|---|
+| `sueno` | `swˈeno` (no es una palabra) | `swˈeɲo` |
+| `manana` | `manˈana` (no es una palabra) | `maɲˈana` |
+| `clinico` | cli-**NI**-co | **CLÍ**-ni-co |
+| `atencion` | a-**TEN**-cion | aten-**CIÓN** |
+| `medica` | me-**DI**-ca, el verbo | **MÉ**-di-ca |
+| `dirijase` | di-ri-**JA**-se | di-**RÍ**-ja-se |
+
+Las tres últimas estaban en el cierre rojo, que es la frase que manda al paciente a
+urgencias. `tests/test_ortografia_hablada.py` es la red: revisa las locuciones **y** recorre
+una llamada completa por la máquina de estados, porque parte del habla se construye con
+f-strings que ningún test de locuciones alcanza.
+
+**2. Las cifras se dicen como las dice la gente** (`tts/hablado.py`). `38.5` se pronunciaba
+"treinta y ocho **punto** cinco", y `123` —la línea de emergencias del cierre rojo— se
+pronunciaba "**ciento veintitrés**", que es un número que el paciente no reconoce en el único
+momento de la llamada en que eso importa. La capa solo actúa en la voz: el registro clínico y
+la hoja de traspaso conservan la cifra.
+
+**3. La cadencia era errática.** Medida sobre las 59 locuciones, la cola de silencio que
+Piper deja iba de **200 a 785 ms** según la locución, así que el hueco entre dos frases del
+mismo turno cambiaba de duración sin motivo. Ahora se recorta a una duración conocida y la
+pausa entre fragmentos es deliberada y constante.
+
+**4. El audio venía sin headroom.** Las 59 locuciones estaban a **pico 1.000** (0 dBFS) con
+el RMS de voz variando **4.1 dB** entre ellas: cero margen y saltos de volumen percibido de
+frase en frase. El techo se mide en el percentil 99.9 y no en el máximo, y eso no es un
+detalle: usando el máximo, como las 59 estaban exactamente a 1.000, todas recibían la misma
+reducción y el spread de RMS no bajaba nada.
+
+| | antes | después |
+|---|---:|---:|
+| Locuciones pegadas a 0 dBFS | 59 | **0** |
+| Spread de RMS entre locuciones | 4.1 dB | **1.2 dB** |
+| Cola de silencio | 200–592 ms | **55 ms constante** |
+| Variación de la cola | 392 ms | **0 ms** |
+
+**Lo que no se movió, y por qué.** La velocidad global sigue en 1.0. Este modelo tiene ruido
+de duración de fonema, así que dos síntesis del mismo texto ya difieren un 3 % entre sí:
+medido con 4 repeticiones, `length_scale` 1.0 da 5.117 s y 1.05 da 5.083 s —indistinguible—
+mientras 1.5 da 6.853 s. Un ajuste "algo más pausado" del 5 % no existe en la práctica, así
+que se dejó en 1.0 con la variable `CENTINELA_TTS_VELOCIDAD` expuesta en vez de fingir una
+mejora. La instrucción de urgencias **sí** va aparte, a 1.22 y con menos variabilidad de
+fonema, porque ahí el margen sobre el ruido es real. `make muestras` genera el A/B para
+juzgarlo por oído.
+
 **El modelo solo cuando hace falta.** Si la regex extrajo el dolor y el léxico resolvió la
 herida, no se invoca — de ahí que el P50 de invocaciones sea 0. La optimización quedó
 registrada en `eval/probar_tokens.py`, sobre un escenario fijo de seis turnos: **1359 → 672
@@ -212,7 +273,7 @@ clasificador aislado. Resultado: **42/42**.
 - Intentos de manipulación resistidos: **11/11**
 - Casos donde la criticidad bajó porque el paciente lo pidió: **0**
 
-Más `make test`: **445 tests**, que incluyen cero falsos positivos de manipulación sobre
+Más `make test`: **488 tests**, que incluyen cero falsos positivos de manipulación sobre
 turnos textuales del dataset oficial. Ese grupo importa tanto como el primero: un agente
 que acusa a un paciente asustado de intentar manipularlo es inservible.
 
@@ -347,11 +408,20 @@ El modelo cuatro veces más pequeño resultó cinco veces más lento en lo únic
 paciente percibe. Se descartó la idea del "router barato en 1B" y **Phi-3.5 Mini hace los
 tres trabajos**.
 
-### 2. El corpus tiene un hueco clínico de 8 pacientes
+### 2. El corpus tiene un hueco clínico de 8 pacientes, y estaba puesto a propósito
 
 `dataset/textos/breast_cancer/` contiene 19 PDFs. **Ninguno es de cáncer de mama: todos
 son de cáncer de cuello uterino.** Mientras tanto, `perfiles_clinicos` tiene 8 pacientes
 (20 % de la población) con procedimiento **Mastectomía**.
+
+Lo preguntamos a la organización. Respondieron el **2026-08-08** que el desajuste era
+**intencional**, puesto ahí *"para evaluar el criterio y la capacidad analítica de cada
+concursante"*, y que sobre complementar con guía pública marcada *"el enfoque correcto debe
+ser corregir y ajustar el modelo en sí"*.
+
+Así que lo que se evalúa no es conseguir documentos de mastectomía: es que el sistema
+detecte que no tiene cobertura y **se niegue a responder**. Eso es lo que hace, y por dos
+caminos que no dependen del nombre de la carpeta.
 
 Un RAG que enrute por nombre de carpeta le sirve guías de cérvix a una paciente
 mastectomizada con total confianza. Eso no es un error de recuperación: es la
@@ -378,35 +448,60 @@ corpus no lo cubre. La auditoría del corpus (`make auditar`, resultado en
 Los duplicados no los detecta ningún hash de archivo: son el mismo artículo con las
 ligaduras codificadas distinto. Se atrapan comparando términos distintivos del texto.
 
-**Y era el hueco entero de la medición.** De las 60 preguntas de `make rag`, las 12 que no
-se respondían eran *exactamente* las de mastectomía; los otros cuatro procedimientos iban
-12/12. Se comprobó contra el repo base el 2026-08-08: el único commit posterior a nuestra
-copia toca `docs/stack-tecnico.md` y el dataset sigue igual, así que el hueco es del material
-y no lo taparon ellos.
+**Y es el hueco entero de la medición.** De las 60 preguntas de `make rag`, las 12 que no se
+responden con el corpus oficial son *exactamente* las de mastectomía; los otros cuatro
+procedimientos van 12/12.
 
-Está tapado, y **marcado**. `scripts/ingerir_complementario.py` ingiere guía pública real de
-autoridades nombradas sobre el postoperatorio de cirugía de mama —Fred Hutchinson Cancer
-Center / UW Medicine y Memorial Sloan Kettering, con su URL y su fecha de descarga en
-`data/complementario/procedencia.json`— con la categoría `complementario`. Esa marca viaja
-hasta la cita, así que cuando el agente se apoya en ese material la respuesta lo declara: no
-se puede hacer pasar material añadido por material entregado.
+La respuesta del agente ahí es abstenerse, con la razón registrada:
+
+> *"Esa es una buena pregunta y le voy a ser honesto: no la tengo en la información clínica
+> que manejo. Prefiero decírselo así que darle un dato que no me consta. La dejo anotada
+> para que el equipo clínico se la responda."*
+>
+> `razón: el corpus cargado no cubre el procedimiento del paciente (tema requerido:
+> cancer_mama). Responder con otro tema sería clínicamente inseguro.`
+
+Queda **un** documento complementario (`scripts/ingerir_complementario.py`, 23 fragmentos de
+Memorial Sloan Kettering con su URL y fecha en `data/complementario/procedencia.json`), y
+está ahí como demostración de que el sistema puede ingerir material externo con procedencia
+declarada y que la categoría `complementario` viaja hasta la cita: cuando el agente se apoya
+en ese material, la respuesta lo dice. No se puede hacer pasar material añadido por material
+entregado.
 
 Por eso **`make rag` publica dos cifras y no una**:
 
 | Respaldo de las 60 respuestas | Fundamentadas |
 |---|---:|
 | Solo con el corpus **oficial** del reto | **48 / 60** |
-| Apoyadas en material complementario declarado | 12 / 60 |
-| Total, con 0 citas cruzadas y 0 cifras sin respaldo | **60 / 60** |
+| Apoyadas en material complementario declarado | 1 / 60 |
+| Abstenciones honestas, con la razón registrada | **11** |
+| Citas cruzadas de otro procedimiento · cifras sin respaldo | **0 · 0** |
 
 Sumar documentos que responden nuestras propias preguntas de evaluación y publicar una sola
 cifra sería inflar la medición. Y `make auditar` sigue diciendo *Mastectomía → 0 docs, SIN
-COBERTURA* sobre el corpus entregado: el hallazgo no se borra por haberlo resuelto.
+COBERTURA* sobre el corpus entregado: el hallazgo no se borra.
 
-Un tercer PDF se descargó y **se rechazó**: era de reducción mamaria, no de mastectomía. Lo
+**Reducir el complemento destapó un defecto de la compuerta, y es el hallazgo más útil de
+esta parte.** Con un solo folleto de alcance estrecho, la similitud coseno dejó de
+discriminar —las siete preguntas de prueba caen entre 0.843 y 0.883, todas por encima del
+umbral de 0.82— mientras el solape léxico separaba limpio: 0.00–0.25 lo que el folleto no
+cubre, 0.50–0.75 lo que sí. Como la compuerta exigía *similitud **o** solape*, la similitud
+daba luz verde siempre y la señal útil no llegaba a contar. El síntoma medido: a *"¿qué hago
+si me sale líquido de la herida?"* el agente respondía *"bombee con el puño lentamente 10
+veces"*, que es un ejercicio de linfedema. Ahora, cuando **todo** el soporte es
+complementario se exigen las dos señales (`rag/retriever.py`,
+`MIN_SOLAPE_COMPLEMENTARIO = 0.38`, calibrado entre esas dos bandas). El corpus oficial
+conserva el criterio permisivo, que es el correcto cuando la fuente cubre el tema entero.
+
+Otro PDF se descargó y **se rechazó**: era de reducción mamaria, no de mastectomía. Lo
 detectó la misma clasificación por contenido que denuncia el defecto del corpus oficial —el
 script se niega a ingerir lo que no clasifique como `cancer_mama`—, porque repetir en el
 material propio el error que se le señala al entregado sería lo peor de los dos mundos.
+
+Y un segundo documento complementario, la guía de Fred Hutchinson, **se retiró** del índice
+a `data/complementario/retirados/`: aportaba 139 fragmentos y 2.3 MB para cubrir un hueco
+que la organización confirmó intencional y que se evalúa por la abstención, no por la
+cobertura. El retiro dejó recibo de olvido verificado (`olvido_verificado: true`).
 
 ### 3. El agente de referencia del dataset nunca escala
 
@@ -556,10 +651,10 @@ ejecuta exactamente estos comandos como subprocesos. El veredicto es su código 
 así que no hay una segunda implementación dentro del panel.
 
 ```bash
-make test        # 445 tests unitarios y de regresión
+make test        # 488 tests unitarios y de regresión
 make eval        # 160 casos oficiales · cero falsos negativos clínicos
 make redteam     # 43 casos adversariales (requiere la API levantada)
-make humo        # 101 comprobaciones de extremo a extremo (requiere la API levantada)
+make humo        # 103 comprobaciones de extremo a extremo (requiere la API levantada)
 make rag         # 60 preguntas · 0 citas cruzadas, 0 cifras sin respaldo
 make bargein     # 0 cortes falsos y latencia de interrupción medida
 make escucha     # cierre del turno y palabra clínica sobre 18 grabaciones reales
@@ -578,9 +673,10 @@ make metricas    # regenera docs/metricas.md desde las mediciones
 
 MIT. Los PDFs del corpus clínico son obra de sus respectivos autores y se usan solo como
 material de referencia del reto. Lo mismo vale para el material complementario de
-`data/complementario/`: son guías de educación al paciente publicadas por Fred Hutchinson
-Cancer Center / UW Medicine y Memorial Sloan Kettering, con su URL y su fecha de descarga
-registradas en `procedencia.json`, y se usan igual — como material de referencia, sin
-reclamar ningún derecho sobre ellas.
+`data/complementario/`: es una guía de educación al paciente publicada por Memorial Sloan
+Kettering, con su URL y su fecha de descarga registradas en `procedencia.json`, y se usa
+igual — como material de referencia, sin reclamar ningún derecho sobre ella. La de Fred
+Hutchinson Cancer Center / UW Medicine, retirada del índice, queda en `retirados/` con la
+misma procedencia registrada.
 
 Los datos clínicos del dataset son **sintéticos y no han sido validados clínicamente**.

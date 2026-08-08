@@ -10,6 +10,7 @@ __pycache__/
 data/runtime/
 data/subidas/
 data/muestras_voz/
+data/muestras_prosodia/
 
 # --- artefactos pesados que se descargan, no se versionan ---
 # Modelos (2.6 GB): embeddings multilingual-e5-large y faster-whisper.

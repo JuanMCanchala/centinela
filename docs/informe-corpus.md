@@ -7,11 +7,11 @@ Generado automaticamente por `scripts/build_index.py`. No se edita a mano.
 | Metrica | Valor |
 |---|---:|
 | PDFs encontrados | 107 |
-| Documentos ingeridos | 108 |
-| Paginas procesadas | 2173 |
-| Chunks indexados | 6829 |
+| Documentos ingeridos | 107 |
+| Paginas procesadas | 2097 |
+| Chunks indexados | 6690 |
 | Duplicados omitidos | 2 |
-| Documentos que requirieron OCR | 18 |
+| Documentos que requirieron OCR | 17 |
 | Documentos sin texto util | 0 |
 | Modelo de embeddings | `intfloat/multilingual-e5-large` (1024d) |
 | Tiempo de construccion | 0 s |
@@ -49,7 +49,6 @@ archivo los detecta. Se descartan comparando una huella del texto normalizado.
 | `Reemplazo total de Cadera Guía para pacientes y cuidadores El camino hacia su recuperación.pdf` | total joint replacement | 1/55 |
 | `Reemplazo total de cadera Guía para el paciente .pdf` | total joint replacement | 2/28 |
 | `cervix16nov-full.pdf` | breast_cancer | 7/86 |
-| `fredhutch_guia_operacion_de_mama.pdf` | complementario | 1/76 |
 
 ### Documentos cuyo contenido no corresponde a su carpeta
 

@@ -108,7 +108,7 @@ def test_la_frase_suena_a_persona_no_a_protocolo() -> None:
     assert frase_de("fiebre", 38.5) == "fiebre de 38.5 grados"
     assert frase_de("dolor", 7) == "un dolor de 7 sobre 10"
     assert frase_de("dolor", 7.0) == "un dolor de 7 sobre 10", "sin el .0 de mas"
-    assert frase_de("herida", "secrecion_purulenta") == "liquido amarillo o pus saliendo de la herida"
+    assert frase_de("herida", "secrecion_purulenta") == "líquido amarillo o pus saliendo de la herida"
     assert frase_de("movilidad", "incapacitante_nueva") == "que no puede caminar como antes"
     assert frase_de("fiebre", None) == ""
     assert frase_de("inventado", "cosa") == ""

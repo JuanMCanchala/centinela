@@ -39,6 +39,14 @@ LAMBDA_MMR = 0.7
 # conocida contra el corpus y preguntas deliberadamente fuera de cobertura.
 MIN_SIMILITUD_COSENO = 0.82
 MIN_SOLAPE_LEXICO = 0.12
+
+# El listón que se le pone al material complementario cuando es el unico soporte. Sale
+# de una medicion, no de una intuicion: sobre el folleto de ejercicios tras mastectomia,
+# lo que el folleto NO cubre da entre 0.00 y 0.25 de solape lexico, y lo que si cubre da
+# entre 0.50 y 0.75. El valor esta en medio de esas dos bandas. `make rag` lo comprueba
+# sobre las 12 preguntas de mastectomia, y los otros cuatro procedimientos no lo tocan
+# porque su soporte no es complementario.
+MIN_SOLAPE_COMPLEMENTARIO = 0.38
 MIN_PASAJES = 1
 
 
@@ -319,22 +327,50 @@ class Retriever:
             )
         else:
             mejor = max(pasajes, key=lambda p: p.similitud)
+            solape = max(p.solape_lexico for p in pasajes)
             suficiente_semantica = mejor.similitud >= MIN_SIMILITUD_COSENO
-            suficiente_lexico = max(p.solape_lexico for p in pasajes) >= MIN_SOLAPE_LEXICO
+            suficiente_lexico = solape >= MIN_SOLAPE_LEXICO
 
-            if suficiente_semantica or suficiente_lexico:
+            # Cuando TODO el soporte es material complementario, se exigen las dos
+            # señales en vez de cualquiera de las dos. El `or` es correcto para el
+            # corpus oficial, que cubre el tema entero: ahi una pregunta parafraseada
+            # puede tener poco solape lexico y estar bien respondida.
+            #
+            # Con un folleto complementario no. Medido sobre el de ejercicios tras
+            # mastectomia (23 fragmentos), la similitud no discrimina nada -- las siete
+            # preguntas de prueba caen entre 0.843 y 0.883, todas por encima del 0.82 --
+            # mientras el solape lexico separa limpio: 0.00 a 0.25 lo que el folleto no
+            # cubre, 0.50 a 0.75 lo que si. Con el `or`, la similitud daba luz verde
+            # siempre y la señal util no llegaba a contar: a "que hago si me sale
+            # liquido de la herida" el agente contestaba "bombee con el puño 10 veces",
+            # que es un ejercicio de linfedema.
+            solo_complementario = all(p.categoria == "complementario" for p in pasajes)
+
+            basta_el_complemento = (
+                suficiente_semantica and solape >= MIN_SOLAPE_COMPLEMENTARIO
+            )
+
+            if solo_complementario and not basta_el_complemento:
+                veredicto = (
+                    False,
+                    f"El unico soporte es material complementario y no responde esta "
+                    f"pregunta: similitud {mejor.similitud:.3f} (minimo "
+                    f"{MIN_SIMILITUD_COSENO}) y solape lexico {solape:.3f} (minimo "
+                    f"{MIN_SOLAPE_COMPLEMENTARIO}), y a una fuente de alcance estrecho "
+                    f"se le exigen las dos.",
+                )
+            elif suficiente_semantica or suficiente_lexico:
                 veredicto = (
                     True,
                     f"Fundamentado: similitud maxima {mejor.similitud:.3f}, "
-                    f"solape lexico {max(p.solape_lexico for p in pasajes):.3f}.",
+                    f"solape lexico {solape:.3f}.",
                 )
             else:
                 veredicto = (
                     False,
                     f"Soporte insuficiente: similitud maxima {mejor.similitud:.3f} "
                     f"(minimo {MIN_SIMILITUD_COSENO}) y solape lexico "
-                    f"{max(p.solape_lexico for p in pasajes):.3f} "
-                    f"(minimo {MIN_SOLAPE_LEXICO}).",
+                    f"{solape:.3f} (minimo {MIN_SOLAPE_LEXICO}).",
                 )
         return veredicto
 

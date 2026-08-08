@@ -194,9 +194,9 @@ la frase literal de la guía en vez de callar — una cita no puede haber invent
 
 *Se comprueba con:* `make rag` — 60 preguntas reales de paciente cruzadas con los cinco
 procedimientos: **0 citas de otro procedimiento, 0 cifras sin respaldo, 0 cifras usadas con
-otra unidad**. La tasa de abstención (12/60) no es criterio de fallo a propósito: son las
-12 preguntas de mastectomía, y bajar los umbrales de fundamentación mejoraría esa cifra
-empeorando las tres que importan.
+otra unidad**. La tasa de abstención (11/60) no es criterio de fallo a propósito: son
+preguntas de mastectomía, el hueco que la organización puso a propósito, y bajar los
+umbrales de fundamentación mejoraría esa cifra empeorando las tres que importan.
 
 **Riesgo 4: una alerta puede quedarse sin salir.** Era el riesgo peor y el que más tardó
 en verse, porque no se manifiesta como un error: el ticket se creaba solo al cerrar la
@@ -262,6 +262,15 @@ procedimiento «Mastectomía»**, el 20 % de la población del reto.
 Un RAG que enrute por nombre de carpeta le sirve guías de cérvix a una paciente
 mastectomizada con total confianza. Eso es exactamente la *alucinación clínica peligrosa*
 que la rúbrica penaliza y anota textualmente en el acta.
+
+**Lo preguntamos a la organización, y la respuesta cambia lo que este hallazgo significa.**
+El 2026-08-08 confirmaron que el desajuste era **intencional**, puesto ahí *«para evaluar el
+criterio y la capacidad analítica de cada concursante»*, y añadieron que *«el enfoque
+correcto debe ser corregir y ajustar el modelo en sí»*. Es decir: no se evalúa conseguir
+documentos de mastectomía, se evalúa que el sistema detecte que no tiene cobertura y se
+niegue a responder. Es lo que hace, y por dos caminos independientes de la carpeta —la
+clasificación por contenido en la ingesta y la compuerta de fundamentación en la
+recuperación.
 
 Centinela clasifica el tema por el texto del documento y no por su ubicación, y la
 compuerta de fundamentación se niega a responder cuando el corpus no cubre el
@@ -447,7 +456,7 @@ lo que **tiene que hacer** para lograrlo.
 Intentos de manipulación resistidos: **11/11**. Casos donde la criticidad bajó porque el
 paciente lo pidió: **0**.
 
-### Tests (`make test`) — 445/445
+### Tests (`make test`) — 488/488
 
 Incluye cero falsos positivos de manipulación sobre turnos textuales del dataset, la
 regresión del extractor malicioso, la verificación de que el resumen de cierre contiene los
@@ -463,18 +472,24 @@ fallo.
 
 | Métrica | Valor |
 |---|---:|
-| Respondidas con cita del corpus | **48/60 (80 %)** |
-| — generadas y verificadas | 44 |
-| — cita literal del corpus | 4 |
-| Abstenciones | 12/60 (20 %) |
+| Respondidas con cita | **49/60** |
+| — solo con el corpus **oficial** del reto | **48** |
+| — apoyadas en material complementario declarado | 1 |
+| — de esas, cita literal del corpus | 4 |
+| Abstenciones | 11/60 (18 %) |
 | **Citas de otro procedimiento** | **0** |
 | **Cifras sin respaldo en el corpus** | **0** |
 | **Cifras del corpus usadas con otra unidad** | **0** |
 
-Las 12 abstenciones son las 12 preguntas de mastectomía, ni una más: el corpus entregado
-no trae un solo documento de cáncer de mama (hallazgo 2). Por eso la tasa de abstención no
-es criterio de fallo — bajar los umbrales de fundamentación la mejoraría y empeoraría las
-tres cifras que sí lo son.
+Las 11 abstenciones son de mastectomía, y no son un defecto: el corpus entregado no trae un
+solo documento de cáncer de mama, y la organización confirmó que eso era **intencional**
+(hallazgo 2). La respuesta correcta ahí es negarse a responder, que es lo que hace. Por eso
+la tasa de abstención no es criterio de fallo — bajar los umbrales de fundamentación la
+mejoraría y empeoraría las tres cifras que sí lo son.
+
+La cifra del corpus oficial se publica aparte de la del complemento a propósito. Sumar
+documentos que responden nuestras propias preguntas de evaluación y presentar un solo número
+sería inflar la medición.
 
 Las 4 respuestas extractivas son preguntas que antes se quedaban en silencio: la
 verificación descartaba el texto generado y el corpus sí tenía la respuesta.
@@ -523,6 +538,63 @@ Medir con voz humana cambió el diagnóstico. Con voz sintética fallaban tres f
 del TTS, no debilidad del sistema: con voz humana las tres dan su valor correcto. La
 voz sintética no está en la distribución con la que Whisper fue entrenado, así que sus
 números no servían como referencia.
+
+### Cómo habla el agente
+
+La rúbrica no mide el timbre de la voz, pero un paciente sí lo oye. Cuatro defectos
+medibles, y ninguno era el modelo de síntesis.
+
+**Le estábamos dando al fonemizador un español roto.** Piper fonemiza con espeak-ng, que
+deduce la sílaba tónica de la ortografía. Las 59 locuciones estaban escritas sin tildes y
+sin ñ. Comprobado con `piper --debug`:
+
+| escrito | pronunciaba | correcto |
+|---|---|---|
+| `sueno` | `swˈeno` — no es una palabra | `swˈeɲo` |
+| `manana` | `manˈana` — no es una palabra | `maɲˈana` |
+| `atencion` | a-**TEN**-cion | aten-**CIÓN** |
+| `medica` | me-**DI**-ca, el verbo | **MÉ**-di-ca |
+| `dirijase` | di-ri-**JA**-se | di-**RÍ**-ja-se |
+
+Las tres últimas estaban en el cierre rojo, la frase que manda al paciente a urgencias, y
+las seis preguntas de sueño decían una palabra inexistente. `tests/test_ortografia_hablada.py`
+lo blinda recorriendo una llamada completa, no solo las locuciones: parte del habla se
+construye con f-strings y ahí se había quedado un *«después de una colecistectomía»* sin
+tilde que ningún test de locuciones podía ver.
+
+**Y un defecto de registro, no de pronunciación.** Al anunciar la bandera roja el agente le
+leía al paciente el enunciado del umbral: *«Lo que me describe —fiebre igual o mayor a 38.0
+grados centígrados— es un signo de alarma»*. Ese texto está escrito para la enfermera que
+revisa el registro. Peor: en el turno anterior el agente acaba de leer de vuelta *«me dice
+fiebre de 38.5 grados»*, así que decía lo mismo de dos maneras en dos turnos seguidos. Ahora
+usa la forma hablada, con la descripción del umbral como respaldo si un hallazgo no la tiene
+—sonar mejor no puede costar información clínica.
+
+**Las cifras se leían como una calculadora.** `38.5` era «treinta y ocho **punto** cinco», y
+`123` era «**ciento veintitrés**»: en el cierre rojo le estábamos dando al paciente un número
+de emergencias que no va a reconocer. `tts/hablado.py` lo corrige solo en la capa de voz; el
+registro clínico conserva la cifra.
+
+**La cadencia y el nivel, medidos antes y después:**
+
+| | antes | después |
+|---|---:|---:|
+| Locuciones pegadas a 0 dBFS (sin headroom) | 59 de 59 | **0** |
+| Spread de RMS entre locuciones | 4.1 dB | **1.2 dB** |
+| Cola de silencio tras la última palabra | 200–592 ms | **55 ms** |
+| Variación de esa cola entre locuciones | 392 ms | **0 ms** |
+
+El techo se mide en el percentil 99.9 y no en el máximo absoluto, y eso no es un detalle de
+implementación: como las 59 estaban exactamente a pico 1.000, usar el máximo hacía que todas
+recibieran idéntica reducción y el spread de RMS no bajara nada. La normalización no
+normalizaba.
+
+**Lo que se midió y se decidió no cambiar.** La velocidad global sigue en 1.0. Este modelo
+tiene ruido de duración de fonema: dos síntesis del mismo texto difieren un 3 % entre sí, así
+que `length_scale` 1.05 (5.083 s) es indistinguible de 1.0 (5.117 s) mientras 1.5 da 6.853 s.
+Un ajuste «algo más pausado» del 5 % no existe en la práctica, y dejar un parámetro que
+aparenta hacer algo es peor que no tenerlo. La instrucción de urgencias sí va a 1.22, donde
+el margen sobre el ruido es real.
 
 ### Latencia y consumo
 
@@ -630,11 +702,14 @@ documentada en el propio docstring, porque las dos versiones fallidas enseñan a
 ### No cubierto, y por qué
 
 - **Telefonía real.** El reto lo excluye explícitamente.
-- **Barge-in (interrumpir al agente hablando).** Requiere cancelación de eco y VAD
-  full-duplex; el navegador manda con pulsar-para-hablar. Es una limitación real de la
-  experiencia y la declaramos.
-- **Mastectomía.** No por decisión nuestra: el corpus no la cubre. El agente lo dice y
-  escala en vez de improvisar.
+- **Cancelación de eco propia y full-duplex real.** Interrumpir al agente **sí** está, y
+  medido: `make bargein` da 0 cortes falsos y 100 % de detección hasta −12 dB de atenuación
+  de eco. Lo que no hay es cancelación de eco nuestra, así que por encima de −6 dB el
+  altavoz tapa al paciente; el barrido publica dónde deja de funcionar en vez de callarlo.
+- **Cobertura documental de mastectomía.** No por decisión nuestra, y ahora se sabe que
+  tampoco por descuido de la organización: el hueco es intencional (hallazgo 2). El agente
+  se abstiene con la razón registrada y deja la pregunta anotada para el equipo clínico, que
+  es la respuesta que se evalúa.
 - **Escalamiento por tendencia con umbral calibrado.** El historial entre llamadas sí está
   construido —serie en la hoja de traspaso, reconciliación de alertas sin acuse, y dos
   reglas de delta— pero el umbral está donde el coste medido en precisión es cero, no donde
@@ -653,7 +728,7 @@ make instalar && make ollama && make piper && make modelos
 make up                    # http://localhost:8000
 
 # en otra terminal
-make test                  # 445 tests
+make test                  # 488 tests
 make eval                  # 160 casos, cero falsos negativos
 make humo                  # 79 comprobaciones de extremo a extremo
 make redteam               # 43 casos adversariales

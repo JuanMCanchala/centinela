@@ -385,43 +385,70 @@ def caso_rag(cli: Cliente) -> None:
         if r["verificaciones_falladas"]:
             print(f"          verificaciones falladas: {r['verificaciones_falladas']}")
 
-    titulo("6. El hueco de mastectomia, tapado y declarado")
-    # El corpus entregado no cubre mastectomia: sus 19 PDFs de `breast_cancer/` son de
-    # cuello uterino. El hueco se tapo con guia publica de autoridades nombradas
-    # (`scripts/ingerir_complementario.py`), y lo que se comprueba aqui no es que ahora
-    # responda -- eso es lo facil -- sino que **diga de donde saca la respuesta**. Si el
-    # material anadido pudiera pasar por material del reto, la medicion de cobertura del
-    # corpus oficial dejaria de significar nada.
+    titulo("6. El hueco de mastectomia: el agente dice que no lo sabe")
+    # `dataset/textos/breast_cancer/` trae 19 PDFs y todos son de cuello uterino. La
+    # organizacion confirmo por correo el 2026-08-08 que el desajuste era INTENCIONAL,
+    # para evaluar el criterio analitico, y que el enfoque correcto es "corregir y ajustar
+    # el modelo en si". Asi que lo que se comprueba aqui es la respuesta correcta al hueco,
+    # que no es conseguir documentos: es que el agente se niegue a responder y lo registre.
+    #
+    # Es el caso de humo que mas cambio en el proyecto. Estuvo comprobando lo contrario
+    # -- "el hueco, tapado y declarado" -- mientras el complemento cubria mastectomia
+    # entera. Se dejo dicho aqui porque un caso que cambia de veredicto sin explicacion es
+    # peor que un caso que falla.
     rp = cli.preguntar("La herida de la mastectomia se ve roja, es normal?", "Mastectomía")
     print(f"       R: {rp['respuesta'][:180]}")
-    fuentes = sorted({(c.get("fuente") or "?") for c in (rp.get("citas") or [])})
-    temas = sorted({(c.get("tema") or "?") for c in (rp.get("citas") or [])})
-    print(f"       citas: {len(rp.get('citas') or [])}  fuentes={fuentes}  temas={temas}")
+    print(f"       razon: {(rp.get('razon') or '')[:150]}")
 
-    check(rp["fundamentado"] is True, "ahora responde con respaldo sobre mastectomia")
     check(
-        fuentes == ["complementaria"],
-        "y la cita declara que el respaldo es complementario, no del corpus del reto",
-        f"fuentes={fuentes}",
+        rp["fundamentado"] is False,
+        "el agente NO responde: el corpus no cubre el procedimiento",
+        f"fundamentado={rp['fundamentado']}",
     )
     check(
-        temas == ["cancer_mama"],
-        "el respaldo es de cancer de mama, no de cuello uterino como la carpeta original",
-        f"temas={temas}",
+        "no la tengo" in rp["respuesta"] or "no lo se" in rp["respuesta"].lower(),
+        "y lo dice con palabras del paciente, no con un error",
+        rp["respuesta"][:90],
+    )
+    # Dos razones son legitimas aqui, y cual sale depende de si el indice lleva el folleto
+    # complementario. Sin el, se dispara la compuerta de cobertura y la razon nombra el tema
+    # que falta. Con el, hay cobertura nominal de `cancer_mama` y lo que rechaza es el liston
+    # del complemento: 23 fragmentos sobre movilidad del brazo no responden una pregunta
+    # sobre la herida. Las dos dicen por que no se responde, que es lo que se exige.
+    razon = rp.get("razon") or ""
+    check(
+        "cancer_mama" in razon or "complementario" in razon,
+        "la razon queda registrada y explica que falta",
+        razon[:90],
+    )
+    check(
+        not (rp.get("citas") or []),
+        "y no arrastra ninguna cita de otro procedimiento",
+        f"citas={len(rp.get('citas') or [])}",
     )
 
-    # Y el efecto secundario, dicho aqui para que no se pierda: tapar este hueco dejo a la
-    # compuerta "sin cobertura" sin forma de demostrarse con un paciente del dataset, porque
-    # los cinco procedimientos quedaron cubiertos. La garantia sigue viva y se prueba contra
-    # la funcion en `tests/test_compuerta_sin_cobertura.py`.
-    cobertura = cli.buscar("cuidados de la herida despues de la cirugia", "Mastectomía")
-    check(
-        cobertura["cobertura_procedimiento"] is True,
-        "el procedimiento pasa a tener cobertura (era el unico que no la tenia)",
-        f"cobertura={cobertura['cobertura_procedimiento']}",
-    )
-    print("       nota: con los cinco procedimientos cubiertos, la rama 'sin cobertura' de")
-    print("       la compuerta ya no se puede disparar desde aqui; se prueba en tests/.")
+    # Lo que si queda del material complementario: un folleto (23 fragmentos) como
+    # demostracion de que se puede ingerir material externo con procedencia declarada y que
+    # la marca viaja hasta la cita. Cubre movilidad del brazo, no la herida -- de ahi que
+    # la pregunta de arriba se abstenga y esta no.
+    rp2 = cli.preguntar("Que ejercicios puedo hacer con el brazo?", "Mastectomía")
+    fuentes = sorted({(c.get("fuente") or "?") for c in (rp2.get("citas") or [])})
+    print(f"       R: {rp2['respuesta'][:150]}")
+    print(f"       fuentes={fuentes}")
+
+    if rp2["fundamentado"]:
+        check(
+            fuentes == ["complementaria"],
+            "si responde con el complemento, la cita lo declara como tal",
+            f"fuentes={fuentes}",
+        )
+        check(
+            ".pdf" not in rp2["respuesta"] and "___" not in rp2["respuesta"],
+            "y no le lee al paciente un nombre de archivo ni un hueco de formulario",
+            rp2["respuesta"][:90],
+        )
+    else:
+        print("       (tambien se abstiene; es un veredicto legitimo con 23 fragmentos)")
 
 
 def caso_conocimiento_vivo(cli: Cliente) -> None:
