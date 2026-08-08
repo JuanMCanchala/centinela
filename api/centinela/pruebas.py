@@ -74,9 +74,33 @@ SUITES: tuple[Suite, ...] = (
         id="humo",
         titulo="Humo de extremo a extremo",
         que="Recorre la API completa: salud, corpus, llamada, turnos, cierre, "
-            "ticket y recibo de olvido.",
+            "ticket, recibo de olvido, y la llamada que cuelgan sin cerrar.",
         argumentos=["-m", "eval.humo"],
         necesita_url=True,
+    ),
+    Suite(
+        id="rag",
+        titulo="Cobertura del corpus",
+        que="60 preguntas reales de paciente cruzadas con los cinco procedimientos. "
+            "Falla si aparece una cita de otro procedimiento o una cifra que el "
+            "corpus no sostenga.",
+        argumentos=["-m", "eval.rag_cobertura"],
+        necesita_url=True,
+    ),
+    Suite(
+        id="tendencia",
+        titulo="Tendencia entre llamadas",
+        que="Barrido de umbrales de delta sobre las 40 trayectorias oficiales. "
+            "Muestra por qué el deterioro del dataset no se puede anticipar: es un "
+            "escalón, no una rampa.",
+        argumentos=["-m", "eval.tendencia"],
+    ),
+    Suite(
+        id="cifras",
+        titulo="Cifras de los documentos",
+        que="Compara los números que el README y el informe afirman contra la "
+            "medición real. Falla si alguno se quedó rancio.",
+        argumentos=["scripts/verificar_cifras.py"],
     ),
 )
 

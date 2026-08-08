@@ -1331,12 +1331,43 @@ async def ws_llamada(ws: WebSocket, llamada_id: str) -> None:
 # que "la estetica no puntua". Asi el arranque es un solo proceso.
 DIR_WEB = RAIZ / "web"
 
+# Politica de cache. `StaticFiles` no manda `Cache-Control`, y sin ella el navegador
+# aplica su heuristica y se queda con el fichero viejo: se corrige un fallo de la
+# consola, se despliega, y el puesto de enfermeria sigue ejecutando el codigo anterior
+# aunque recargue. Lo vimos con este mismo panel -- el servidor servia el JS nuevo y la
+# pagina seguia corriendo el viejo.
+#
+# `no-cache` no significa "no guardes": significa "guarda, pero revalida siempre". Con
+# el `etag` y el `last-modified` que StaticFiles ya manda, lo normal es un 304 vacio, asi
+# que no cuesta ancho de banda y garantiza que lo que corre es lo desplegado.
+#
+# Las tipografias y el audio de ambiente van con cache largo: son inmutables en la
+# practica y son lo unico pesado que sirve la consola.
+SIN_CACHE = frozenset({".html", ".js", ".css"})
+CACHE_LARGO = frozenset({".woff2", ".woff", ".ttf", ".wav", ".ico", ".png", ".jpg"})
+
+
+class EstaticosConCache(StaticFiles):
+    def file_response(self, full_path, stat_result, scope, status_code=200):
+        respuesta = super().file_response(full_path, stat_result, scope, status_code)
+        sufijo = Path(full_path).suffix.lower()
+        if sufijo in SIN_CACHE:
+            respuesta.headers["Cache-Control"] = "no-cache"
+        elif sufijo in CACHE_LARGO:
+            respuesta.headers["Cache-Control"] = "public, max-age=604800"
+        return respuesta
+
+
 if (DIR_WEB / "index.html").exists():
-    app.mount("/estatico", StaticFiles(directory=DIR_WEB), name="estatico")
+    app.mount("/estatico", EstaticosConCache(directory=DIR_WEB), name="estatico")
 
     @app.get("/")
     async def raiz() -> FileResponse:
-        return FileResponse(DIR_WEB / "index.html")
+        # El index tampoco se cachea sin revalidar: es el que trae las etiquetas
+        # <script>, y si el navegador lo sirve viejo no llega ni a pedir el JS nuevo.
+        return FileResponse(
+            DIR_WEB / "index.html", headers={"Cache-Control": "no-cache"}
+        )
 
     @app.get("/favicon.ico")
     async def favicon() -> Response:

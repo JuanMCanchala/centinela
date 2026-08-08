@@ -374,6 +374,17 @@ function procesarRespuestaTurno(r) {
   pintarEstadoClinico(r.estado_clinico);
   pintarCitas(r.citas);
   pintarLatencia(r.metricas_turno);
+  // La alerta se crea EN EL TURNO de la bandera, no al cerrar, y eso tiene que verse:
+  // es la garantía de que colgar el teléfono ya no pierde el escalamiento. El
+  // `r.cierre` de abajo llega en el mismo turno cuando el agente termina la llamada,
+  // así que se comprueba que no sea el mismo ticket para no anunciarlo dos veces.
+  if (r.alerta && r.alerta.ticket_id !== r.cierre?.ticket?.ticket_id) {
+    agregarTurno(
+      "sistema",
+      `Alerta creada en este turno: ${r.alerta.ticket_id} (${r.alerta.nivel})`,
+      "alerta",
+    );
+  }
   if (r.cierre?.ticket) {
     agregarTurno("sistema", `Alerta creada: ${r.cierre.ticket.ticket_id} (${r.cierre.ticket.nivel})`, "alerta");
   }

@@ -6,47 +6,47 @@
       "disponible": true,
       "binario": "C:\\Programacion\\sourcemeridian\\centinela\\data\\piper\\piper\\piper.exe",
       "voz": "es_MX-ald-medium",
-      "locuciones_en_cache": 0,
+      "locuciones_en_cache": 53,
       "respaldo": "SpeechSynthesis del navegador si el motor no esta disponible"
     },
     "pre_renderizado": {
-      "generadas": 35,
-      "reutilizadas": 0,
+      "generadas": 0,
+      "reutilizadas": 39,
       "fallidas": [],
-      "segundos": 53.02,
-      "total_en_cache": 35
+      "segundos": 0.03,
+      "total_en_cache": 53
     },
     "sintesis_en_caliente": {
       "Entendido, gracias.": {
-        "ms_p50": 598.4,
-        "duracion_audio_s": 1.8,
-        "factor_tiempo_real": 0.332,
+        "ms_p50": 103.9,
+        "duracion_audio_s": 1.79,
+        "factor_tiempo_real": 0.058,
         "caracteres": 19
       },
       "Ha tenido fiebre o se ha sentido calient": {
-        "ms_p50": 904.0,
-        "duracion_audio_s": 4.24,
-        "factor_tiempo_real": 0.213,
+        "ms_p50": 233.0,
+        "duracion_audio_s": 4.17,
+        "factor_tiempo_real": 0.056,
         "caracteres": 60
       },
       "Voy a detener las preguntas aqui, porque": {
-        "ms_p50": 1307.3,
-        "duracion_audio_s": 5.1,
-        "factor_tiempo_real": 0.256,
+        "ms_p50": 287.9,
+        "duracion_audio_s": 4.94,
+        "factor_tiempo_real": 0.058,
         "caracteres": 81
       },
       "Lo que me describe es un signo de alarma": {
-        "ms_p50": 2011.1,
-        "duracion_audio_s": 8.34,
-        "factor_tiempo_real": 0.241,
+        "ms_p50": 465.5,
+        "duracion_audio_s": 8.19,
+        "factor_tiempo_real": 0.057,
         "caracteres": 123
       }
     },
-    "cache_ms_p50": 0.0014,
-    "cache_ms_max": 0.0068,
+    "cache_ms_p50": 0.001,
+    "cache_ms_max": 0.0091,
     "streaming": {
-      "ms_respuesta_completa": 1544.6,
-      "ms_primera_frase": 957.7,
+      "ms_respuesta_completa": 434.9,
+      "ms_primera_frase": 260.6,
       "n_frases": 2
     }
   },
@@ -54,19 +54,19 @@
     "disponible": true,
     "modelo": "small",
     "dispositivo": "cpu/int8",
-    "ms_carga": 3095.5,
+    "ms_carga": 1959.3,
     "por_duracion": {
       "2s": {
-        "ms_p50": 16.0,
-        "factor_tiempo_real": 0.008
+        "ms_p50": 5.2,
+        "factor_tiempo_real": 0.003
       },
       "4s": {
-        "ms_p50": 24.0,
-        "factor_tiempo_real": 0.006
+        "ms_p50": 8.5,
+        "factor_tiempo_real": 0.002
       },
       "8s": {
-        "ms_p50": 42.6,
-        "factor_tiempo_real": 0.005
+        "ms_p50": 15.0,
+        "factor_tiempo_real": 0.002
       }
     }
   }

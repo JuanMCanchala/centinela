@@ -170,7 +170,9 @@ def test_el_catalogo_real_esta_completo() -> None:
     corredor = CorredorPruebas()
     catalogo = corredor.catalogo()
 
-    assert {s["id"] for s in catalogo} == {"motor", "unitarias", "adversarial", "humo"}
+    assert {s["id"] for s in catalogo} == {
+        "motor", "unitarias", "adversarial", "humo", "rag", "tendencia", "cifras",
+    }
     for entrada in catalogo:
         assert entrada["titulo"]
         assert entrada["que"], f"{entrada['id']} no explica que comprueba"

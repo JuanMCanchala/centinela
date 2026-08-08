@@ -4,51 +4,51 @@
   "modelos": {
     "phi3.5:3.8b-mini-instruct-q4_K_M": {
       "router": {
-        "ttft_p50_ms": 185.3,
-        "ttft_max_ms": 197.5,
-        "tok_s_mediana": 20.6,
+        "ttft_p50_ms": 197.9,
+        "ttft_max_ms": 269.1,
+        "tok_s_mediana": 18.1,
         "tokens_in": 124,
         "tokens_out_mediana": 5,
         "muestra_salida": "PREGUNTA"
       },
       "extraccion": {
-        "ttft_p50_ms": 170.3,
-        "ttft_max_ms": 251.8,
-        "tok_s_mediana": 66.1,
+        "ttft_p50_ms": 191.3,
+        "ttft_max_ms": 327.6,
+        "tok_s_mediana": 45.5,
         "tokens_in": 122,
         "tokens_out_mediana": 80,
         "muestra_salida": "{\n  \"dolor_nrs\": 6,\n  \"fiebre_c\": null,\n  \"herida\": \"secrecion_purulenta\"\n}\nen JSON representa los datos clínicos proporcionados para el paciente. El dolor se mide en una escala de 0 a 10 y aquí está"
       },
       "respuesta_clinica": {
-        "ttft_p50_ms": 184.5,
-        "ttft_max_ms": 291.3,
-        "tok_s_mediana": 59.9,
+        "ttft_p50_ms": 198.8,
+        "ttft_max_ms": 424.0,
+        "tok_s_mediana": 39.4,
         "tokens_in": 128,
         "tokens_out_mediana": 50,
-        "muestra_salida": "Sí, puede ser una infección que necesita atención médica rápida para evitar complicaciones mayores.\n\nAsegúrate de consultar a tu equipo sanitario lo antes posible."
+        "muestra_salida": "Sí, puede ser una infección que necesita atención médica rápida para evitar complicaciones mayores.\n\nAsegúrate de consultar a tu profesional sanitario lo antes posible."
       }
     },
     "llama3.2:1b": {
       "router": {
-        "ttft_p50_ms": 878.7,
-        "ttft_max_ms": 981.3,
-        "tok_s_mediana": 11.3,
+        "ttft_p50_ms": 973.5,
+        "ttft_max_ms": 1031.5,
+        "tok_s_mediana": 10.3,
         "tokens_in": 122,
         "tokens_out_mediana": 11,
         "muestra_salida": "RESPUESTA: Preguntas clinicas."
       },
       "extraccion": {
-        "ttft_p50_ms": 985.8,
-        "ttft_max_ms": 1021.2,
-        "tok_s_mediana": 46.1,
+        "ttft_p50_ms": 960.9,
+        "ttft_max_ms": 977.1,
+        "tok_s_mediana": 47.2,
         "tokens_in": 120,
         "tokens_out_mediana": 80,
         "muestra_salida": "Claro, aquí te dejo los datos clinicos del turno del paciente en formato JSON:\n\n```\n{\n    \"dolor_nrs\": null,\n    \"fiebre_c\": null,\n    \"herida\": null\n}\n```\n\nNota que no tengo información sobre la heri"
       },
       "respuesta_clinica": {
-        "ttft_p50_ms": 913.5,
-        "ttft_max_ms": 1007.4,
-        "tok_s_mediana": 36.7,
+        "ttft_p50_ms": 886.2,
+        "ttft_max_ms": 944.1,
+        "tok_s_mediana": 36.4,
         "tokens_in": 127,
         "tokens_out_mediana": 48,
         "muestra_salida": "Sí, el signo de presencia de secreción purulenta en la herida quirúrgica indica una posible infección del sitio operativo, lo que requiere una evaluación médica inmediata."

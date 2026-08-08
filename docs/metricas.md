@@ -2,7 +2,7 @@
 
 > Generado por `scripts/render_metricas.py` a partir de los informes que
 > producen los arneses de evaluación. Ninguna cifra se escribe a mano.
-> Última generación: 2026-08-08T12:17:27+00:00
+> Última generación: 2026-08-08T12:50:29+00:00
 
 ## Métricas exigidas por la rúbrica (§5)
 
@@ -96,7 +96,7 @@ Matriz de confusión (filas = etiqueta oficial, columnas = decisión del motor):
 
 ## Suite adversarial
 
-`make redteam` · 32/32 casos (100.0%) en 23.9 s.
+`make redteam` · 42/42 casos (100.0%) en 40.7 s.
 
 | Familia | Pasan |
 |---|---:|
@@ -107,6 +107,7 @@ Matriz de confusión (filas = etiqueta oficial, columnas = decisión del motor):
 | hostil | 2/2 |
 | jerga | 3/3 |
 | manipulacion | 10/10 |
+| parafraseo rojo | 10/10 |
 | pide humano | 2/2 |
 | tercero | 3/3 |
 
@@ -120,12 +121,12 @@ conversación de voz es lo que el paciente percibe como silencio.
 
 | Modelo | Tarea | TTFT p50 | TTFT máx | tok/s |
 |---|---|---:|---:|---:|
-| `phi3.5:3.8b-mini-instruct-q4_K_M` | router | **185 ms** | 198 ms | 20.6 |
-| `phi3.5:3.8b-mini-instruct-q4_K_M` | extraccion | **170 ms** | 252 ms | 66.1 |
-| `phi3.5:3.8b-mini-instruct-q4_K_M` | respuesta_clinica | **184 ms** | 291 ms | 59.9 |
-| `llama3.2:1b` | router | **879 ms** | 981 ms | 11.3 |
-| `llama3.2:1b` | extraccion | **986 ms** | 1021 ms | 46.1 |
-| `llama3.2:1b` | respuesta_clinica | **914 ms** | 1007 ms | 36.7 |
+| `phi3.5:3.8b-mini-instruct-q4_K_M` | router | **198 ms** | 269 ms | 18.1 |
+| `phi3.5:3.8b-mini-instruct-q4_K_M` | extraccion | **191 ms** | 328 ms | 45.5 |
+| `phi3.5:3.8b-mini-instruct-q4_K_M` | respuesta_clinica | **199 ms** | 424 ms | 39.4 |
+| `llama3.2:1b` | router | **974 ms** | 1032 ms | 10.3 |
+| `llama3.2:1b` | extraccion | **961 ms** | 977 ms | 47.2 |
+| `llama3.2:1b` | respuesta_clinica | **886 ms** | 944 ms | 36.4 |
 
 El modelo cuatro veces más pequeño resultó ~5× más lento en tiempo hasta el
 primer token, así que se descartó la idea de un router barato en 1B y
@@ -154,12 +155,12 @@ reto es colombiano.
 | Etapa | Medición |
 |---|---:|
 | Síntesis desde caché (turno de guion) | **0.001 ms** |
-| Síntesis en caliente (19 car) | 598 ms · RTF 0.332 |
-| Síntesis en caliente (60 car) | 904 ms · RTF 0.213 |
-| Síntesis en caliente (81 car) | 1307 ms · RTF 0.256 |
-| Respuesta larga completa | 1545 ms |
-| Primera frase (streaming) | **958 ms** |
-| Pre-renderizado del guion completo | 35 locuciones |
+| Síntesis en caliente (19 car) | 104 ms · RTF 0.058 |
+| Síntesis en caliente (60 car) | 233 ms · RTF 0.056 |
+| Síntesis en caliente (81 car) | 288 ms · RTF 0.058 |
+| Respuesta larga completa | 435 ms |
+| Primera frase (streaming) | **261 ms** |
+| Pre-renderizado del guion completo | 39 locuciones |
 
 ### Transcripción
 
@@ -167,9 +168,9 @@ reto es colombiano.
 
 | Duración del audio | Latencia | RTF |
 |---|---:|---:|
-| 2s | 16 ms | 0.008 |
-| 4s | 24 ms | 0.006 |
-| 8s | 43 ms | 0.005 |
+| 2s | 5 ms | 0.003 |
+| 4s | 8 ms | 0.002 |
+| 8s | 15 ms | 0.002 |
 
 ## Corpus indexado
 

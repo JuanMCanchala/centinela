@@ -150,15 +150,18 @@ make metricas    # las escribe en docs/metricas.md
 ### Latencia por etapa
 
 Medida con `make bench`. Desglose por etapa, porque un total sin desglose no se puede
-auditar.
+auditar. Son p50 de cinco repeticiones en la misma máquina, con el servidor y Ollama
+corriendo al lado: es la condición real de la demo, y por eso una corrida puede variar un
+10 % de la siguiente. La síntesis de voz escala con la longitud del texto —de ahí el
+rango— y el RTF se mantiene plano, que es lo que importa.
 
 | Etapa | Medición |
 |---|---:|
-| Modelo de lenguaje, tiempo hasta el primer token | **185 ms** (p50) |
+| Modelo de lenguaje, tiempo hasta el primer token | **198 ms** (p50) |
 | Embedding de la consulta (multilingual-e5-large, ONNX) | **51 ms** |
 | Transcripción (faster-whisper `medium`, CUDA int8_float16) | **252–709 ms** por turno |
 | Síntesis de voz, turno de guion (caché pre-renderizado) | **0.001 ms** |
-| Síntesis de voz, turno libre (Piper es_MX-ald-medium) | 598 ms · RTF 0.21–0.33 |
+| Síntesis de voz, turno libre (Piper es_MX-ald-medium) | 104–466 ms · RTF 0.056–0.058 |
 | **Turno completo resuelto por reglas** | **< 1 ms** |
 | **Turno completo que necesita el modelo** | ~2.2 s |
 
@@ -416,8 +419,9 @@ del reto. Se verifica en `api/centinela/config.py`, en el `Makefile` y en `GET /
 
 ## Verificar la entrega
 
-Las cuatro primeras también se pueden lanzar desde la pestaña **Pruebas** del panel, que
-ejecuta exactamente estos comandos.
+Las siete primeras también se pueden lanzar desde la pestaña **Pruebas** del panel, que
+ejecuta exactamente estos comandos como subprocesos. El veredicto es su código de salida,
+así que no hay una segunda implementación dentro del panel.
 
 ```bash
 make test        # 274 tests unitarios y de regresión

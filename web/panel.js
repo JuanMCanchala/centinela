@@ -72,6 +72,11 @@
    * lo que no tiene decision no puede ser lo mas urgente de la lista. */
   const ORDEN_COLA = { rojo: 1, amarillo: 2, verde: 3, abierta: 4, incompleta: 5, "—": 6 };
 
+  /* Cuantas alertas previas sin acuse se listan en la columna de la llamada. Las que
+   * pasan de ahi se resumen en una linea: la columna tiene que seguir mostrando el
+   * estado clinico de la llamada en curso, que es para lo que sirve. */
+  const MAX_ALERTAS_PREVIAS = 3;
+
   /* Etiquetas cortas para el margen de la tira.
    *
    * Los dominios cualitativos son enumeraciones cerradas (models.py), asi que se
@@ -815,15 +820,26 @@
 
     // Una alerta anterior sin acuse es lo mas urgente que puede aparecer aca: el
     // sistema ya aviso de este paciente y nadie lo atendio.
+    //
+    // Con tope, y no por estetica. Sin el, un paciente con muchas alertas sin atender
+    // llenaba la columna entera y empujaba fuera de pantalla el estado clinico y las
+    // citas -- justo la informacion que el operador necesita para la llamada que tiene
+    // delante. Lo que importa de veinticinco alertas iguales es que son veinticinco.
     const caja = $("#alertas-previas");
     caja.textContent = "";
-    previas.forEach((t) => {
+    previas.slice(0, MAX_ALERTAS_PREVIAS).forEach((t) => {
       const aviso = el("p", "aviso-previo");
       aviso.append(icono("nivel-rojo", "icono glifo"));
       aviso.append(el("span", null,
         `Alerta ${t.nivel} del ${(t.creado_en || "").slice(0, 10)} sin atender`));
       caja.append(aviso);
     });
+    if (previas.length > MAX_ALERTAS_PREVIAS) {
+      const resto = previas.length - MAX_ALERTAS_PREVIAS;
+      const mas = el("p", "aviso-previo",
+        `y ${resto} alerta${resto === 1 ? "" : "s"} más sin atender`);
+      caja.append(mas);
+    }
   }
 
   /* ============================== ALERTAS ==================================

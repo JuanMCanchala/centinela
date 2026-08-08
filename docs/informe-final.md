@@ -45,12 +45,12 @@ repeticiones por caso, misma máquina):
 
 | Modelo | Router (TTFT p50) | Extracción (TTFT p50) | Respuesta (TTFT p50) | tok/s | Formato JSON |
 |---|---:|---:|---:|---:|---|
-| **Phi-3.5 Mini 3.8B** | **185 ms** | **170 ms** | **185 ms** | 66 | correcto |
-| Llama 3.2 1B | 879 ms | 986 ms | 914 ms | 46 | verboso, se sale del formato |
+| **Phi-3.5 Mini 3.8B** | **198 ms** | **191 ms** | **199 ms** | 45 | correcto |
+| Llama 3.2 1B | 974 ms | 961 ms | 886 ms | 47 | verboso, se sale del formato |
 
 El resultado contradijo la hipótesis con la que empezamos. El plan inicial contemplaba
 usar Llama 3.2 1B como «router barato» para clasificar la intención de cada turno y
-reservar Phi-3.5 para lo pesado. **El modelo cuatro veces más pequeño resultó cinco veces
+reservar Phi-3.5 para lo pesado. **El modelo cuatro veces más pequeño resultó casi cinco veces
 más lento en el tiempo hasta el primer token**, que es lo único que el paciente percibe en
 una conversación. Además, en la prueba de extracción estructurada Llama 3.2 1B envolvía el
 JSON en prosa («Claro, aquí te dejo los datos…»), mientras Phi-3.5 respetaba el esquema.
@@ -388,7 +388,7 @@ identificador.
 
 ![Pestaña de pruebas con el resultado del motor de decisión](capturas/02-consola-de-pruebas.jpg)
 
-Las cuatro suites del README se ejecutan desde el navegador como subprocesos, y **el
+Las siete suites del README se ejecutan desde el navegador como subprocesos, y **el
 veredicto es el código de salida del mismo comando que documenta el README** — no hay una
 segunda implementación de estas comprobaciones dentro del panel. Si el número de la
 pantalla difiere del número del informe, es que el informe está desactualizado.
@@ -528,7 +528,7 @@ números no servían como referencia.
 |---|---:|
 | Turno resuelto por reglas (mayoría) | **< 1 ms** |
 | Turno que necesita el modelo | ~2.2 s |
-| Modelo, tiempo hasta el primer token | 185 ms |
+| Modelo, tiempo hasta el primer token | 198 ms |
 | Transcripción | 16–43 ms |
 | Audio de guion (caché) | 0.001 ms |
 | Turnos servidos desde caché de audio | **88 %** |
