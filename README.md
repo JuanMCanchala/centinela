@@ -253,17 +253,18 @@ README, uno por uno.
 
 | Paso | Tiempo |
 |---|---:|
-| Clonar el repositorio | 3.6 s |
-| `make instalar` | 3.3 s |
-| `make piper` (con descargas en caché) | 0.9 s |
-| `make modelos` (con descargas en caché) | 2.9 s |
+| Clonar el repositorio | 14.1 s |
+| `make instalar` | 13.4 s |
+| `make ollama` (modelo ya descargado) | 0.2 s |
+| `make piper` (con descargas en caché) | 1.1 s |
+| `make modelos` (con descargas en caché) | 6.4 s |
 | Extraer el índice del corpus | 0.6 s |
-| `make up` hasta la primera respuesta | 8.2 s |
+| `make up` hasta la primera respuesta | 9.4 s |
 | Verificación funcional (llamada + caso rojo + consola) | 1.1 s |
-| **Total medido** | **21 s** |
-| **Peor caso estimado en máquina virgen** (+4.6 GB de descargas) | **~5 min** |
+| **Total medido** | **0.8 min** |
+| **Peor caso estimado en máquina virgen** (+4.6 GB de descargas) | **5.4 min** |
 
-El límite del reto son 15 minutos. El margen en el peor caso es de **10 minutos**.
+El límite del reto son 15 minutos. El margen en el peor caso es de **9.6 minutos**.
 
 ---
 

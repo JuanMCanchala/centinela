@@ -543,8 +543,8 @@ mismo `runtime.json` que esta tabla — si divergen, alguien editó una a mano.
 
 ### Compuerta G2 (`scripts/ensayo_g2.ps1`)
 
-Clon limpio → sistema respondiendo: **21 s** medidos, **~5 min** estimados en máquina
-virgen. Límite del reto: 15 min. Margen en el peor caso: **10 minutos**.
+Clon limpio → sistema respondiendo: **0.8 min** medidos, **5.4 min** estimados en
+máquina virgen. Límite del reto: 15 min. Margen en el peor caso: **9.6 minutos**.
 
 ### Diagrama (`make diagrama`)
 
