@@ -139,40 +139,75 @@ class SesionTranscripcion:
 
     # ------------------------------------------------------------------
 
+    async def texto_especulado(self) -> str:
+        """Texto de la especulacion en vuelo, SIN consumirla.
+
+        Lo usa el cierre adaptativo del turno: mira lo que el paciente lleva dicho
+        para decidir si ya termino de contestar, y `finalizar` sigue pudiendo
+        reutilizar la misma especulacion despues. Por eso el `shield`: si esta
+        espera se agota, la transcripcion de verdad no se puede quedar sin trabajo
+        hecho.
+        """
+
+        texto = ""
+        if self._tarea is not None:
+            try:
+                trans = await asyncio.wait_for(
+                    asyncio.shield(self._tarea), timeout=TIMEOUT_ESPECULACION_S
+                )
+                texto = trans.texto
+            except (asyncio.TimeoutError, asyncio.CancelledError):
+                texto = ""
+        return texto
+
     async def finalizar(self) -> ResultadoSesion:
-        """Devuelve la transcripcion del turno, reutilizando la especulacion si sirve."""
+        """Devuelve la transcripcion del turno, reutilizando la especulacion si sirve.
+
+        **El buffer se suelta al principio y no al final**, y eso no es un detalle de
+        orden. Con barge-in el paciente puede empezar a hablar mientras el agente
+        piensa la respuesta, y esas tramas son el turno SIGUIENTE. Antes el buffer se
+        limpiaba al terminar, asi que todo lo que el paciente dijera durante los ~1.4 s
+        de transcripcion se acumulaba en el turno que se estaba cerrando y se borraba
+        despues: se perdia entero. Aqui se toma una instantanea del audio, se suelta el
+        buffer, y lo que llegue despues pertenece a quien le toca.
+        """
 
         nuevas = self.n_muestras - self._muestras_al_especular
-        hay_especulacion = self._tarea is not None
-        sirve = hay_especulacion and 0 <= nuevas <= MAX_MUESTRAS_NUEVAS
+        sirve = self._tarea is not None and 0 <= nuevas <= MAX_MUESTRAS_NUEVAS
+
+        audio = self._audio()
+        tarea = self._tarea
+        self._tarea = None
+        self.buffer.clear()
+        self.n_muestras = 0
+        self._muestras_al_especular = 0
 
         if not sirve:
             # El paciente siguio hablando: la especulacion cubre solo una parte y
             # reutilizarla perderia palabras. Se descarta y se transcribe entero.
-            self._cancelar_especulacion()
-            t0 = time.perf_counter()
-            trans = await asyncio.to_thread(self.stt.transcribir, self._audio())
+            if tarea is not None and not tarea.done():
+                tarea.cancel()
+            trans = await asyncio.to_thread(self.stt.transcribir, audio)
             resultado = ResultadoSesion(
                 transcripcion=trans,
                 origen="completa",
                 ms_ahorrados=0.0,
                 muestras_nuevas=max(0, nuevas),
             )
-        elif self._tarea.done():
+        elif tarea.done():
             # El mejor caso: ya estaba lista antes de que el turno cerrara.
-            trans = self._tarea.result()
+            trans = tarea.result()
             resultado = ResultadoSesion(
                 transcripcion=trans,
                 origen="especulativa",
                 ms_ahorrados=round(self._ms_especulacion, 1),
                 muestras_nuevas=max(0, nuevas),
             )
-            self._tarea = None
         else:
             # Va a medias: se espera lo que le quede, que es menos que empezar.
             t0 = time.perf_counter()
             try:
-                trans = await asyncio.wait_for(self._tarea, timeout=TIMEOUT_ESPECULACION_S)
+                trans = await asyncio.wait_for(tarea, timeout=TIMEOUT_ESPECULACION_S)
                 ms_esperados = (time.perf_counter() - t0) * 1000
                 resultado = ResultadoSesion(
                     transcripcion=trans,
@@ -181,12 +216,11 @@ class SesionTranscripcion:
                     muestras_nuevas=max(0, nuevas),
                 )
             except (asyncio.TimeoutError, asyncio.CancelledError):
-                self._cancelar_especulacion()
-                trans = await asyncio.to_thread(self.stt.transcribir, self._audio())
+                if not tarea.done():
+                    tarea.cancel()
+                trans = await asyncio.to_thread(self.stt.transcribir, audio)
                 resultado = ResultadoSesion(
                     transcripcion=trans, origen="completa", muestras_nuevas=max(0, nuevas)
                 )
-            self._tarea = None
 
-        self.limpiar()
         return resultado

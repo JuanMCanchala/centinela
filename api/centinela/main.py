@@ -19,8 +19,11 @@ from __future__ import annotations
 import asyncio
 import json
 import secrets
+import time
 import uuid
+from collections import deque
 from contextlib import asynccontextmanager
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -46,6 +49,7 @@ from .clinical.thresholds import UMBRALES_ROJOS, BANDERAS_AMARILLAS
 from .clinical.triage_engine import TriageEngine
 from .config import config
 from .dialog import script as S
+from .dialog.completitud import respuesta_completa
 from .dialog.policy import DialogPolicy, EstadoLlamada, Paciente
 from .escalation.despacho import Despachador, canales_desde_config
 from .escalation.service import (
@@ -65,11 +69,70 @@ from .rag.embedder import Embedder
 from .rag.ingest import chunkear, extraer_documento
 from .rag.retriever import Retriever
 from .rag.store import KnowledgeStore
+from .stt.bargein import DetectorInterrupcion, Veredicto, rms_de
 from .stt.sesion import SesionTranscripcion
 from .stt.whisper import WhisperSTT, pcm16_a_float32
 from .tts.piper import PiperTTS, concatenar_wav
 
 RAIZ = Path(__file__).resolve().parents[2]
+
+# Tope de longitud de una linea de cabecera en el handshake de WebSocket. 64 KB, muy por
+# encima de los 8 KB por defecto de `websockets` y de los 10 KB de cookies que se midieron
+# en una maquina de desarrollo normal. El porque, entero, en la funcion de abajo.
+TOPE_CABECERA_WS = 65536
+
+
+def _permitir_cabeceras_largas_en_el_websocket() -> None:
+    """Sube el limite de longitud de linea del handshake de WebSocket.
+
+    Esto arregla un fallo real, silencioso y ajeno al codigo de Centinela, y merece la
+    explicacion entera porque el sintoma no apunta a la causa por ningun lado.
+
+    **El sintoma.** El navegador abre la llamada, el turno funciona por HTTP, y el
+    WebSocket muere con codigo 1006 sin motivo. En el log del servidor solo aparece
+    `connection rejected (400 Bad Request)`. Con `--log-level debug` sale la verdad:
+    `websockets.exceptions.SecurityError: line too long`.
+
+    **La causa.** Las cookies se guardan por HOST y no por puerto, asi que TODO lo que
+    corra en `localhost` -- cualquier otro proyecto, en cualquier otro puerto -- comparte
+    el mismo tarro de cookies. Medido en la maquina de desarrollo: 14 cookies, 9 958
+    bytes, de los cuales 9 KB son tres tokens de Supabase de proyectos que no tienen nada
+    que ver con esto. El navegador manda ese `Cookie:` de 10 KB en el handshake, y la
+    libreria `websockets` corta cualquier linea de cabecera por encima de 4 110 bytes.
+
+    **Por que importa aqui y no importaba antes.** El turno de voz siempre tuvo respaldo
+    por HTTP, asi que un WebSocket caido degradaba la latencia y nada mas. Con la
+    interrupcion, el WebSocket es el unico camino por el que el microfono llega al
+    servidor mientras el agente habla: sin el, el paciente no puede cortarle la palabra.
+    Un fallo que antes era una molestia ahora apaga una funcion entera, en silencio, y en
+    una maquina que no es la nuestra -- la del jurado, por ejemplo, que puede tener
+    cookies de cualquier cosa en `localhost`.
+
+    Centinela no usa ni una cookie. Borrarlas seria romper los otros proyectos del
+    usuario, asi que lo que se hace es aceptarlas y no leerlas.
+    """
+
+    # La constante cambio de nombre entre versiones de `websockets` -- `MAX_LINE` en las
+    # antiguas, `MAX_LINE_LENGTH` en las de ahora -- y vive en dos modulos distintos
+    # segun la implementacion. Se sube la que exista.
+    #
+    # Apuntar al nombre equivocado NO da error: crea un atributo que nadie lee y el fallo
+    # sigue ahi, en silencio. Paso exactamente eso, y por eso
+    # `tests/test_cabeceras_largas.py` comprueba el efecto y no la intencion.
+    for modulo in ("websockets.legacy.http", "websockets.http11"):
+        try:
+            mod = __import__(modulo, fromlist=["_"])
+        except Exception:  # noqa: BLE001
+            mod = None
+
+        if mod is not None:
+            for nombre in ("MAX_LINE_LENGTH", "MAX_LINE"):
+                actual = getattr(mod, nombre, None)
+                if isinstance(actual, int) and actual < TOPE_CABECERA_WS:
+                    setattr(mod, nombre, TOPE_CABECERA_WS)
+
+
+_permitir_cabeceras_largas_en_el_websocket()
 
 # Cada cuanto se revisa si hay llamadas abandonadas. Corto frente al timeout de la
 # llamada para que el cierre no se retrase mucho mas alla del plazo configurado.
@@ -707,7 +770,7 @@ async def iniciar_llamada(datos: InicioLlamada) -> dict:
     E["escalation"].registrar_inicio(llamada_id, policy)
 
     accion = policy.abrir()
-    audio = await _sintetizar_accion(accion)
+    audio = await _sintetizar_accion(llamada_id, accion)
 
     return {
         "llamada_id": llamada_id,
@@ -739,7 +802,7 @@ async def turno_texto(llamada_id: str, cuerpo: TurnoTexto) -> dict:
         accion = await policy.procesar(cuerpo.texto)
 
     with crono.etapa("tts"):
-        audio = await _sintetizar_accion(accion)
+        audio = await _sintetizar_accion(llamada_id, accion)
     crono.primer_audio()
 
     return await _empaquetar_turno(llamada_id, policy, accion, crono, audio)
@@ -813,8 +876,14 @@ async def _empaquetar_turno(llamada_id, policy, accion, crono, audio) -> dict:
     }
 
 
-async def _sintetizar_accion(accion) -> bytes:
-    """Sintetiza los fragmentos del turno y los deja listos para servir."""
+async def _trozos_de(accion) -> list[bytes]:
+    """WAV de cada fragmento del turno, en el orden en que se dicen.
+
+    Un fragmento de texto libre puede dar varios trozos -- uno por frase -- porque
+    asi el primer sonido sale antes de que exista el ultimo. Se devuelven planos
+    porque quien concatena y quien transmite trozo a trozo quieren lo mismo, en
+    distinto orden de urgencia.
+    """
 
     tts: PiperTTS = E["tts"]
     trozos: list[bytes] = []
@@ -825,22 +894,33 @@ async def _sintetizar_accion(accion) -> bytes:
                 audio = await tts.sintetizar(f.texto, clave=f.clave)
                 trozos.append(audio.wav)
             else:
-                # Texto libre: por frase, para que el primer audio salga antes.
                 async for _frase, audio in tts.sintetizar_por_frases(f.texto):
                     trozos.append(audio.wav)
 
-    completo = concatenar_wav(trozos)
-    E.setdefault("audio_por_turno", {})[id(accion)] = completo
-    accion_key = f"{len(trozos)}"
-    E["ultimo_audio"] = completo
+    return trozos
+
+
+async def _sintetizar_accion(llamada_id: str, accion) -> bytes:
+    """Sintetiza el turno completo en un WAV. Camino HTTP y de cierre.
+
+    El camino de WebSocket NO pasa por aqui: transmite trozo a trozo para que el
+    paciente pueda cortar a media frase (`_emitir_voz`). Aqui el audio se concatena
+    porque el cliente HTTP lo pide por URL, de una pieza.
+    """
+
+    completo = concatenar_wav(await _trozos_de(accion))
+    # Por llamada y no en una global. `E["ultimo_audio"]` era compartido entre
+    # llamadas: con dos pacientes a la vez, el segundo se llevaba el audio del
+    # primero. No se habia notado porque la demo es de una llamada.
+    E.setdefault("audio_por_llamada", {})[llamada_id] = completo
     return completo
 
 
 @app.get("/api/llamadas/{llamada_id}/audio/{turno}")
 async def audio_turno(llamada_id: str, turno: int) -> Response:
-    """Audio del ultimo turno del agente."""
+    """Audio del ultimo turno del agente en esa llamada."""
 
-    datos = E.get("ultimo_audio") or b""
+    datos = E.get("audio_por_llamada", {}).get(llamada_id) or b""
     if not datos:
         raise HTTPException(404, "sin audio disponible (Piper no esta activo)")
     return Response(content=datos, media_type="audio/wav")
@@ -853,7 +933,7 @@ async def cerrar_llamada(llamada_id: str) -> dict:
         raise HTTPException(404, "llamada no encontrada")
 
     accion = policy.cerrar_ahora()
-    audio = await _sintetizar_accion(accion)
+    audio = await _sintetizar_accion(llamada_id, accion)
     decision = accion.decision or policy.decision_vigente
     cierre = E["escalation"].cerrar_llamada(llamada_id, policy, decision, accion.citas)
 
@@ -928,6 +1008,9 @@ async def traza(llamada_id: str) -> dict:
         "llamada_id": llamada_id,
         "en_memoria": vivo,
         "persistida": persistida,
+        # Los turnos en disco, al lado de los de memoria. Los dos deben decir lo mismo;
+        # cuando no lo dicen es que algo se corrigio en memoria y no bajo al registro.
+        "turnos_persistidos": E["escalation"].turnos_persistidos(llamada_id),
         "metricas": E["metrics"].resumen(llamada_id),
     }
 
@@ -1038,6 +1121,145 @@ FRECUENCIA_ESPERADA = 16000
 MAX_SEGUNDOS_TURNO = 60
 
 
+# Pre-roll que se guarda mientras el agente habla. Cuando el paciente interrumpe, el
+# VAD ya se perdio las primeras silabas: sin esto, "sesenta" llega como "senta". Son
+# ~320 ms a tramas de 64 ms.
+TRAMAS_PREROLL = 5
+
+
+@dataclass
+class CanalLlamada:
+    """Estado de una llamada por WebSocket. Uno por conexion, nunca global.
+
+    Existe por dos razones que se descubrieron construyendo el barge-in:
+
+    1. **El bucle de recepcion no puede bloquearse.** Antes el turno se procesaba con
+       un `await` dentro del bucle de `ws.receive()`: mientras el pipeline trabajaba,
+       nadie leia el socket. Un aviso de interrupcion no se habria atendido hasta que
+       el turno ya hubiera terminado, que es justo cuando ya no sirve. Ahora el turno
+       corre como tarea y el bucle solo reparte.
+    2. **Dos tareas escriben al mismo socket.** La que transmite la voz trozo a trozo
+       y el bucle que manda `bajar_voz` o `callar`. Sin el cerrojo, los dos mensajes
+       se entrelazan y el cliente recibe basura.
+    """
+
+    ws: WebSocket
+    llamada_id: str
+    policy: DialogPolicy
+    sesion: SesionTranscripcion
+    detector: DetectorInterrupcion
+
+    _envio: asyncio.Lock = field(default_factory=asyncio.Lock)
+    tarea_turno: asyncio.Task | None = None
+    tarea_voz: asyncio.Task | None = None
+    tarea_cierre: asyncio.Task | None = None
+    tarea_sospecha: asyncio.Task | None = None
+
+    # Contabilidad de la voz del agente. `enviados` es lo que salio por el cable;
+    # `dichos` es lo que el cliente confirma haber reproducido. No son lo mismo -- los
+    # trozos se envian mas rapido que el tiempo real -- y el registro clinico necesita
+    # el segundo.
+    fragmentos_enviados: int = 0
+    fragmentos_dichos: int = 0
+
+    anillo: deque = field(default_factory=lambda: deque(maxlen=TRAMAS_PREROLL))
+    candidato: list = field(default_factory=list)
+
+    # Calibracion que manda el cliente tras medir el ruido de la sala. Es una
+    # medicion; la decision se toma aqui.
+    umbral_voz: float = 0.022
+    ultima_voz_en: float = field(default_factory=time.perf_counter)
+    interrupciones: int = 0
+    cerrado: bool = False
+
+    # Episodio de escucha. Se incrementa cada vez que arranca un turno, y el cierre
+    # adaptativo guarda el suyo: una decision de "ya contesto" que llega cuando el
+    # turno YA se sirvio no puede abrir otro. Sin esto se servia el turno dos veces --
+    # el segundo sobre una sesion vacia, gastando una transcripcion en nada.
+    episodio: int = 0
+
+    # Marcas que el turno SIGUIENTE tiene que registrar. La medicion del turno cortado
+    # ya esta cerrada cuando la interrupcion ocurre, asi que el hecho se anota en el que
+    # viene detras, que es donde de verdad significa algo.
+    tras_interrupcion: bool = False
+    ms_silencio_al_cerrar: float = 0.0
+
+    # ------------------------------------------------------------------
+    # Envio serializado
+    # ------------------------------------------------------------------
+
+    async def enviar_json(self, datos: dict) -> bool:
+        return await self._enviar(datos, binario=False)
+
+    async def enviar_bytes(self, datos: bytes) -> bool:
+        return await self._enviar(datos, binario=True)
+
+    async def _enviar(self, datos, binario: bool) -> bool:
+        enviado = False
+        if not self.cerrado:
+            async with self._envio:
+                try:
+                    if binario:
+                        await self.ws.send_bytes(datos)
+                    else:
+                        await self.ws.send_json(datos)
+                    enviado = True
+                except Exception:  # noqa: BLE001
+                    # El cliente se fue. No es un error que haya que propagar: el
+                    # cierre de la llamada lo maneja el bucle principal.
+                    self.cerrado = True
+        return enviado
+
+    # ------------------------------------------------------------------
+    # Audio entrante
+    # ------------------------------------------------------------------
+
+    def recordar(self, muestras) -> None:
+        """Guarda la trama en el sitio que le toca segun quien tenga la palabra."""
+
+        if self.detector.sospechando:
+            self.candidato.append(muestras)
+        else:
+            self.anillo.append(muestras)
+
+    def audio_candidato(self):
+        """Pre-roll + lo acumulado durante la sospecha: el arranque del turno."""
+
+        trozos = list(self.anillo) + list(self.candidato)
+        if trozos:
+            junto = np.concatenate(trozos)
+        else:
+            junto = np.array([], dtype=np.float32)
+        return junto
+
+    def promover_candidato(self) -> None:
+        """Lo que el paciente dijo al interrumpir ES el principio de su turno.
+
+        Sin esto la interrupcion costaria las primeras silabas: el detector necesita
+        250 ms para confirmar, y esos 250 ms ya son palabras.
+        """
+
+        self.sesion.agregar(self.audio_candidato())
+        self.anillo.clear()
+        self.candidato.clear()
+
+    def olvidar_candidato(self) -> None:
+        self.candidato.clear()
+
+    # ------------------------------------------------------------------
+
+    def detener_voz(self) -> None:
+        for tarea in (self.tarea_voz, self.tarea_cierre):
+            if tarea is not None and not tarea.done():
+                tarea.cancel()
+        self.tarea_voz = None
+        self.tarea_cierre = None
+
+    @property
+    def ocupado(self) -> bool:
+        return self.tarea_turno is not None and not self.tarea_turno.done()
+
+
 async def _procesar_turno_desde_sesion(
     llamada_id: str, policy: DialogPolicy, sesion: SesionTranscripcion
 ) -> dict:
@@ -1067,13 +1289,17 @@ async def _procesar_turno_desde_sesion(
 async def _completar_turno(
     llamada_id: str, policy: DialogPolicy, trans, crono: Cronometro
 ) -> dict:
-    """Del texto transcrito a la respuesta hablada."""
+    """Del texto transcrito a la respuesta hablada. Camino HTTP.
+
+    El de WebSocket no pasa por aqui: transmite la voz trozo a trozo y necesita
+    intercalar el ticket entre la decision y el primer sonido. Ver `_turno_por_voz`.
+    """
 
     with crono.etapa("extraccion"):
         accion = await policy.procesar(trans.texto)
 
     with crono.etapa("tts"):
-        audio = await _sintetizar_accion(accion)
+        audio = await _sintetizar_accion(llamada_id, accion)
     crono.primer_audio()
 
     payload = await _empaquetar_turno(llamada_id, policy, accion, crono, audio)
@@ -1087,6 +1313,76 @@ async def _completar_turno(
         },
         **payload,
     }
+
+
+# ==========================================================================
+# La voz del agente sale por trozos y se puede cortar
+# ==========================================================================
+
+async def _emitir_voz(canal: CanalLlamada, accion, primeras: list[bytes]) -> int:
+    """Sintetiza y transmite la voz del agente frase a frase.
+
+    Antes se concatenaba todo y se enviaba de una pieza: no habia nada que cortar. El
+    paciente podia pausar el audio en su navegador, pero el servidor ya habia dado la
+    pregunta por hecha y la politica ya habia avanzado de dominio -- el registro
+    clinico afirmaba una pregunta que nadie oyo.
+
+    Ahora cada frase es un mensaje, y esta funcion corre como tarea: mientras
+    transmite, el bucle de recepcion sigue leyendo el microfono. Cancelarla entre
+    frases basta -- el cerrojo de Piper garantiza que no queda un proceso a medias.
+
+    El grano es doble a proposito:
+
+    - **frase** para parar, porque cortar a media frase es lo que hace una persona;
+    - **fragmento** para la contabilidad clinica, porque lo que se debe o no se debe
+      volver a decir se decide por fragmento (`policy.marcar_interrumpido`).
+
+    `primeras` son las frases del primer fragmento, ya sintetizadas por quien mide la
+    latencia hasta el primer audio. Se pasan hechas para no sintetizarlas dos veces.
+
+    Devuelve los bytes de voz que llegaron a salir.
+    """
+
+    tts: PiperTTS = E["tts"]
+    total = 0
+    canal.fragmentos_enviados = 0
+    canal.fragmentos_dichos = 0
+
+    if config.bargein:
+        canal.detector.tomar_la_palabra(emite_voz=True)
+
+    ultimo = len(accion.fragmentos) - 1
+    for i, f in enumerate(accion.fragmentos):
+        frases = primeras if i == 0 else await _voz_del_fragmento(tts, f)
+        for j, wav in enumerate(frases):
+            await canal.enviar_json({
+                "tipo": "voz",
+                "fragmento": i,
+                "frase": j,
+                "texto": f.texto,
+                "papel": f.papel,
+                "fin_fragmento": j == len(frases) - 1,
+                "ultimo": i == ultimo and j == len(frases) - 1,
+            })
+            await canal.enviar_bytes(wav)
+            total += len(wav)
+        canal.fragmentos_enviados = i + 1
+
+    await canal.enviar_json({"tipo": "fin_voz", "bytes": total,
+                             "fragmentos": canal.fragmentos_enviados})
+    return total
+
+
+async def _voz_del_fragmento(tts: PiperTTS, fragmento) -> list[bytes]:
+    frases: list[bytes] = []
+    if tts.disponible:
+        if fragmento.clave:
+            audio = await tts.sintetizar(fragmento.texto, clave=fragmento.clave)
+            frases.append(audio.wav)
+        else:
+            async for _frase, audio in tts.sintetizar_por_frases(fragmento.texto):
+                frases.append(audio.wav)
+    return [f for f in frases if f]
 
 
 async def _procesar_audio_turno(
@@ -1163,9 +1459,7 @@ async def turno_por_audio(llamada_id: str, peticion: Request) -> JSONResponse:
     return JSONResponse(resultado)
 
 
-async def _atender_fin_habla(
-    ws: WebSocket, llamada_id: str, policy: DialogPolicy, sesion: SesionTranscripcion
-) -> None:
+async def _atender_fin_habla(canal: CanalLlamada) -> None:
     """Cierra el turno de voz y devuelve la respuesta por el WebSocket.
 
     Lo primero que sale por el cable es una muletilla -- "mm-hm", "ajá" -- tomada
@@ -1176,27 +1470,230 @@ async def _atender_fin_habla(
 
     El relleno no se envia si la sesion no tiene audio suficiente: emitir "ajá"
     ante un carraspeo seria peor que no emitir nada.
+
+    **El orden de los cinco pasos es una decision, no una casualidad.** El ticket se
+    crea entre la decision y el primer sonido, y no despues de hablar: si el paciente
+    reporta secrecion purulenta, la alerta no puede esperar los tres segundos que el
+    agente tarda en darle las instrucciones. La voz se emite despues, como tarea, para
+    que el bucle de recepcion siga leyendo el microfono mientras suena -- que es la
+    condicion sin la cual no hay barge-in posible.
     """
 
-    if sesion.n_muestras >= int(0.4 * 16000):
+    llamada_id = canal.llamada_id
+    policy = canal.policy
+    crono = Cronometro(llamada_id, len(policy.turnos))
+    # Se cierra el episodio de escucha: cualquier decision de cierre adaptativo que
+    # venga en camino sobre este mismo audio queda invalidada.
+    canal.episodio += 1
+
+    crono.medicion.tras_interrupcion = canal.tras_interrupcion
+    crono.medicion.ms_silencio_al_cerrar = round(canal.ms_silencio_al_cerrar, 1)
+    canal.tras_interrupcion = False
+    canal.ms_silencio_al_cerrar = 0.0
+
+    # 1. Muletilla, si hay audio suficiente para justificarla.
+    #
+    #    Que haya muletilla o no cambia el modo del detector, y no es un detalle: la
+    #    muletilla es audio saliendo, asi que su eco necesita la ventana de gracia. Sin
+    #    muletilla el agente esta callado de verdad y el paciente puede cortar de
+    #    inmediato -- que es lo que hace cuando el otro se queda mudo.
+    hay_muletilla = canal.sesion.n_muestras >= int(0.4 * FRECUENCIA_ESPERADA)
+
+    if config.bargein:
+        canal.detector.tomar_la_palabra(emite_voz=hay_muletilla)
+
+    if hay_muletilla:
         relleno = await _muletilla_pensando()
         if relleno:
-            await ws.send_json({"tipo": "relleno"})
-            await ws.send_bytes(relleno)
+            await canal.enviar_json({"tipo": "relleno"})
+            await canal.enviar_bytes(relleno)
 
-    resultado = await _procesar_turno_desde_sesion(llamada_id, policy, sesion)
+    # 2. Transcripcion. Mientras corre, el agente piensa: el paciente puede meter baza
+    #    y esas tramas son ya el turno siguiente.
+    with crono.etapa("stt"):
+        res = await canal.sesion.finalizar()
+    trans = res.transcripcion
 
-    if resultado["tipo"] == "turno":
-        # La transcripcion se manda por separado y antes del turno: el paciente ve
-        # lo que dijo mientras el agente todavia esta pensando la respuesta.
-        trans = resultado.pop("transcripcion")
-        await ws.send_json({"tipo": "transcripcion", **trans})
-        await ws.send_json(resultado)
-        audio = E.get("ultimo_audio") or b""
-        if audio:
-            await ws.send_bytes(audio)
+    if trans.sin_habla:
+        if config.bargein:
+            canal.detector.soltar_la_palabra()
+        await canal.enviar_json({
+            "tipo": "sin_habla",
+            "mensaje": trans.motivo_descarte or "no se detecto voz en el audio",
+            "duracion_audio_s": trans.duracion_audio_s,
+            "duracion_voz_s": trans.duracion_voz_s,
+        })
     else:
-        await ws.send_json(resultado)
+        await canal.enviar_json({
+            "tipo": "transcripcion",
+            "texto": trans.texto,
+            "ms": trans.ms,
+            "factor_tiempo_real": round(trans.factor_tiempo_real, 4),
+            "duracion_voz_s": trans.duracion_voz_s,
+            "origen": res.origen,
+            "ms_ahorrados": res.ms_ahorrados,
+        })
+
+        # 3. La decision.
+        with crono.etapa("extraccion"):
+            accion = await policy.procesar(trans.texto)
+
+        # 4. Primera frase sintetizada: el instante del primer audio disponible.
+        with crono.etapa("tts"):
+            if accion.fragmentos:
+                primeras = await _voz_del_fragmento(E["tts"], accion.fragmentos[0])
+            else:
+                primeras = []
+        crono.primer_audio()
+
+        # 5. Ticket y metricas ANTES de hablar, y voz despues, como tarea.
+        payload = await _empaquetar_turno(llamada_id, policy, accion, crono, b"")
+        await canal.enviar_json({"tipo": "turno", **payload})
+
+        if canal.tarea_voz is not None and not canal.tarea_voz.done():
+            canal.tarea_voz.cancel()
+        canal.tarea_voz = asyncio.create_task(_emitir_voz(canal, accion, primeras))
+
+
+# ==========================================================================
+# Interrupcion: bajar la voz, comprobar, y solo entonces cortar
+# ==========================================================================
+
+async def _encaminar_audio(canal: CanalLlamada, crudo: bytes) -> None:
+    """Una trama de microfono. Decide donde va y si el paciente esta interrumpiendo.
+
+    El cliente manda tramas SIEMPRE, tambien mientras el agente habla. Eso es lo que
+    hace que la llamada se sienta como una llamada y no como un walkie-talkie, y el
+    precio es que el servidor recibe su propio eco. Encaminar bien es todo el truco:
+
+    - Agente hablando: la trama es eco. Va al anillo de pre-roll, nunca al turno.
+    - Agente pensando: la trama es el turno siguiente. Va a la sesion.
+    - Nadie con la palabra: la trama es el turno en curso. Va a la sesion.
+    """
+
+    muestras = pcm16_a_float32(crudo)
+
+    if len(muestras):
+        ms = len(muestras) / FRECUENCIA_ESPERADA * 1000.0
+        nivel = rms_de(muestras)
+
+        if nivel > canal.umbral_voz:
+            canal.ultima_voz_en = time.perf_counter()
+
+        if config.bargein and canal.detector.escuchando_el_suelo:
+            veredicto = canal.detector.observar(nivel, ms)
+            canal.recordar(muestras)
+            # Mientras el agente PIENSA no hay eco, y lo que el paciente diga es su
+            # turno siguiente: hay que guardarlo tambien en la sesion. Mientras HABLA,
+            # la trama es eco y no puede entrar en ningun turno.
+            if canal.ocupado and not canal.detector.sospechando:
+                canal.sesion.agregar(muestras)
+
+            if veredicto is Veredicto.SOSPECHA:
+                await canal.enviar_json({"tipo": "bajar_voz"})
+            elif veredicto is Veredicto.COMPROBAR:
+                canal.tarea_sospecha = asyncio.create_task(_resolver_sospecha(canal))
+        else:
+            canal.sesion.agregar(muestras)
+
+
+async def _resolver_sospecha(canal: CanalLlamada) -> None:
+    """La energia sospecho; ahora se comprueba con el STT si eso era voz.
+
+    La energia no puede confirmar nada: un portazo, una tos o una silla arrastrada
+    cruzan cualquier umbral. Aqui se transcribe lo acumulado durante la sospecha --
+    pre-roll incluido -- y manda el mismo juicio de calidad que ya filtra las
+    alucinaciones de Whisper. No hay un criterio nuevo que pueda discrepar del que
+    usa el resto del sistema.
+
+    Mientras se comprueba, el agente esta con la voz baja, no callado. Asi un falso
+    positivo cuesta un bache de 250 ms en vez de un turno perdido.
+    """
+
+    audio = canal.audio_candidato()
+    duracion = len(audio) / FRECUENCIA_ESPERADA
+
+    if duracion < 0.2:
+        trans = None
+    else:
+        trans = await asyncio.to_thread(E["stt"].transcribir, audio)
+
+    era_voz = trans is not None and not trans.sin_habla
+
+    if era_voz:
+        await _cortar_al_agente(canal, trans)
+    else:
+        canal.detector.descartado()
+        canal.olvidar_candidato()
+        await canal.enviar_json({"tipo": "subir_voz"})
+        log("interrupcion_descartada", llamada_id=canal.llamada_id,
+            motivo=(trans.motivo_descarte if trans else "audio insuficiente"),
+            duracion_s=round(duracion, 2), **canal.detector.instantanea())
+
+
+async def _cortar_al_agente(canal: CanalLlamada, trans) -> None:
+    """Voz confirmada: el agente se calla y el turno pasa al paciente."""
+
+    canal.detener_voz()
+    corte = canal.policy.marcar_interrumpido(canal.fragmentos_dichos)
+    canal.detector.confirmado()
+    canal.interrupciones += 1
+    canal.tras_interrupcion = True
+
+    # El turno del agente ya se escribio con lo que se PLANEABA decir, asi que la
+    # correccion tiene que bajar tambien a la base de datos. Sin esto la garantia se
+    # queda en memoria y la hoja de traspaso sigue afirmando la pregunta entera.
+    if corte["turno_reescrito"] is not None:
+        E["escalation"].reescribir_turno(
+            canal.llamada_id, corte["turno_reescrito"],
+            f"{corte['texto_dicho']} [interrumpido]".strip(),
+        )
+
+    # El audio de la interrupcion ES el arranque del turno del paciente. Sin esto la
+    # interrupcion costaria las primeras silabas: confirmar lleva 250 ms, y 250 ms de
+    # voz ya son palabras.
+    canal.promover_candidato()
+
+    await canal.enviar_json({
+        "tipo": "callar",
+        "texto_oido": trans.texto,
+        **corte,
+    })
+    log("interrupcion_confirmada", llamada_id=canal.llamada_id,
+        fragmentos_dichos=corte["fragmentos_dichos"],
+        en_deuda=corte["fragmentos_en_deuda"],
+        pregunta_devuelta=corte["pregunta_devuelta"],
+        **canal.detector.instantanea())
+
+
+async def _quizas_cerrar_antes(canal: CanalLlamada) -> None:
+    """Cierra el turno del paciente en cuanto su respuesta se sostiene sola.
+
+    El cliente sigue mandando `fin_habla` a los 900 ms; esto llega antes cuando puede.
+    Si el paciente resume la palabra, `ultima_voz_en` se mueve y el plazo minimo no se
+    cumple: no se cierra nada y manda el techo del cliente.
+    """
+
+    episodio = canal.episodio
+    texto = await canal.sesion.texto_especulado()
+    ms_silencio = (time.perf_counter() - canal.ultima_voz_en) * 1000.0
+    dominio = canal.policy.dominio_abierto or ""
+    veredicto = respuesta_completa(texto, dominio, ms_silencio, config.cierre_min_ms)
+
+    # El episodio tiene que seguir siendo el mismo. La especulacion tarda cientos de
+    # milisegundos, y en ese rato el techo de 900 ms del cliente puede haberse cumplido
+    # y el turno haberse servido ya.
+    if veredicto.completa and episodio == canal.episodio and not canal.ocupado:
+        log("turno_cerrado_por_completitud", llamada_id=canal.llamada_id,
+            motivo=veredicto.motivo, ms_silencio=round(ms_silencio),
+            dominio=dominio, texto_len=len(texto))
+        await canal.enviar_json({
+            "tipo": "cerrando_turno",
+            "motivo": veredicto.motivo,
+            "ms_silencio": round(ms_silencio),
+        })
+        canal.ms_silencio_al_cerrar = ms_silencio
+        canal.tarea_turno = asyncio.create_task(_atender_fin_habla(canal))
 
 
 async def _muletilla_pensando() -> bytes:
@@ -1222,15 +1719,33 @@ async def ws_llamada(ws: WebSocket, llamada_id: str) -> None:
     Protocolo, deliberadamente simple porque la latencia se gana en el pipeline y
     no en el transporte:
 
-    - El navegador manda PCM16 mono **16 kHz** en mensajes binarios. La frecuencia
-      no es negociable y el cliente remuestrea si su microfono entrega otra: es
-      el contrato que evita el fallo mas sutil de este camino (ver
-      `_atender_fin_habla`).
+    - El navegador manda PCM16 mono **16 kHz** en mensajes binarios, SIEMPRE, tambien
+      mientras el agente habla. La frecuencia no es negociable y el cliente remuestrea
+      si su microfono entrega otra: es el contrato que evita el fallo mas sutil de este
+      camino (ver `_atender_fin_habla`).
     - Manda `{"tipo": "fin_habla"}` cuando su VAD detecta que el paciente dejo de
       hablar. La medicion de latencia de la rubrica arranca exactamente ahi.
-    - El servidor responde `{"tipo": "turno", ...}` con el texto, la decision y
-      las citas, y a continuacion el WAV en un mensaje binario.
+    - El servidor responde `{"tipo": "turno", ...}` con el texto, la decision y las
+      citas, y a continuacion la voz en mensajes `{"tipo": "voz"}` + bytes, uno por
+      frase, para que se pueda cortar a media frase.
     - `{"tipo": "sin_habla"}` no es un error: el cliente vuelve a escuchar.
+
+    **El bucle no hace trabajo que tarde.** Antes procesaba el turno con un `await`
+    aqui dentro, y mientras el pipeline trabajaba nadie leia el socket: un aviso de
+    interrupcion se habria atendido cuando ya no servia. Ahora todo lo lento corre como
+    tarea y este bucle solo reparte. Es la condicion sin la cual no hay barge-in.
+
+    Mensajes de interrupcion, del servidor al cliente:
+
+    | Mensaje | Que hace el cliente |
+    |---|---|
+    | `bajar_voz` | baja la ganancia al 15 % con rampa de 20 ms |
+    | `subir_voz` | era una tos: vuelve al 100 % y sigue la frase |
+    | `callar` | corta el audio en el acto y abre turno |
+    | `cerrando_turno` | el servidor cerro el turno antes de los 900 ms |
+
+    Y del cliente al servidor: `calibracion` (el ruido de su sala), `hablado` (cuantos
+    fragmentos reprodujo de verdad) y `fin_reproduccion` (su cola se vacio).
     """
 
     await ws.accept()
@@ -1241,62 +1756,36 @@ async def ws_llamada(ws: WebSocket, llamada_id: str) -> None:
         await ws.close()
         return
 
-    # Una sesion de transcripcion por llamada: acumula el audio y puede empezar a
-    # transcribirlo antes de que el turno cierre.
-    sesion = SesionTranscripcion(stt=E["stt"])
+    canal = CanalLlamada(
+        ws=ws,
+        llamada_id=llamada_id,
+        policy=policy,
+        # Una sesion de transcripcion por llamada: acumula el audio y puede empezar a
+        # transcribirlo antes de que el turno cierre.
+        sesion=SesionTranscripcion(stt=E["stt"]),
+        detector=DetectorInterrupcion(
+            margen_eco=config.bargein_margen_eco,
+            ms_confirmacion=config.bargein_ms_confirmacion,
+        ),
+    )
 
     try:
         while True:
             mensaje = await ws.receive()
 
             if "bytes" in mensaje and mensaje["bytes"]:
-                sesion.agregar(pcm16_a_float32(mensaje["bytes"]))
+                await _encaminar_audio(canal, mensaje["bytes"])
 
             elif "text" in mensaje and mensaje["text"]:
-                evento = json.loads(mensaje["text"])
-                tipo = evento.get("tipo")
-
-                if tipo == "pausa_corta":
-                    # El cliente detecto una pausa breve, mucho antes de declarar
-                    # el fin del turno. Se arranca la transcripcion aqui: si el
-                    # paciente ya termino, estara lista cuando llegue `fin_habla`.
-                    arrancada = sesion.especular()
-                    await ws.send_json({
-                        "tipo": "especulando",
-                        "arrancada": arrancada,
-                        "segundos_acumulados": round(sesion.n_muestras / 16000, 2),
-                    })
-
-                elif tipo == "fin_habla":
-                    await _atender_fin_habla(ws, llamada_id, policy, sesion)
-
-                elif tipo == "descartar":
-                    # El VAD del cliente decidio que lo captado no era voz.
-                    sesion.limpiar()
-
-                elif tipo == "cerrar":
-                    accion = policy.cerrar_ahora()
-                    audio = await _sintetizar_accion(accion)
-                    decision = accion.decision or policy.decision_vigente
-                    cierre = E["escalation"].cerrar_llamada(
-                        llamada_id, policy, decision, accion.citas
-                    )
-                    await ws.send_json({
-                        "tipo": "cierre",
-                        "agente_dice": accion.texto_completo,
-                        "decision": decision.model_dump(mode="json"),
-                        "cierre": cierre,
-                    })
-                    if audio:
-                        await ws.send_bytes(audio)
+                seguir = await _atender_control(canal, json.loads(mensaje["text"]))
+                if not seguir:
                     break
-
-                elif tipo == "ping":
-                    await ws.send_json({"tipo": "pong"})
 
             elif mensaje.get("type") == "websocket.disconnect":
                 # El cliente se fue sin decir "cerrar". Mismo caso que
                 # `WebSocketDisconnect`, por otro camino: hay que cerrar la llamada.
+                canal.cerrado = True
+                canal.detener_voz()
                 _forzar_cierre(llamada_id, policy, CIERRE_INTERRUMPIDA)
                 break
 
@@ -1307,6 +1796,7 @@ async def ws_llamada(ws: WebSocket, llamada_id: str) -> None:
         # aunque la bandera roja ya se hubiera detectado tres turnos antes.
         #
         # Es el camino mas probable de todos: nadie pulsa "terminar llamada".
+        canal.cerrado = True
         _forzar_cierre(llamada_id, policy, CIERRE_INTERRUMPIDA)
     except Exception as e:  # noqa: BLE001
         log("ws_fallo", nivel="error", llamada_id=llamada_id,
@@ -1316,6 +1806,95 @@ async def ws_llamada(ws: WebSocket, llamada_id: str) -> None:
             await ws.send_json({"tipo": "error", "mensaje": f"{type(e).__name__}: {e}"})
         except Exception:  # noqa: BLE001
             pass
+    finally:
+        # Las tareas de este canal no pueden sobrevivir a la conexion: una tarea de voz
+        # huerfana seguiria sintetizando y escribiendo a un socket muerto.
+        canal.cerrado = True
+        canal.detener_voz()
+        for tarea in (canal.tarea_turno, canal.tarea_sospecha):
+            if tarea is not None and not tarea.done():
+                tarea.cancel()
+
+
+async def _atender_control(canal: CanalLlamada, evento: dict) -> bool:
+    """Un mensaje de control. Devuelve False cuando la llamada debe terminar.
+
+    Nada de lo que hay aqui bloquea: lo que tarda se lanza como tarea. Es lo que
+    permite que un `hablado` o el cierre del socket se atiendan mientras el pipeline
+    del turno anterior sigue trabajando.
+    """
+
+    tipo = evento.get("tipo")
+    seguir = True
+
+    if tipo == "pausa_corta":
+        # El cliente detecto una pausa breve, mucho antes de declarar el fin del
+        # turno. Se arranca la transcripcion aqui: si el paciente ya termino, estara
+        # lista cuando llegue `fin_habla`.
+        arrancada = canal.sesion.especular()
+        await canal.enviar_json({
+            "tipo": "especulando",
+            "arrancada": arrancada,
+            "segundos_acumulados": round(canal.sesion.n_muestras / FRECUENCIA_ESPERADA, 2),
+        })
+        # Y con la especulacion en marcha, el turno puede cerrar antes de los 900 ms si
+        # lo que el paciente dijo ya se sostiene solo.
+        if arrancada and config.cierre_adaptativo and not canal.ocupado:
+            canal.tarea_cierre = asyncio.create_task(_quizas_cerrar_antes(canal))
+
+    elif tipo == "fin_habla":
+        # Un segundo `fin_habla` con turno en vuelo es no-op: pasa cuando el cierre
+        # adaptativo se adelanto al techo de 900 ms del cliente.
+        if not canal.ocupado:
+            canal.tarea_turno = asyncio.create_task(_atender_fin_habla(canal))
+
+    elif tipo == "calibracion":
+        # El cliente midio el ruido de su sala. Es una medicion, no una decision: el
+        # umbral de interrupcion se calcula aqui a partir de ella y del eco observado.
+        canal.umbral_voz = float(evento.get("umbral") or canal.umbral_voz)
+        canal.detector.umbral_voz = canal.umbral_voz
+        canal.detector.piso_ruido = float(evento.get("piso") or 0.0)
+        log("calibracion_recibida", llamada_id=canal.llamada_id,
+            piso=round(canal.detector.piso_ruido, 4), umbral=round(canal.umbral_voz, 4))
+
+    elif tipo == "hablado":
+        # Cuantos fragmentos reprodujo de verdad. Lo enviado no es lo reproducido, y el
+        # registro clinico necesita lo segundo.
+        canal.fragmentos_dichos = max(0, int(evento.get("fragmentos") or 0))
+
+    elif tipo == "fin_reproduccion":
+        # La cola de audio del cliente se vacio: ya no hay eco y el turno es del
+        # paciente. Lo dice el cliente y no el servidor porque el eco existe hasta que
+        # suena la ultima muestra, no hasta que se envia.
+        canal.detector.soltar_la_palabra()
+        canal.anillo.clear()
+
+    elif tipo == "descartar":
+        # El VAD del cliente decidio que lo captado no era voz.
+        canal.sesion.limpiar()
+
+    elif tipo == "cerrar":
+        canal.detener_voz()
+        accion = canal.policy.cerrar_ahora()
+        audio = await _sintetizar_accion(canal.llamada_id, accion)
+        decision = accion.decision or canal.policy.decision_vigente
+        cierre = E["escalation"].cerrar_llamada(
+            canal.llamada_id, canal.policy, decision, accion.citas
+        )
+        await canal.enviar_json({
+            "tipo": "cierre",
+            "agente_dice": accion.texto_completo,
+            "decision": decision.model_dump(mode="json"),
+            "cierre": cierre,
+        })
+        if audio:
+            await canal.enviar_bytes(audio)
+        seguir = False
+
+    elif tipo == "ping":
+        await canal.enviar_json({"tipo": "pong"})
+
+    return seguir
 
 
 # ==========================================================================

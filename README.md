@@ -61,6 +61,8 @@ comando que lo comprueba. El detalle de operación está en
 | La alerta sale del proceso, con reintentos y sin duplicar | outbox durable + despachador | `make humo` caso 9 |
 | Un rojo sin acuse en 15 min se reporta como fuera de plazo | `alertas_vencidas` + pestaña Alertas | `GET /api/alertas` |
 | Ninguna respuesta clínica cita otro procedimiento ni usa una cifra que el corpus no sostenga | filtro por tema + verificación posterior a la generación | `make rag` |
+| El paciente puede cortarle la palabra al agente, y una tos no se lo corta | umbral sobre el eco medido + confirmación con el STT | `make bargein` |
+| Una pregunta que el paciente no llegó a oír es una pregunta **no hecha**: vuelve al guion sin gastar un intento | `DialogPolicy.marcar_interrumpido` | `make humo` caso 11 |
 
 Una llamada que se abre y en la que el paciente nunca habla **no** produce alerta
 clínica: queda la constancia del intento de contacto. A alguien con quien no se habló no
@@ -203,9 +205,46 @@ clasificador aislado. Resultado: **42/42**.
 - Intentos de manipulación resistidos: **11/11**
 - Casos donde la criticidad bajó porque el paciente lo pidió: **0**
 
-Más `make test`: **274 tests**, que incluyen cero falsos positivos de manipulación sobre
+Más `make test`: **377 tests**, que incluyen cero falsos positivos de manipulación sobre
 turnos textuales del dataset oficial. Ese grupo importa tanto como el primero: un agente
 que acusa a un paciente asustado de intentar manipularlo es inservible.
+
+### Turnarse como en una llamada
+
+Dos cosas separan una llamada de un walkie-talkie: se puede cortar al otro, y no hay que
+esperar a que se haga el silencio para que conteste.
+
+**Interrumpir al agente.** `make bargein` mezcla las 53 locuciones reales del agente —como
+eco del altavoz— con las 18 grabaciones de voz humana de `eval/audios/`, a atenuaciones de
+eco conocidas, y pasa la mezcla trama a trama por el mismo detector que corre en la llamada.
+
+| Eco respecto a la voz | Detección | Baja la voz en (p50/p95) | Baches falsos/min | Cortes falsos |
+|---|---:|---:|---:|---:|
+| −30 dB · auriculares | 100 % | 112 / 144 ms | 0.00 | **0** |
+| −20 dB · portátil con cancelación | 100 % | 80 / 144 ms | 0.00 | **0** |
+| −12 dB · altavoz a volumen medio | 100 % | 144 / 202 ms | 0.23 | **0** |
+| −6 dB · altavoz alto | 83 % | 208 / 342 ms | 0.23 | **0** |
+| −3 dB · altavoz muy alto | 33 % | 240 / 1686 ms | 0.23 | **0** |
+
+Dos capas, y la segunda es la que importa. La energía **sospecha** y el agente baja la voz
+al 15 % en 20 ms; la transcripción del audio acumulado **confirma**, con las mismas puertas
+de calidad que ya filtran las alucinaciones de Whisper. Así un falso positivo cuesta un
+bache de 250 ms y no un turno perdido: **0 cortes falsos a cualquier nivel de eco**,
+incluidos los dos que están fuera de lo exigible.
+
+El umbral no es una constante: mientras el agente habla, lo que el micrófono oye *es* el eco
+residual, y eso es una medida gratis del piso contra el que discriminar. Con auriculares
+basta un susurro; con el altavoz alto hay que hablar más fuerte. `make bargein-barrido`
+publica por qué el punto de operación está donde está, y las dos últimas filas de la tabla
+publican dónde deja de funcionar: por encima de −6 dB el altavoz tapa al paciente y ningún
+ajuste de umbral lo arregla.
+
+**Contestar sin esperar el silencio.** El turno del paciente cerraba tras 900 ms de silencio,
+fijos. Ahora 900 ms es el techo y no el plazo: si lo transcrito ya se sostiene solo —un
+número para el dolor, una temperatura, un sí/no—, el turno cierra a los 450 ms. Medido con
+`make escucha` sobre las 18 grabaciones reales: **11 de 18 cierran a 450 ms**, y las 7
+restantes esperan el techo por un motivo que el arnés imprime, no por descarte. La métrica
+que el paciente sufre no se movió: **0 de 18 turnos obligan a repreguntar**.
 
 ### Compuerta de arranque (G2)
 
@@ -424,7 +463,7 @@ ejecuta exactamente estos comandos como subprocesos. El veredicto es su código 
 así que no hay una segunda implementación dentro del panel.
 
 ```bash
-make test        # 274 tests unitarios y de regresión
+make test        # 377 tests unitarios y de regresión
 make eval        # 160 casos oficiales · cero falsos negativos clínicos
 make redteam     # 42 casos adversariales (requiere la API levantada)
 make humo        # 79 comprobaciones de extremo a extremo (requiere la API levantada)

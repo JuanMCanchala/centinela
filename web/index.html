@@ -229,15 +229,16 @@
         </div>
       </aside>
 
-      <!-- Tres canales de audio separados a proposito:
-           · reproductor: la respuesta del agente.
-           · reproductor-relleno: la muletilla ("mm-hm") que suena en el instante
-             en que el paciente calla, mientras el pipeline trabaja. Va aparte
-             para que no se cancele con la respuesta.
-           · ambiente: bucle de fondo (teclado, murmullo, linea). El silencio
-             digital absoluto es lo que delata a un agente. -->
+      <!-- Dos elementos de audio, y la voz del agente NO sale por ninguno de los dos
+           cuando la llamada va por WebSocket.
+           · reproductor: respaldo por HTTP, que recibe el turno de una pieza y por
+             URL. La voz por WebSocket llega frase a frase y se programa en una cola
+             de Web Audio (`salida` en app.js), porque un `<audio>` no puede bajar el
+             volumen en 20 ms ni pararse sin dejar cola pendiente -- las dos cosas que
+             hacen falta para que el paciente pueda interrumpir.
+           · ambiente: bucle de fondo (teclado, murmullo, linea). El silencio digital
+             absoluto es lo que delata a un agente. -->
       <audio id="reproductor" hidden></audio>
-      <audio id="reproductor-relleno" hidden></audio>
       <audio id="ambiente" src="/estatico/ambiente.wav" loop hidden></audio>
     </main>
 

@@ -291,6 +291,65 @@ dura— y quedó descartada.
 
 ---
 
+## 5b. Turnarse como en una llamada
+
+Dos cosas separan una llamada de un walkie-talkie: se puede cortar al otro, y no hay que
+esperar a que se haga el silencio para que conteste. Las dos se deciden en el servidor.
+
+```mermaid
+flowchart TB
+    subgraph CLI["navegador — captura y reporta, no decide"]
+        MIC["micrófono abierto SIEMPRE<br/>web/app.js::procesarTrama"]
+        CAL["calibración de la sala<br/>piso · umbral de voz"]
+        COLA["cola de Web Audio<br/>GainNode para bajar la voz"]
+    end
+
+    subgraph SRV["servidor — decide y puede reproducirlo"]
+        DET["stt/bargein.py<br/>DetectorInterrupcion"]
+        CONF["stt/whisper.py<br/>¿esto era voz?"]
+        POL["dialog/policy.py<br/>marcar_interrumpido"]
+        COMP["dialog/completitud.py<br/>respuesta_completa"]
+    end
+
+    MIC -->|"PCM16 · también mientras el agente habla"| DET
+    CAL --> DET
+    DET -->|"energía sostenida sobre el eco medido"| BAJA["bajar_voz<br/>15 % en 20 ms"]
+    BAJA --> COLA
+    DET -->|"250 ms acumulados"| CONF
+    CONF -->|"era una tos"| SUBE["subir_voz<br/>sigue la frase"]
+    CONF -->|"era el paciente"| CALLAR["callar"]
+    CALLAR --> POL
+    POL --> DEUDA["lo no dicho queda en deuda<br/>la pregunta vuelve al guion"]
+    COMP -->|"la respuesta ya se sostiene sola"| CIERRA["cerrando_turno<br/>a 450 ms, no a 900"]
+```
+
+**La decisión vive en el servidor, y no es preferencia de estilo.** El registro clínico
+tiene que poder afirmar *qué oyó el paciente* —una pregunta cortada es una pregunta no
+hecha, y eso cambia el cierre—, así que no puede depender de lo que declare un navegador.
+Y una decisión escrita en JavaScript no se puede reproducir contra audio grabado: el
+detector que corre en la llamada es el mismo que `eval/bargein.py` alimenta con 53
+locuciones reales del agente y 18 grabaciones de voz humana.
+
+**El umbral lo pone el eco, no una constante.** Mientras el agente habla, lo que el
+micrófono oye *es* el eco residual que la cancelación del navegador no quitó. Eso no es un
+estorbo: es una medida gratis del piso contra el que hay que discriminar. Con auriculares
+basta un susurro; con el altavoz alto hay que hablar más fuerte, que es lo que una persona
+hace en esa situación. Antes había un umbral fijo de 0.075 medido en una sola sala.
+
+**La energía sospecha; la transcripción confirma.** Un portazo cruza cualquier umbral de
+energía, así que el detector no decide interrumpir: decide *bajar la voz*. La confirmación
+la da el STT sobre el audio acumulado, con las mismas puertas de calidad que ya filtran las
+alucinaciones de Whisper. Un falso positivo cuesta un bache de 250 ms; un corte falso
+costaría un turno. Medido en `make bargein`: **0 cortes falsos** a cualquier nivel de eco.
+
+**El bucle de recepción no hace trabajo que tarde.** Antes procesaba el turno con un
+`await` dentro del bucle de `ws.receive()`, así que mientras el pipeline trabajaba nadie
+leía el socket: un aviso de interrupción se habría atendido cuando ya no servía. Ahora todo
+lo lento corre como tarea (`CanalLlamada`) y el bucle solo reparte. Sin eso no hay barge-in
+posible, por bueno que sea el detector.
+
+---
+
 ## 6. Defensa contra inyección de prompt
 
 Dos capas, y la importante es la segunda.

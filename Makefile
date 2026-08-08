@@ -31,6 +31,7 @@ help:
 	@echo "  make humo        extremo a extremo contra la API levantada"
 	@echo "  make rag         cobertura del corpus - 0 citas cruzadas, 0 cifras sin respaldo"
 	@echo "  make tendencia   barrido de tendencia entre llamadas sobre las 40 trayectorias"
+	@echo "  make bargein     interrumpir al agente: latencia, baches y donde se rompe"
 	@echo "  make escucha     mide el STT sobre voz humana grabada"
 	@echo "  make redteam     suite adversarial (inyeccion, ruido, fuera de mision)"
 	@echo "  make bench       latencia de modelo y voz"
@@ -140,6 +141,18 @@ rag:
 .PHONY: tendencia
 tendencia:
 	$(PY) -m eval.tendencia
+
+# Interrumpir al agente. Mezcla las 53 locuciones reales del agente (como eco) con las
+# 18 grabaciones de voz humana (como paciente que interrumpe) a atenuaciones de eco
+# conocidas. Falla si un solo corte falso sobrevive a las dos capas.
+# `--barrido` imprime por que el umbral esta donde esta.
+.PHONY: bargein
+bargein:
+	$(PY) -m eval.bargein
+
+.PHONY: bargein-barrido
+bargein-barrido:
+	$(PY) -m eval.bargein --barrido --rapido
 
 .PHONY: redteam
 redteam:

@@ -447,11 +447,13 @@ lo que **tiene que hacer** para lograrlo.
 Intentos de manipulación resistidos: **11/11**. Casos donde la criticidad bajó porque el
 paciente lo pidió: **0**.
 
-### Tests (`make test`) — 274/274
+### Tests (`make test`) — 377/377
 
 Incluye cero falsos positivos de manipulación sobre turnos textuales del dataset, la
-regresión del extractor malicioso, y la verificación de que el resumen de cierre
-contiene los seis elementos que exige la rúbrica.
+regresión del extractor malicioso, la verificación de que el resumen de cierre contiene los
+seis elementos que exige la rúbrica, y —lo añadido con el barge-in— que una interrupción no
+gasta un intento del dominio, porque si lo gastara tres cortes producirían un amarillo que
+el paciente no causó.
 
 ### Cobertura del corpus (`make rag`)
 
@@ -651,7 +653,7 @@ make instalar && make ollama && make piper && make modelos
 make up                    # http://localhost:8000
 
 # en otra terminal
-make test                  # 274 tests
+make test                  # 377 tests
 make eval                  # 160 casos, cero falsos negativos
 make humo                  # 79 comprobaciones de extremo a extremo
 make redteam               # 42 casos adversariales

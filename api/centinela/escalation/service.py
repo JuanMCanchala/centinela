@@ -295,6 +295,27 @@ class EscalationService:
 
         return len(turnos)
 
+    def reescribir_turno(self, llamada_id: str, turno_idx: int, texto: str) -> bool:
+        """Corrige el texto de un turno ya persistido.
+
+        Existe por una sola razon, y es clinica: cuando el paciente interrumpe al
+        agente, el turno del agente ya se escribio con lo que se PLANEABA decir. La
+        politica lo recorta en memoria a lo que el paciente de verdad oyo, y sin esto
+        esa correccion no llegaba al registro durable -- la hoja que lee una enfermera
+        seguiria afirmando una pregunta que se corto en la primera silaba.
+
+        Es un UPDATE y no un INSERT OR REPLACE: no puede crear una fila. Si el turno no
+        estaba escrito todavia, la escritura normal ya llevara el texto corregido.
+        """
+
+        with self._lock:
+            cur = self._conn.execute(
+                "UPDATE turnos SET texto=? WHERE llamada_id=? AND turno_idx=?",
+                (texto, llamada_id, turno_idx),
+            )
+            self._conn.commit()
+        return cur.rowcount > 0
+
     def registrar_incidente(self, llamada_id: str, tipo: str, detalle: str) -> None:
         with self._lock:
             self._conn.execute(
@@ -1082,6 +1103,22 @@ class EscalationService:
             if salida.get("resumen_json"):
                 salida["resumen"] = json.loads(salida["resumen_json"])
         return salida
+
+    def turnos_persistidos(self, llamada_id: str) -> list[dict]:
+        """Los turnos tal como quedaron EN DISCO.
+
+        Se publica en la traza junto a los de memoria a proposito: los dos deben decir
+        lo mismo, y cuando no lo dicen es que algo se corrigio en memoria y no bajo al
+        registro. Paso exactamente eso con los turnos interrumpidos, y sin poder
+        comparar los dos no habia forma de verlo desde fuera.
+        """
+
+        filas = self._conn.execute(
+            "SELECT turno_idx, hablante, momento, texto, nivel FROM turnos"
+            " WHERE llamada_id = ? ORDER BY turno_idx",
+            (llamada_id,),
+        ).fetchall()
+        return [dict(f) for f in filas]
 
     @staticmethod
     def _ticket_dict(f: sqlite3.Row) -> dict:

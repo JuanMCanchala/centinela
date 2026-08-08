@@ -87,17 +87,40 @@ class Paciente:
     eps: str | None = None
 
 
+# Papel de un fragmento. Solo importa cuando el paciente interrumpe: decide que se
+# vuelve a decir y que no.
+#
+#   PREGUNTA  -- una pregunta del guion. Si no se llego a oir, la pregunta NO se
+#                hizo, y eso lo arregla la politica volviendo a preguntar; no hay
+#                que arrastrar el texto.
+#   CONTENIDO -- una respuesta del corpus, una instruccion de cierre, una
+#                explicacion. Si no se oyo, se debe: el paciente pregunto algo y se
+#                quedo sin respuesta.
+#   SOCIAL    -- un "aja", una transicion. Un acuse que no se oyo no hay que
+#                repetirlo; repetirlo suena a maquina reproduciendo una cinta.
+PAPEL_PREGUNTA = "pregunta"
+PAPEL_CONTENIDO = "contenido"
+PAPEL_SOCIAL = "social"
+
+
 @dataclass
 class Fragmento:
     """Un trozo de lo que el agente va a decir en este turno.
 
     `clave` no es cosmetica: nombra el archivo de audio pre-sintetizado. Si viene
     en None, el texto es libre y hay que sintetizarlo en caliente.
+
+    El fragmento es tambien la unidad de interrupcion: el cliente reporta cuantos
+    alcanzo a reproducir, asi que la frontera entre "lo que el paciente oyo" y "lo
+    que no" cae siempre entre dos fragmentos.
     """
 
     texto: str
     clave: str | None = None
     citas: list[dict] = field(default_factory=list)
+    papel: str = PAPEL_CONTENIDO
+    # Dominio del cuestionario al que pertenece, cuando el papel es PREGUNTA.
+    dominio: str | None = None
 
 
 @dataclass
@@ -178,6 +201,19 @@ class DialogPolicy:
         self._uso_rag = UsoTokens()
         self.repeticiones_seguidas = 0
 
+        # --- Interrupcion -------------------------------------------------
+        # Lo que el agente iba a decir y el paciente corto antes de oirlo. Se paga
+        # en el turno siguiente, delante de la respuesta nueva.
+        self.deuda: list[Fragmento] = []
+        # Dominios cuya pregunta hay que volver a hacer con la formulacion INICIAL:
+        # el paciente nunca la oyo, asi que "le repito" seria mentira.
+        self.repetir_inicial: set[str] = set()
+        # La ultima accion construida, para saber que fragmentos quedaron sin decir.
+        self.ultima_accion: AccionAgente | None = None
+        # Dominio al que este turno le cargo un intento, si a alguno. Si la pregunta
+        # se corto antes de oirse, se devuelve.
+        self._intento_del_turno: str | None = None
+
     # ------------------------------------------------------------------
     # Apertura
     # ------------------------------------------------------------------
@@ -187,7 +223,7 @@ class DialogPolicy:
 
         self.fase = EstadoLlamada.CONFIRMAR_IDENTIDAD
         fragmentos = [
-            Fragmento(S.SALUDO.texto, S.SALUDO.clave),
+            Fragmento(S.SALUDO.texto, S.SALUDO.clave, papel=PAPEL_SOCIAL),
             Fragmento(
                 S.CONFIRMACION_IDENTIDAD.texto.format(nombre=self.paciente.nombre),
                 None,  # lleva el nombre, se sintetiza en caliente
@@ -199,6 +235,7 @@ class DialogPolicy:
             estado_llamada=self.fase,
             dominio_actual=None,
         )
+        self.ultima_accion = accion
         return accion
 
     # ------------------------------------------------------------------
@@ -209,6 +246,7 @@ class DialogPolicy:
         t0 = time.perf_counter()
         turno_idx = len(self.turnos)
         self._uso_rag = UsoTokens()
+        self._intento_del_turno = None
 
         # La clasificacion de intencion va PRIMERO, antes de extraer.
         #
@@ -269,6 +307,17 @@ class DialogPolicy:
         else:
             accion = await self._continuar(cls, extraccion, decision)
 
+        # La deuda de una interrupcion anterior se paga aqui, delante de la respuesta
+        # nueva: responde a algo que el paciente pregunto antes.
+        #
+        # Salvo cuando hay bandera roja. Ahi la deuda se descarta sin pronunciarse:
+        # una pregunta pendiente del guion no puede colarse delante de una
+        # instruccion de urgencia.
+        if self.deuda:
+            if not accion.escala_ahora:
+                accion.fragmentos = self._pagar_deuda(accion.fragmentos)
+            self.deuda.clear()
+
         accion.ms_procesamiento = (time.perf_counter() - t0) * 1000
         accion.intencion_detectada = cls.intencion.value
         accion.uso.acumular(extraccion.uso)
@@ -276,7 +325,101 @@ class DialogPolicy:
         accion.correcciones_de_seguridad = extraccion.correcciones_de_seguridad
         accion.consultas_rag = self.consultas_rag
         self._registrar_agente(accion.texto_completo)
+        self.ultima_accion = accion
         return accion
+
+    # ------------------------------------------------------------------
+    # Interrupcion del paciente
+    # ------------------------------------------------------------------
+
+    def marcar_interrumpido(self, fragmentos_dichos: int) -> dict:
+        """El paciente corto al agente tras oir `fragmentos_dichos` fragmentos.
+
+        Aqui esta la parte clinica del barge-in, y es menos obvia de lo que parece.
+        `_avanzar` muta el estado **cuando construye los fragmentos**:
+        `_siguiente_pregunta` ya avanzo el dominio y `_repetir_pregunta_actual` ya
+        cargo un intento. Si el paciente interrumpe antes de oir la pregunta, la
+        politica cree haberla hecho.
+
+        Y eso no es cosmetico: agotar `MAX_INTENTOS_POR_DOMINIO` marca el dominio
+        como desconocido, y un dominio desconocido al cerrar fuerza amarillo. Sin
+        esta correccion, tres interrupciones producirian un amarillo que el paciente
+        no causo -- una alerta inventada por el transporte de audio.
+
+        Devuelve lo que hace falta para el log y para la traza del turno.
+        """
+
+        accion = self.ultima_accion
+        resultado = {
+            "fragmentos_dichos": 0,
+            "fragmentos_en_deuda": 0,
+            "pregunta_devuelta": None,
+            "texto_dicho": "",
+            # Indice del turno que hay que corregir tambien en la base de datos: en
+            # memoria no basta, porque la hoja de traspaso se lee del registro durable.
+            "turno_reescrito": None,
+        }
+
+        if accion is not None:
+            corte = max(0, min(fragmentos_dichos, len(accion.fragmentos)))
+            dichos = accion.fragmentos[:corte]
+            pendientes = accion.fragmentos[corte:]
+
+            # Lo social no se debe. Un "aja" que no se oyo no hay que repetirlo.
+            self.deuda.extend(f for f in pendientes if f.papel == PAPEL_CONTENIDO)
+
+            sin_oir = [f for f in pendientes if f.papel == PAPEL_PREGUNTA]
+            if sin_oir:
+                self._devolver_pregunta(sin_oir[0].dominio)
+                resultado["pregunta_devuelta"] = sin_oir[0].dominio
+
+            dicho = " ".join(f.texto for f in dichos).strip()
+            resultado["turno_reescrito"] = self._reescribir_ultimo_agente(dicho)
+            resultado["fragmentos_dichos"] = len(dichos)
+            resultado["fragmentos_en_deuda"] = len(pendientes)
+            resultado["texto_dicho"] = dicho
+
+        return resultado
+
+    def _devolver_pregunta(self, dominio: str | None) -> None:
+        """Una pregunta que el paciente no oyo es una pregunta no hecha."""
+
+        if dominio is not None:
+            if self._intento_del_turno == dominio:
+                self.intentos[dominio] = max(0, self.intentos.get(dominio, 0) - 1)
+            self.repetir_inicial.add(dominio)
+        # El extractor usa `ultima_pregunta` como contexto de lo que el paciente esta
+        # respondiendo. Si no la oyo, no esta respondiendo a nada.
+        self.ultima_pregunta = ""
+
+    def _reescribir_ultimo_agente(self, dicho: str) -> int | None:
+        """El registro clinico dice lo que el paciente OYO, no lo que se planeo.
+
+        Es la diferencia entre una transcripcion y un guion. La hoja de traspaso que
+        lee una enfermera no puede afirmar que se pregunto por la fiebre si la
+        pregunta se corto en la primera silaba.
+
+        Devuelve el `turno_idx` corregido para que quien llama pueda corregirlo tambien
+        en la base de datos: el turno ya se persistio con el texto planeado.
+        """
+
+        indice = None
+        for i in range(len(self.turnos) - 1, -1, -1):
+            if indice is None and self.turnos[i].hablante == "agente":
+                indice = i
+
+        corregido = None
+        if indice is not None:
+            self.turnos[indice].texto = f"{dicho} [interrumpido]".strip()
+            corregido = self.turnos[indice].turno_idx
+        return corregido
+
+    def _pagar_deuda(self, nuevos: list[Fragmento]) -> list[Fragmento]:
+        """Antepone lo pendiente, sin decir dos veces lo que ya se va a decir."""
+
+        yaesta = {f.clave or f.texto for f in nuevos}
+        pendiente = [f for f in self.deuda if (f.clave or f.texto) not in yaesta]
+        return pendiente + nuevos
 
     # ------------------------------------------------------------------
 
@@ -287,8 +430,17 @@ class DialogPolicy:
         pregunta = S.PREGUNTAS[0]
         self.ultima_pregunta = pregunta.inicial.texto
         fragmentos = [
-            Fragmento(S.TRANSICION_A_PREGUNTAS.texto, S.TRANSICION_A_PREGUNTAS.clave),
-            Fragmento(pregunta.inicial.texto, pregunta.inicial.clave),
+            Fragmento(
+                S.TRANSICION_A_PREGUNTAS.texto,
+                S.TRANSICION_A_PREGUNTAS.clave,
+                papel=PAPEL_SOCIAL,
+            ),
+            Fragmento(
+                pregunta.inicial.texto,
+                pregunta.inicial.clave,
+                papel=PAPEL_PREGUNTA,
+                dominio=pregunta.dominio,
+            ),
         ]
         accion = AccionAgente(
             fragmentos=fragmentos,
@@ -417,6 +569,7 @@ class DialogPolicy:
             dominio = self._dominio_actual()
             if dominio:
                 self.intentos[dominio] = self.intentos.get(dominio, 0) + 1
+                self._intento_del_turno = dominio
 
         fragmentos = [Fragmento(locucion.texto, locucion.clave)]
         fragmentos.extend(self._repetir_pregunta_actual())
@@ -496,7 +649,7 @@ class DialogPolicy:
 
             if resuelto:
                 acuse = self._proximo_acuse()
-                fragmentos.append(Fragmento(acuse.texto, acuse.clave))
+                fragmentos.append(Fragmento(acuse.texto, acuse.clave, papel=PAPEL_SOCIAL))
                 # Si el dominio quedo resuelto pero el motor pide profundizar en
                 # el (una bandera aislada, o paciente que minimiza), se
                 # profundiza antes de pasar al siguiente.
@@ -511,7 +664,7 @@ class DialogPolicy:
                 # pero el dominio queda marcado como desconocido, y un dominio
                 # desconocido al cierre fuerza escalamiento a amarillo.
                 acuse = self._proximo_acuse()
-                fragmentos.append(Fragmento(acuse.texto, acuse.clave))
+                fragmentos.append(Fragmento(acuse.texto, acuse.clave, papel=PAPEL_SOCIAL))
                 fragmentos.extend(self._siguiente_pregunta())
 
         accion = AccionAgente(
@@ -582,11 +735,23 @@ class DialogPolicy:
             escala_ahora=bool(decision and decision.escala),
         )
         self._registrar_agente(accion.texto_completo)
+        self.ultima_accion = accion
         return accion
 
     # ------------------------------------------------------------------
     # Navegacion del guion
     # ------------------------------------------------------------------
+
+    @property
+    def dominio_abierto(self) -> str | None:
+        """El dominio que el agente acaba de preguntar, o None.
+
+        Lo necesita el cierre adaptativo del turno, que corre en el servidor y no
+        puede leer atributos privados de la politica para decidir si el paciente ya
+        contesto lo que se le pregunto.
+        """
+
+        return self._dominio_actual()
 
     def _dominio_actual(self) -> str | None:
         if 0 <= self.indice_dominio < len(S.PREGUNTAS):
@@ -612,7 +777,15 @@ class DialogPolicy:
         else:
             pregunta = S.PREGUNTA_POR_DOMINIO[dominio]
             self.ultima_pregunta = pregunta.inicial.texto
-            fragmentos = [Fragmento(pregunta.inicial.texto, pregunta.inicial.clave)]
+            self.repetir_inicial.discard(dominio)
+            fragmentos = [
+                Fragmento(
+                    pregunta.inicial.texto,
+                    pregunta.inicial.clave,
+                    papel=PAPEL_PREGUNTA,
+                    dominio=dominio,
+                )
+            ]
         return fragmentos
 
     def _repetir_pregunta_actual(self, cuenta_intento: bool = False) -> list[Fragmento]:
@@ -621,18 +794,41 @@ class DialogPolicy:
         if dominio is None:
             fragmentos = []
         else:
-            if cuenta_intento:
+            # Si el paciente interrumpio antes de oir la pregunta, se vuelve a hacer
+            # con la formulacion INICIAL y sin cargar intento. "Le repito" una
+            # pregunta que nunca se oyo suena a un agente que no escucha, y cargar el
+            # intento acabaria marcando el dominio como desconocido por culpa de la
+            # interrupcion.
+            desde_cero = dominio in self.repetir_inicial
+            self.repetir_inicial.discard(dominio)
+
+            if cuenta_intento and not desde_cero:
                 self.intentos[dominio] = self.intentos.get(dominio, 0) + 1
+                self._intento_del_turno = dominio
+
             pregunta = S.PREGUNTA_POR_DOMINIO[dominio]
-            self.ultima_pregunta = pregunta.reintento.texto
-            fragmentos = [Fragmento(pregunta.reintento.texto, pregunta.reintento.clave)]
+            locucion = pregunta.inicial if desde_cero else pregunta.reintento
+            self.ultima_pregunta = locucion.texto
+            fragmentos = [
+                Fragmento(
+                    locucion.texto, locucion.clave, papel=PAPEL_PREGUNTA, dominio=dominio
+                )
+            ]
         return fragmentos
 
     def _profundizar_en(self, dominio: str) -> list[Fragmento]:
         self.intentos[dominio] = self.intentos.get(dominio, 0) + 1
+        self._intento_del_turno = dominio
         pregunta = S.PREGUNTA_POR_DOMINIO[dominio]
         self.ultima_pregunta = pregunta.profundizar.texto
-        return [Fragmento(pregunta.profundizar.texto, pregunta.profundizar.clave)]
+        return [
+            Fragmento(
+                pregunta.profundizar.texto,
+                pregunta.profundizar.clave,
+                papel=PAPEL_PREGUNTA,
+                dominio=dominio,
+            )
+        ]
 
     def _proximo_acuse(self) -> S.Locucion:
         acuse = S.ACUSES[self._acuse % len(S.ACUSES)]

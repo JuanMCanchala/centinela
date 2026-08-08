@@ -47,6 +47,11 @@ RAIZ = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(RAIZ / "api"))
 
 from centinela.clinical.normalizer import normalizar_turno  # noqa: E402
+from centinela.dialog.completitud import (  # noqa: E402
+    MS_CIERRE_MAXIMO,
+    MS_CIERRE_MINIMO,
+    respuesta_completa,
+)
 from centinela.stt.whisper import FRECUENCIA, WhisperSTT  # noqa: E402
 
 DIR_AUDIOS = RAIZ / "eval" / "audios"
@@ -276,6 +281,8 @@ def main() -> int:
         repreguntarian: list[str] = []
         datos_mal: list[str] = []
         rojas_perdidas: list[str] = []
+        cierran_antes: list[str] = []
+        cierran_a_medias: list[str] = []
 
         for f in presentes:
             muestras = leer_wav(carpeta / f.archivo)
@@ -312,6 +319,24 @@ def main() -> int:
                     repreguntarian.append(f.archivo)
                     if "ROJA" in f.porque:
                         rojas_perdidas.append(f.archivo)
+
+            # Cierre adaptativo: con lo que el STT oyo de verdad -- no con el texto de
+            # referencia --, ¿habria cerrado el turno a los 450 ms en vez de esperar
+            # los 900? Se juzga sobre la transcripcion real a proposito: si el STT se
+            # come una palabra, el cierre tiene que notarlo igual que lo notaria en una
+            # llamada.
+            if not tr.sin_habla:
+                v = respuesta_completa(tr.texto, f.dominio, MS_CIERRE_MINIMO)
+                if v.completa:
+                    cierran_antes.append(f.archivo)
+                    print(f"    cierre    : a {MS_CIERRE_MINIMO:.0f} ms · {v.motivo}")
+                    if f.espera and f.archivo in datos_mal:
+                        # Cerrar antes con el dato mal seria acortar el turno para
+                        # quedarse con una respuesta equivocada.
+                        cierran_a_medias.append(f.archivo)
+                else:
+                    print(f"    cierre    : espera el techo de {MS_CIERRE_MAXIMO:.0f} ms"
+                          f" · {v.motivo}")
             print()
 
         # ------------------------------------------------------------------
@@ -329,6 +354,20 @@ def main() -> int:
               f"  ({100 * len(repreguntarian) / n:.0f} %)")
         print("      es la metrica que el paciente sufre: el agente no le entendio")
         print("      y le vuelve a preguntar lo mismo.")
+        print()
+        ahorro = len(cierran_antes) * (MS_CIERRE_MAXIMO - MS_CIERRE_MINIMO)
+        print(f"  CIERRAN A {MS_CIERRE_MINIMO:.0f} ms EN VEZ DE {MS_CIERRE_MAXIMO:.0f}: "
+              f"{len(cierran_antes)} de {n}")
+        print(f"      son {MS_CIERRE_MAXIMO - MS_CIERRE_MINIMO:.0f} ms menos de pausa en")
+        print(f"      cada uno; {ahorro / 1000:.1f} s en el conjunto. El resto espera el")
+        print("      techo por un motivo que se imprime arriba, no por descarte.")
+        if cierran_a_medias:
+            print()
+            print(f"  CIERRAN ANTES CON EL DATO MAL: {len(cierran_a_medias)}")
+            for a in cierran_a_medias:
+                print(f"      - {a}")
+            print("      Acortar el turno para quedarse con una respuesta equivocada es")
+            print("      peor que esperar. Esto es un fallo del cierre adaptativo.")
 
         if rojas_perdidas:
             print()

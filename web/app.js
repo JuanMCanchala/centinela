@@ -13,6 +13,31 @@
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 
+/* ===================== nada falla en silencio =================================
+ *
+ * Una promesa rechazada sin `catch` aparece en la consola como "[EXCEPTION] Object"
+ * en la linea 0, sin pila y sin nombre de archivo. Estuvimos con cuatro de esas en la
+ * carga de la pagina sin poder decir de donde salian, y "no sé qué son pero no
+ * molestan" no es un estado aceptable en la consola que mira un puesto de enfermeria.
+ *
+ * Esto no las arregla: las hace legibles. Es lo primero del archivo a proposito, para
+ * que cubra tambien lo que se rompa durante el arranque.
+ */
+window.addEventListener("unhandledrejection", (ev) => {
+  const r = ev.reason;
+  const detalle = r instanceof Error
+    ? `${r.name}: ${r.message}`
+    : (() => { try { return JSON.stringify(r); } catch (_) { return String(r); } })();
+  console.warn(`[centinela] promesa rechazada sin catch: ${detalle}`, r);
+});
+
+window.addEventListener("error", (ev) => {
+  if (ev.error || ev.message) {
+    console.warn(`[centinela] error no capturado: ${ev.message}`,
+      ev.filename ? `${ev.filename}:${ev.lineno}` : "");
+  }
+});
+
 /* ===================== token de acceso, si hay uno =========================
  *
  * Con `CENTINELA_TOKEN` sin definir -- el caso por defecto, y el del arranque del
@@ -354,6 +379,9 @@ async function enviarTexto() {
       body: JSON.stringify({ texto }),
     });
     procesarRespuestaTurno(r);
+    // El turno por texto no tiene canal de voz: su audio se pide por URL. El de voz
+    // por WebSocket llega frase a frase y ya suena por la cola de salida.
+    if (r.audio_bytes) reproducir(r.audio_url);
   } catch (e) {
     agregarTurno("sistema", `Error: ${e.message}`, "alerta");
   }
@@ -388,7 +416,13 @@ function procesarRespuestaTurno(r) {
   if (r.cierre?.ticket) {
     agregarTurno("sistema", `Alerta creada: ${r.cierre.ticket.ticket_id} (${r.cierre.ticket.nivel})`, "alerta");
   }
-  if (r.audio_bytes) reproducir(r.audio_url);
+  // La reproduccion NO se hace aqui, y esto es la correccion de un fallo latente: esta
+  // funcion la usan los tres caminos de turno, y en el de voz por WebSocket llamar a
+  // `reproducir(r.audio_url)` significaba pedir por HTTP el turno completo y sonarlo
+  // encima de la voz que ya venia por el socket. Antes se tapaba solo -- el blob que
+  // llegaba despues sobrescribia el `src` del mismo elemento antes de que se oyera --
+  // pero con la cola de Web Audio son dos canales distintos y se oiria dos veces.
+  // Cada camino reproduce lo suyo.
   emitir("turno", r);
   if (r.terminada) finalizar();
 }
@@ -442,12 +476,26 @@ function emitir(nombre, detalle) {
  * 3. **Pre-roll.** El VAD detecta la voz cuando ya empezo, asi que se guardan
  *    los ultimos 300 ms en un buffer circular y se envian al abrir el turno. Sin
  *    esto se pierde la primera silaba y "sesenta" llega como "senta".
+ *
+ * 4. **El microfono envia SIEMPRE, tambien mientras el agente habla.** Es lo que
+ *    permite interrumpirle a media frase. Quien decide si eso era el paciente o
+ *    era el eco del altavoz es el servidor, no este archivo: tiene el audio, mide
+ *    el eco de la sala, y su decision se puede reproducir contra grabaciones con
+ *    `make bargein`. Un VAD de interrupcion aqui seria una segunda implementacion
+ *    de la misma verdad, imposible de medir, y el registro clinico -- que tiene
+ *    que poder afirmar QUE OYO el paciente -- dependeria de lo que declare un
+ *    navegador.
  */
 
 const VAD = {
   frecuenciaObjetivo: 16000,
   msPorTrama: 64,           // 1024 muestras a 16 kHz
   msCalibracion: 600,
+  // Techo del turno, no plazo habitual. El servidor cierra antes -- a los 450 ms --
+  // cuando lo que el paciente dijo ya se sostiene solo ("como un seis"), y manda
+  // `cerrando_turno`. Este numero sigue aqui porque es el que cierra cuando la
+  // respuesta esta a medias, cuando el cierre adaptativo esta apagado, o cuando la
+  // especulacion no llego a dar texto.
   msSilencioParaCerrar: 900,
   // Pausa breve que dispara la transcripcion especulativa en el servidor. Es la
   // optimizacion de latencia mas grande del sistema: cuando el turno cierra a los
@@ -475,13 +523,6 @@ const VAD = {
   // una segunda puerta, independiente del umbral: filtra el caso en que el ruido
   // ambiente sube lo justo para cruzar el umbral pero nunca hay voz de verdad.
   picoMinimoParaEnviar: 0.035,
-  /* Interrumpir al agente exige un umbral mas alto que hablar normalmente: el eco
-     residual que deja la cancelacion del navegador queda por debajo de este
-     nivel, y la voz del paciente por encima. */
-  umbralBargeIn: 0.075,
-  /* Y exige una racha sostenida: un pico aislado del eco, un golpe en la mesa o
-     una tos no bastan para cortarle la palabra al agente. */
-  tramasParaBargeIn: 3,     // ~190 ms de voz sostenida
 };
 
 const voz = {
@@ -505,8 +546,6 @@ const voz = {
   msSilencio: 0,
   picoTurno: 0,
   yaEspeculo: false,
-  esperandoRelleno: false,
-  tramasSobreBargeIn: 0,
   enviadasWs: 0,
   temporizadorRespuesta: null,
   transporte: "-",          // ws | http | -
@@ -530,20 +569,39 @@ function conectarWS() {
 
   estado.ws.onmessage = (ev) => {
     if (typeof ev.data !== "string") {
+      // Los bytes siempre vienen precedidos de su cabecera JSON, que dejo dicho a
+      // que trozo pertenecen. Sin cabecera no se sabe si es la muletilla o la
+      // respuesta, y eso cambia la fase de la llamada.
       cancelarEsperaRespuesta();
-      reproducirBlob(ev.data);
+      encolarSalida(ev.data);
       return;
     }
     const m = JSON.parse(ev.data);
     if (m.tipo === "relleno") {
-      // Lo siguiente que llega es la muletilla ("mm-hm"). Se marca para que el
-      // reproductor no la confunda con la respuesta y no cambie de fase: el
-      // agente todavia esta pensando.
-      voz.esperandoRelleno = true;
+      // La muletilla ("mm-hm"). Suena por la misma cola que la respuesta -- asi se
+      // le puede bajar el volumen y cortarla igual -- pero no cambia la fase: el
+      // agente todavia esta pensando y se le puede hablar encima.
+      salida.cabecera = { relleno: true };
+    } else if (m.tipo === "voz") {
+      salida.cabecera = m;
     } else if (m.tipo === "especulando") {
       if (m.arrancada) {
         infoVoz(`transcribiendo ya (${m.segundos_acumulados}s), sin esperar el cierre`);
       }
+    } else if (m.tipo === "cerrando_turno") {
+      // El servidor decidio que la respuesta ya estaba completa y cerro el turno
+      // sin esperar el techo de 900 ms.
+      cerrarTurnoPorOrden(m);
+    } else if (m.tipo === "bajar_voz") {
+      bajarVoz();
+    } else if (m.tipo === "subir_voz") {
+      subirVoz();
+      infoVoz("era un ruido, sigo");
+    } else if (m.tipo === "callar") {
+      atenderCallar(m);
+    } else if (m.tipo === "fin_voz") {
+      salida.completa = true;
+      comprobarFinDeVoz();
     } else if (m.tipo === "transcripcion") {
       agregarTurno("paciente", m.texto);
       const ahorro = m.ms_ahorrados > 0 ? ` · ${ms(m.ms_ahorrados)} adelantados` : "";
@@ -567,17 +625,41 @@ function conectarWS() {
 
   estado.ws.onclose = (ev) => {
     console.warn("[centinela] WebSocket cerrado", ev.code, ev.reason);
-    if (voz.activa) {
-      infoVoz(`canal de voz cerrado (código ${ev.code}); se usará HTTP`);
-    }
+    avisarSinWebSocket(`cerrado con código ${ev.code}`);
   };
 
   estado.ws.onerror = () => {
     console.error("[centinela] error en el WebSocket:", estado.ws.url);
-    if (voz.activa) {
-      infoVoz("el WebSocket falló; el audio se enviará por HTTP");
-    }
+    avisarSinWebSocket("la conexión falló");
   };
+}
+
+/* Sin WebSocket la llamada FUNCIONA, pero pierde algo que antes no perdía.
+ *
+ * El turno de voz siempre tuvo respaldo por HTTP, así que un WebSocket caído era una
+ * molestia de latencia. Ya no: es el único camino por el que el micrófono llega al
+ * servidor mientras el agente habla, así que sin él no se le puede interrumpir. Decir
+ * solo "se usará HTTP" sería quedarse corto y dejar a alguien pensando que el barge-in
+ * no funciona cuando lo que no funciona es el canal.
+ *
+ * Y se dice la causa más probable, porque el código 1006 no dice nada y la que nos pasó
+ * a nosotros es la menos evidente del mundo: 10 KB de cookies de OTROS proyectos en
+ * `localhost` --las cookies se comparten entre puertos-- reventaban el handshake.
+ */
+function avisarSinWebSocket(porque) {
+  if (!voz.activa) return;
+  infoVoz(`canal de voz ${porque}: el turno va por HTTP y no se puede interrumpir al agente`);
+  if (!estado.avisoWsDado) {
+    estado.avisoWsDado = true;
+    agregarTurno(
+      "sistema",
+      "El canal de voz por WebSocket no está disponible. La llamada sigue funcionando " +
+      "por HTTP, pero sin interrupción del agente. Si el navegador tiene muchas cookies " +
+      "de otros proyectos en este mismo host, pueden estar reventando el handshake: " +
+      "pruebe en una ventana de incógnito.",
+      "alerta",
+    );
+  }
 }
 
 /* --------------------------- estado visible -------------------------------- */
@@ -666,6 +748,7 @@ async function iniciarVoz() {
 
 function detenerVoz() {
   voz.activa = false;
+  pararSalida();
   try { voz.procesador?.disconnect(); } catch (_) {}
   try { voz.fuente?.disconnect(); } catch (_) {}
   voz.stream?.getTracks().forEach((t) => t.stop());
@@ -706,53 +789,33 @@ function procesarTrama(evento) {
     return;
   }
 
-  // El microfono NUNCA se cierra: escucha tambien mientras el agente habla y
-  // mientras el pipeline procesa. Es lo que hace que la llamada se sienta como
-  // una llamada y no como un walkie-talkie.
+  // El remuestreo va ANTES de cualquier rama, y aqui hubo un fallo real que vale la
+  // pena dejar escrito: estaba despues, y las ramas de "agente" y "procesando"
+  // hacian `voz.preRoll.push(pcm)` sobre una `const` que todavia estaba en su zona
+  // muerta. Cada trama de microfono mientras el agente hablaba lanzaba un
+  // ReferenceError. Lo visible eran dos cosas: la interrupcion se quedaba sin
+  // pre-roll -- y por tanto perdia las primeras silabas -- y la consola se llenaba
+  // de excepciones que no apuntaban a ninguna parte.
+  const pcm = remuestrearA16k(entrada, voz.frecuenciaReal);
+
+  // El microfono NUNCA se cierra y las tramas SALEN siempre, tambien mientras el
+  // agente habla y mientras el pipeline procesa. Es lo que hace que la llamada se
+  // sienta como una llamada y no como un walkie-talkie.
   //
   // El riesgo de dejarlo abierto es que el agente se transcriba a si mismo. Se
-  // controla con tres cosas a la vez, no con una:
-  //   1. `echoCancellation` del navegador, que resta el audio que esta saliendo.
-  //   2. Un umbral de barge-in mas alto que el umbral normal de voz: el eco
-  //      residual queda por debajo, la voz del paciente por encima.
-  //   3. Una racha minima de tramas por encima de ese umbral, para que un pico
-  //      aislado del eco o un golpe no cuenten como interrupcion.
-  if (voz.fase === "agente") {
-    if (rms > VAD.umbralBargeIn) {
-      voz.tramasSobreBargeIn++;
-      if (voz.tramasSobreBargeIn >= VAD.tramasParaBargeIn) {
-        interrumpirAgente();
-        // Se arranca el turno aqui mismo, sin pasar por "escuchando": el paciente
-        // ya empezo a hablar y esas primeras silabas no se pueden perder.
-        fase("hablando");
-        voz.msHablando = 0;
-        voz.msSilencio = 0;
-        voz.picoTurno = rms;
-        voz.enviadasWs = 0;
-        voz.turnoPcm = [];
-        for (const trama of voz.preRoll) enviarAudio(trama);
-        voz.preRoll = [];
-      }
-    } else {
-      voz.tramasSobreBargeIn = 0;
-    }
-    // Aunque no haya interrumpido, se guarda el pre-roll: si interrumpe en la
-    // trama siguiente, las anteriores ya estan disponibles.
+  // controla con dos cosas: `echoCancellation` del navegador, que resta el audio
+  // que esta saliendo, y un umbral de interrupcion que el servidor calcula a partir
+  // del eco que de verdad esta midiendo en esta sala. La decision es suya; aqui solo
+  // se captura, se remuestrea y se envia.
+  if (voz.fase === "agente" || voz.fase === "procesando") {
+    enviarTramaSuelta(pcm);
+    // Y se guarda el pre-roll igual: si el servidor manda `callar` en la trama
+    // siguiente, estas ya estan disponibles para el respaldo por HTTP.
     voz.preRoll.push(pcm);
     if (voz.preRoll.length > VAD.preRollTramas) voz.preRoll.shift();
     return;
   }
 
-  // Mientras el pipeline procesa el turno anterior, el microfono sigue abierto y
-  // guardando pre-roll. Si el paciente anade algo -- "ah, y tambien..." -- no se
-  // pierde el arranque de esa frase.
-  if (voz.fase === "procesando") {
-    voz.preRoll.push(pcm);
-    if (voz.preRoll.length > VAD.preRollTramas) voz.preRoll.shift();
-    return;
-  }
-
-  const pcm = remuestrearA16k(entrada, voz.frecuenciaReal);
   const hayVoz = rms > voz.umbral;
 
   if (voz.fase === "escuchando") {
@@ -831,12 +894,25 @@ function calibrar(rms, msTrama) {
     voz.umbral = Math.min(VAD.umbralMaximo, Math.max(VAD.umbralMinimo, voz.piso * VAD.factorSobreRuido));
     $("#medidor-umbral").style.left = `${Math.min(100, voz.umbral * 400)}%`;
     infoVoz(`ruido de sala ${voz.piso.toFixed(4)} · umbral de voz ${voz.umbral.toFixed(4)}`);
+
+    // El servidor necesita esta medicion para calcular el umbral de interrupcion de
+    // ESTA sala. Se manda la medida, no una decision: cuanto hay que hablar para
+    // cortarle la palabra al agente lo decide el servidor, que tambien ve el eco.
+    if (estado.ws?.readyState === WebSocket.OPEN) {
+      estado.ws.send(JSON.stringify({
+        tipo: "calibracion", piso: voz.piso, umbral: voz.umbral,
+      }));
+    }
+
     fase("escuchando");
   }
 }
 
 function cerrarTurno(porLargo) {
   fase("procesando");
+  // Tanda nueva: cualquier trozo de voz del turno anterior que llegara tarde queda
+  // descartado, y la contabilidad de fragmentos dichos empieza de cero.
+  nuevaTandaDeVoz();
   const segundos = (voz.turnoPcm.reduce((n, t) => n + t.length, 0) / 16000).toFixed(1);
 
   // Aqui arranca la medicion de latencia que exige la rubrica: el instante en
@@ -868,6 +944,19 @@ function enviarAudio(pcm) {
   if (estado.ws?.readyState === WebSocket.OPEN) {
     estado.ws.send(pcm.buffer);
     voz.enviadasWs++;
+  }
+}
+
+/* Trama que se envia sin pertenecer al turno en curso.
+ *
+ * Es la del microfono mientras el agente habla o piensa. No entra en `turnoPcm`
+ * porque ese buffer es el que se reenviaria por HTTP si el WebSocket cayera, y ahi
+ * dentro esas tramas son eco del altavoz. El servidor sabe encaminarlas: al anillo
+ * de pre-roll si esta hablando, al turno siguiente si esta pensando.
+ */
+function enviarTramaSuelta(pcm) {
+  if (estado.ws?.readyState === WebSocket.OPEN) {
+    estado.ws.send(pcm.buffer);
   }
 }
 
@@ -1022,25 +1111,173 @@ function remuestrearA16k(entrada, frecuenciaOrigen) {
 
 /* ------------------- reproduccion y vuelta a escuchar ---------------------- */
 
-function reproducirBlob(datos) {
-  const blob = new Blob([datos], { type: "audio/wav" });
-  const url = URL.createObjectURL(blob);
+/* ======================= la voz del agente, en cola =========================
+ *
+ * La voz del agente llega frase a frase y se programa en una cola de Web Audio en
+ * vez de en un `<audio>`. No es preferencia tecnica: un `<audio>` no puede hacer
+ * ninguna de las tres cosas que hacen falta para interrumpir como una persona.
+ *
+ *   1. **Bajar el volumen en 20 ms.** Cuando el servidor sospecha que el paciente
+ *      empezo a hablar, el agente baja la voz -- como quien se calla a medias -- y
+ *      solo corta si la sospecha se confirma. Un falso positivo cuesta un bache de
+ *      250 ms en vez de un turno perdido. Y de paso baja el eco justo en la ventana
+ *      donde estorba, asi que la comprobacion sale mejor.
+ *   2. **Parar en seco sin cola de reproduccion pendiente.** `pause()` sobre un
+ *      `<audio>` deja el resto del WAV listo para seguir; aqui los nodos que no han
+ *      sonado se descartan y no queda nada que reanudar por accidente.
+ *   3. **Encadenar frases sin hueco.** Cada frase se programa en el instante exacto
+ *      en que acaba la anterior. Con un `<audio>` por frase habria un chasquido
+ *      audible en cada empalme.
+ *
+ * El `<audio id="reproductor">` sigue existiendo para el camino HTTP de respaldo,
+ * que recibe el turno de una pieza y por una URL.
+ */
 
-  if (voz.esperandoRelleno) {
-    // Muletilla: se reproduce en un canal aparte para que no cancele ni sea
-    // cancelada por la respuesta. Suena mientras el pipeline sigue trabajando.
-    voz.esperandoRelleno = false;
-    const relleno = $("#reproductor-relleno");
-    relleno.src = url;
-    relleno.volume = 0.85;
-    relleno.play().catch(() => {});
+const salida = {
+  contexto: null,
+  ganancia: null,
+  // Cabecera JSON del proximo mensaje binario. El servidor manda siempre
+  // `{"tipo":"voz",...}` o `{"tipo":"relleno"}` antes de los bytes.
+  cabecera: null,
+  nodos: [],
+  // Instante del contexto en que debe empezar el proximo trozo, para empalmar sin
+  // hueco. En segundos, escala de `AudioContext.currentTime`.
+  siguienteEn: 0,
+  pendientes: 0,
+  // Se serializa el encolado porque `decodeAudioData` es asincrono: sin esto, dos
+  // frases que llegan seguidas pueden programarse en el orden equivocado.
+  encadenado: Promise.resolve(),
+  completa: false,
+  fragmentosDichos: 0,
+  // Numero de tanda. Cada corte o cada turno nuevo la incrementa, y los nodos
+  // guardan la suya. Es lo que distingue "termino de sonar" de "lo paramos": un
+  // `onended` de una tanda vieja no puede reportar nada ni cambiar la fase. Con una
+  // bandera booleana no bastaba, porque `onended` llega despues del corte y ya la
+  // habriamos bajado.
+  generacion: 0,
+};
+
+const VOLUMEN_AGACHADO = 0.15;
+
+function asegurarSalida() {
+  if (!salida.contexto) {
+    salida.contexto = new AudioContext();
+    salida.ganancia = salida.contexto.createGain();
+    salida.ganancia.gain.value = 1;
+    salida.ganancia.connect(salida.contexto.destination);
+  }
+  if (salida.contexto.state === "suspended") salida.contexto.resume().catch(() => {});
+  return salida.contexto;
+}
+
+function encolarSalida(datos) {
+  const meta = salida.cabecera || {};
+  salida.cabecera = null;
+  salida.encadenado = salida.encadenado.then(() => programarTrozo(meta, datos));
+}
+
+async function programarTrozo(meta, datos) {
+  const ctx = asegurarSalida();
+  const generacion = salida.generacion;
+  let buffer;
+  try {
+    buffer = await ctx.decodeAudioData(datos.slice(0));
+  } catch (e) {
+    console.warn("[centinela] no se pudo decodificar un trozo de voz", e);
     return;
   }
 
-  const a = $("#reproductor");
-  a.src = url;
-  if (voz.activa) fase("agente");
-  a.play().catch(() => {});
+  // Si se corto mientras se decodificaba, este trozo ya no se dice.
+  if (generacion !== salida.generacion) return;
+
+  const fuente = ctx.createBufferSource();
+  fuente.buffer = buffer;
+  fuente.connect(salida.ganancia);
+
+  // Un margen de 20 ms sobre el reloj: programar en el pasado suena a chasquido.
+  const inicio = Math.max(ctx.currentTime + 0.02, salida.siguienteEn);
+  fuente.start(inicio);
+  salida.siguienteEn = inicio + buffer.duration;
+  salida.nodos.push(fuente);
+  salida.pendientes++;
+
+  // La muletilla no cambia de fase: el agente todavia esta pensando y se le puede
+  // hablar encima sin que eso sea una interrupcion.
+  if (!meta.relleno && voz.activa) fase("agente");
+
+  fuente.onended = () => {
+    const i = salida.nodos.indexOf(fuente);
+    if (i >= 0) salida.nodos.splice(i, 1);
+    if (generacion !== salida.generacion) return;
+    salida.pendientes = Math.max(0, salida.pendientes - 1);
+    // Se reporta al terminar el ultimo trozo de un fragmento, no al empezarlo: lo
+    // que cuenta como dicho es lo que el paciente ya oyo entero.
+    if (meta.fin_fragmento) reportarHablado((meta.fragmento || 0) + 1);
+    comprobarFinDeVoz();
+  };
+}
+
+function reportarHablado(fragmentos) {
+  if (fragmentos <= salida.fragmentosDichos) return;
+  salida.fragmentosDichos = fragmentos;
+  if (estado.ws?.readyState === WebSocket.OPEN) {
+    estado.ws.send(JSON.stringify({ tipo: "hablado", fragmentos }));
+  }
+}
+
+function comprobarFinDeVoz() {
+  if (salida.pendientes > 0 || !salida.completa) return;
+  salida.completa = false;
+  salida.siguienteEn = 0;
+  // El eco existe hasta que suena la ultima muestra, no hasta que se envia: por eso
+  // es el cliente quien avisa de que el agente ya termino de hablar.
+  if (estado.ws?.readyState === WebSocket.OPEN) {
+    estado.ws.send(JSON.stringify({ tipo: "fin_reproduccion" }));
+  }
+  // Tambien desde "procesando", y no solo desde "agente": si Piper no esta disponible
+  // el turno no produce ni un byte de voz, `fin_voz` llega con cero fragmentos, y sin
+  // esta salida la interfaz se quedaria en "Procesando..." para siempre.
+  if (voz.activa && (voz.fase === "agente" || voz.fase === "procesando")) {
+    fase("escuchando");
+    voz.preRoll = [];
+  }
+}
+
+function bajarVoz() {
+  if (!salida.ganancia) return;
+  salida.ganancia.gain.setTargetAtTime(
+    VOLUMEN_AGACHADO, salida.contexto.currentTime, 0.02);
+  infoVoz("le oigo encima, bajo la voz");
+}
+
+function subirVoz() {
+  if (!salida.ganancia) return;
+  salida.ganancia.gain.setTargetAtTime(1, salida.contexto.currentTime, 0.03);
+}
+
+/* Abre una tanda nueva sin cortar nada que este sonando.
+ *
+ * Se llama al cerrar el turno del paciente: lo que quede de la respuesta anterior ya
+ * no vale, y los `onended` que lleguen tarde no deben reportar fragmentos dichos del
+ * turno que acaba de empezar. */
+function nuevaTandaDeVoz() {
+  salida.generacion++;
+  salida.pendientes = 0;
+  salida.completa = false;
+  salida.fragmentosDichos = 0;
+  salida.cabecera = null;
+}
+
+function pararSalida() {
+  nuevaTandaDeVoz();
+  for (const nodo of salida.nodos) {
+    try { nodo.stop(); } catch (_) {}
+  }
+  salida.nodos = [];
+  salida.siguienteEn = 0;
+  salida.encadenado = Promise.resolve();
+  // Se restaura el volumen para el turno siguiente, no para este.
+  subirVoz();
 }
 
 $("#reproductor").addEventListener("ended", () => {
@@ -1101,14 +1338,57 @@ function detenerAmbiente() {
   }, 50);
 }
 
-function interrumpirAgente() {
-  const a = $("#reproductor");
-  a.pause();
-  a.currentTime = 0;
-  infoVoz("le interrumpí porque empezó a hablar");
-  agregarTurno("sistema", "El paciente interrumpió al agente");
-  fase("escuchando");
+/* El servidor confirmo que era el paciente hablando: el agente se calla.
+ *
+ * Lo que importa aqui no es el silencio, es lo que se dice de la interrupcion en la
+ * tira de la llamada. El servidor manda cuantos fragmentos alcanzo a decir y si la
+ * pregunta que estaba haciendo se devolvio al guion; con eso la consola puede mostrar
+ * el turno del agente truncado y no fingir que dijo lo que nadie oyo.
+ */
+function atenderCallar(m) {
+  pararSalida();
+  const reproductor = $("#reproductor");
+  reproductor.pause();
+  reproductor.currentTime = 0;
+
+  const dicho = (m.texto_dicho || "").trim();
+  agregarTurno("sistema", dicho
+    ? `El paciente interrumpió al agente. Alcanzó a decir: «${dicho}»`
+    : "El paciente interrumpió al agente antes de que dijera nada");
+
+  if (m.pregunta_devuelta) {
+    agregarTurno("sistema",
+      `La pregunta sobre ${m.pregunta_devuelta} no se llegó a oír: vuelve al guion`);
+  }
+
+  infoVoz(`interrumpido · ${m.fragmentos_dichos || 0} dicho(s), ` +
+    `${m.fragmentos_en_deuda || 0} pendiente(s)`);
+
+  // El turno arranca aqui, sin pasar por "escuchando": el paciente ya esta hablando y
+  // el servidor ya tiene sus primeras silabas guardadas.
+  fase("hablando");
+  voz.msHablando = 0;
+  voz.msSilencio = 0;
+  voz.picoTurno = voz.rmsActual;
+  voz.yaEspeculo = false;
+  voz.enviadasWs = 0;
+  // El respaldo por HTTP se siembra con el pre-roll: si el WebSocket cayera ahora, el
+  // reintento tiene que llevar tambien lo que el paciente dijo al interrumpir.
+  voz.turnoPcm = voz.preRoll.slice();
+  voz.enviadasWs = voz.turnoPcm.length;
   voz.preRoll = [];
+}
+
+/* El servidor cerro el turno antes del techo de 900 ms porque la respuesta ya se
+ * sostenia sola. Aqui solo hay que dejar de grabar y esperar. */
+function cerrarTurnoPorOrden(m) {
+  if (voz.fase !== "hablando") return;
+  fase("procesando");
+  infoVoz(`turno cerrado a ${m.ms_silencio} ms · ${m.motivo}`);
+  voz.msHablando = 0;
+  voz.msSilencio = 0;
+  voz.preRoll = [];
+  armarEsperaRespuesta();
 }
 
 /* --------------------------- paneles de decision ---------------------------- */

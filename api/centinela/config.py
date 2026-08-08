@@ -78,6 +78,32 @@ class Config:
     # megas; el limite esta para que una peticion no llene el disco del servidor.
     max_mb_documento: int = int(os.environ.get("CENTINELA_MAX_MB_DOC", "64"))
 
+    # --- conversacion ---
+    #
+    # El paciente puede cortarle la palabra al agente. El interruptor existe para
+    # poder apagarlo en una demo sin tocar codigo: apagado, la voz del agente sale
+    # entera y el turno cierra a los 900 ms de siempre, que es la conducta que
+    # midieron todas las metricas anteriores.
+    bargein: bool = os.environ.get("CENTINELA_BARGEIN", "1") == "1"
+    # Cuanto por encima del eco observado hay que hablar para cortar, y con que
+    # percentil se resume el eco. Los dos valores por defecto son los que eligio el
+    # barrido de `eval/bargein.py`, y `tests/test_bargein.py` comprueba que no se
+    # separen de los del modulo: tener el numero medido en un sitio y el que corre en
+    # otro es peor que no medirlo.
+    bargein_margen_eco: float = float(os.environ.get("CENTINELA_BARGEIN_MARGEN_ECO", "1.8"))
+    # Cuanto audio se acumula antes de preguntarle al STT si eso era voz. Es tambien
+    # lo que dura el bache cuando resulta que era una tos.
+    bargein_ms_confirmacion: float = float(
+        os.environ.get("CENTINELA_BARGEIN_MS_CONF", "250")
+    )
+
+    # El turno del paciente cierra en cuanto su respuesta se sostiene sola, con este
+    # plazo como piso. El TECHO no esta aqui: lo pone el VAD del navegador, que es
+    # quien mide el silencio en el microfono. Poner aqui una variable de techo seria
+    # ofrecer un mando que no esta conectado a nada.
+    cierre_adaptativo: bool = os.environ.get("CENTINELA_CIERRE_ADAPTATIVO", "1") == "1"
+    cierre_min_ms: float = float(os.environ.get("CENTINELA_CIERRE_MIN_MS", "450"))
+
     @property
     def ruta_metricas(self) -> Path:
         return self.dir_runtime / "metricas.jsonl"
@@ -102,6 +128,13 @@ class Config:
                 "sla_rojo_min": self.sla_rojo_min,
                 "sla_amarillo_h": self.sla_amarillo_h,
                 "canales": ["archivo"] + (["webhook"] if self.webhook_alertas else []),
+            },
+            "conversacion": {
+                "bargein": self.bargein,
+                "bargein_margen_eco": self.bargein_margen_eco,
+                "bargein_ms_confirmacion": self.bargein_ms_confirmacion,
+                "cierre_adaptativo": self.cierre_adaptativo,
+                "cierre_min_ms": self.cierre_min_ms,
             },
             "acceso_protegido": bool(self.token_consola),
         }

@@ -2,7 +2,7 @@
 
 > Generado por `scripts/render_metricas.py` a partir de los informes que
 > producen los arneses de evaluación. Ninguna cifra se escribe a mano.
-> Última generación: 2026-08-08T12:50:29+00:00
+> Última generación: 2026-08-08T15:34:40+00:00
 
 ## Métricas exigidas por la rúbrica (§5)
 
@@ -96,7 +96,7 @@ Matriz de confusión (filas = etiqueta oficial, columnas = decisión del motor):
 
 ## Suite adversarial
 
-`make redteam` · 42/42 casos (100.0%) en 40.7 s.
+`make redteam` · 42/42 casos (100.0%) en 41.5 s.
 
 | Familia | Pasan |
 |---|---:|

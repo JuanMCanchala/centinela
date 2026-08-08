@@ -138,7 +138,12 @@ async def main() -> int:
                     help="manda un tono en vez de voz (debe dar sin_habla)")
     args = ap.parse_args()
 
+    # Se acepta la url en cualquiera de los dos esquemas y se convierte a los dos que
+    # hacen falta. Antes solo funcionaba con `ws://`: pasarle la misma `--url http://`
+    # que usan el resto de los arneses reventaba con "scheme isn't ws or wss" despues
+    # de haber sintetizado el audio, que es el peor momento para fallar.
     http = args.url.replace("ws://", "http://").replace("wss://", "https://")
+    socket = args.url.replace("https://", "wss://").replace("http://", "ws://")
     c = httpx.Client(base_url=http, timeout=120.0)
     lid = c.post("/api/llamadas", json=PACIENTE).json()["llamada_id"]
 
@@ -156,7 +161,7 @@ async def main() -> int:
 
     print(f"PCM16: {len(pcm)} bytes ({len(pcm)/2/16000:.2f}s a 16 kHz mono)")
 
-    async with websockets.connect(f"{args.url}/ws/llamada/{lid}", max_size=None) as ws:
+    async with websockets.connect(f"{socket}/ws/llamada/{lid}", max_size=None) as ws:
         # Se imita al navegador: trozos de 1024 muestras (64 ms) en tiempo real, no
         # todo de golpe. Enviarlo de golpe falsearia la prueba, porque la
         # especulacion depende de que el audio llegue al ritmo del habla.

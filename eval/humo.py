@@ -28,6 +28,7 @@ import time
 from pathlib import Path
 
 import httpx
+import numpy as np
 
 RAIZ = Path(__file__).resolve().parents[1]
 
@@ -650,6 +651,228 @@ def caso_llamada_abandonada(cli: Cliente, url: str) -> None:
     )
 
 
+def caso_barge_in(cli: Cliente, url: str) -> None:
+    """El paciente le corta la palabra al agente, de extremo a extremo.
+
+    Es el unico caso que ejercita el camino completo de la interrupcion: voz por
+    trozos, deteccion en el servidor, confirmacion con el STT, y la parte clinica --
+    que la pregunta que el paciente no llego a oir se vuelva a hacer.
+
+    Ese ultimo punto es el que importa y el que no se ve mirando la interfaz. La
+    politica avanza de dominio y carga el intento CUANDO CONSTRUYE los fragmentos, no
+    cuando el paciente los oye. Sin la correccion, tres interrupciones agotarian el
+    dominio, lo dejarian como desconocido y forzarian amarillo al cerrar: una alerta
+    producida por el transporte de audio, no por el paciente.
+
+    El audio que interrumpe es una grabacion de voz humana de `eval/audios/`. Si no hay
+    grabaciones, el caso se salta diciendolo -- no se finge con un tono sintetico, que
+    es justo lo que el sistema debe rechazar.
+    """
+
+    titulo("11. El paciente interrumpe al agente a media frase")
+
+    import asyncio
+    import wave
+
+    import websockets
+
+    audios = sorted((RAIZ / "eval" / "audios").glob("*.wav"))
+    if not audios:
+        print("       (saltado: no hay grabaciones en eval/audios/, corre `make escucha-guion`)")
+        return
+
+    def pcm_de(fragmento_del_nombre: str, repeticiones: int = 1) -> bytes | None:
+        """La grabacion, a 16 kHz y normalizada al nivel de una voz cercana.
+
+        Se normaliza porque el detector decide por energia RELATIVA al eco: un audio
+        flojo no probaria nada y uno saturado lo probaria todo. Y se repite cuando hace
+        falta voz sostenida -- interrumpir exige una racha, no un pico.
+        """
+
+        ruta = next((a for a in audios if fragmento_del_nombre in a.name), None)
+        salida_pcm = None
+
+        if ruta is not None:
+            with wave.open(str(ruta), "rb") as w:
+                crudo = w.readframes(w.getnframes())
+                frecuencia = w.getframerate()
+                canales = w.getnchannels()
+
+            m = np.frombuffer(crudo, dtype="<i2").astype(np.float32) / 32768.0
+            if canales > 1:
+                m = m.reshape(-1, canales).mean(axis=1)
+            if frecuencia != 16000:
+                razon = frecuencia / 16000
+                destino = int(len(m) / razon)
+                re = np.empty(destino, dtype=np.float32)
+                for i in range(destino):
+                    desde = int(i * razon)
+                    hasta = min(len(m), int((i + 1) * razon))
+                    re[i] = m[desde:hasta].mean() if hasta > desde else 0.0
+                m = re
+
+            actual = float(np.sqrt(np.mean(np.square(m.astype(np.float64)))))
+            if actual > 0:
+                m = np.clip(m * (0.14 / actual), -1.0, 1.0)
+            if repeticiones > 1:
+                m = np.tile(m, repeticiones)
+            salida_pcm = (m * 32767).astype("<i2").tobytes()
+
+        return salida_pcm
+
+    # Dos grabaciones distintas, y la eleccion importa.
+    #
+    # Para el primer turno hace falta algo BENIGNO. La primera version de este caso usaba
+    # "no puedo caminar ni apoyar el pie" -- que es una bandera roja de movilidad -- y el
+    # agente terminaba la llamada en ese mismo turno, asi que la interrupcion ocurria
+    # sobre una llamada ya cerrada y no probaba nada de lo que pretendia probar.
+    pcm_identidad = pcm_de("si_soy_yo") or pcm_de("normal")
+    # Para interrumpir hace falta voz SOSTENIDA: se repite para tener ~2 s. Y se elige
+    # una frase que NO responde a la pregunta sobre el dolor, porque lo que se quiere
+    # comprobar es que la pregunta que el paciente no oyo se vuelve a hacer. Con "un
+    # seis" el dominio quedaria resuelto de casualidad y el guion avanzaria.
+    pcm_encima = pcm_de("normal", repeticiones=4) or pcm_de("si_soy_yo", repeticiones=4)
+
+    if pcm_identidad is None or pcm_encima is None:
+        print("       (saltado: faltan grabaciones del guion de `make escucha-guion`)")
+        return
+
+    ini = cli.iniciar(PACIENTE_VERDE)
+    llamada_id = ini["llamada_id"]
+    ws_url = url.replace("http://", "ws://").replace("https://", "wss://")
+
+    res: dict = {"callar": None, "voz": 0, "despues": None, "traza": None}
+
+    async def interrumpir() -> None:
+        async def hablar(pcm: bytes) -> None:
+            for i in range(0, len(pcm), 2048):
+                await ws.send(pcm[i : i + 2048])
+                await asyncio.sleep(0.005)
+
+        async def esperar(tipos: tuple[str, ...], segundos: float) -> dict | None:
+            visto = None
+            fin = time.perf_counter() + segundos
+            while time.perf_counter() < fin and visto is None:
+                try:
+                    msg = await asyncio.wait_for(ws.recv(), timeout=segundos)
+                except asyncio.TimeoutError:
+                    break
+                if isinstance(msg, str):
+                    d = json.loads(msg)
+                    if d.get("tipo") == "voz":
+                        res["voz"] += 1
+                    if d.get("tipo") in tipos:
+                        visto = d
+            return visto
+
+        async with websockets.connect(
+            f"{ws_url}/ws/llamada/{llamada_id}", max_size=None
+        ) as ws:
+            # El cliente real manda su calibracion tras medir la sala.
+            await ws.send(json.dumps({"tipo": "calibracion", "piso": 0.005, "umbral": 0.022}))
+
+            # Turno 1: confirmar identidad. Benigno a proposito, para que la llamada
+            # siga abierta cuando llegue la interrupcion. La primera version usaba "no
+            # puedo caminar" -- bandera roja de movilidad -- y el agente terminaba la
+            # llamada en ese turno, asi que la interrupcion caia sobre una llamada ya
+            # cerrada y no probaba nada.
+            await hablar(pcm_identidad)
+            await ws.send(json.dumps({"tipo": "fin_habla"}))
+            await esperar(("voz",), 40)
+
+            # Se le habla encima. El cliente real reporta lo que va reproduciendo; aqui
+            # se declara que sono el primer fragmento, que es lo que el servidor usa
+            # para saber que se oyo y que no.
+            await ws.send(json.dumps({"tipo": "hablado", "fragmentos": 1}))
+            await hablar(pcm_encima)
+            res["callar"] = await esperar(("callar",), 30)
+
+            # La traza se pide con el socket ABIERTO. Al cerrarlo, la llamada se cierra
+            # y sale de memoria -- que es lo correcto y es lo que hace el caso 10 --,
+            # asi que `en_memoria` seria None y no habria nada que comprobar.
+            res["traza"] = cli.traza(llamada_id)
+
+            # Y el paciente termina de decir lo que estaba diciendo.
+            await ws.send(json.dumps({"tipo": "fin_habla"}))
+            res["despues"] = await esperar(("turno", "sin_habla"), 60)
+
+    asyncio.run(interrumpir())
+
+    check(
+        res["voz"] >= 1,
+        "la voz del agente sale por trozos y no de una pieza",
+        f"trozos recibidos: {res['voz']}",
+    )
+
+    corte = res["callar"]
+    check(corte is not None, "el servidor manda callar cuando confirma que era el paciente")
+
+    if corte is None:
+        return
+
+    print(f"       oyo: {corte.get('texto_oido', '')[:60]!r}")
+    print(f"       dicho={corte.get('texto_dicho', '')[:40]!r} "
+          f"en_deuda={corte.get('fragmentos_en_deuda')} "
+          f"pregunta_devuelta={corte.get('pregunta_devuelta')}")
+
+    check(
+        corte.get("pregunta_devuelta") == "dolor",
+        "la pregunta que el paciente no oyo se devuelve al guion",
+        f"pregunta_devuelta={corte.get('pregunta_devuelta')}",
+    )
+
+    traza = res["traza"] or {}
+    memoria = (traza.get("en_memoria") or {})
+    en_disco = traza.get("turnos_persistidos") or []
+
+    def marcados(turnos: list[dict]) -> list[str]:
+        return [t.get("texto") or "" for t in turnos
+                if t.get("hablante") == "agente"
+                and "[interrumpido]" in (t.get("texto") or "")]
+
+    check(
+        bool(marcados(memoria.get("turnos") or [])),
+        "el turno interrumpido queda truncado en la traza de la llamada",
+    )
+    # Y en disco, que es la comprobacion que de verdad importa: la hoja que lee una
+    # enfermera sale del registro durable, no de la memoria del proceso. La correccion
+    # se hacia solo en memoria y el disco seguia afirmando la pregunta entera.
+    check(
+        bool(marcados(en_disco)),
+        "la correccion baja al registro durable, no se queda en memoria",
+        f"en disco: {[m[:52] for m in marcados(en_disco)]}",
+    )
+
+    # La parte clinica, y la que no se ve mirando la interfaz: una interrupcion no gasta
+    # un intento. Si lo gastara, tres cortes agotarian el dominio, lo dejarian como
+    # desconocido, y el cierre seria amarillo por culpa del transporte de audio.
+    intentos = memoria.get("intentos_por_dominio") or {}
+    check(
+        intentos.get("dolor", 0) == 0,
+        "interrumpir no gasta un intento del dominio",
+        f"intentos_por_dominio={intentos}",
+    )
+    check(
+        memoria.get("dominio_actual") == "dolor",
+        "el guion sigue en el dominio cuya pregunta se corto",
+        f"dominio_actual={memoria.get('dominio_actual')}",
+    )
+
+    despues = res["despues"] or {}
+    check(
+        despues.get("tipo") == "turno",
+        "tras la interrupcion el turno del paciente se atiende con normalidad",
+        f"tipo={despues.get('tipo')}",
+    )
+    if despues.get("tipo") == "turno":
+        print(f"       agente: {despues.get('agente_dice', '')[:70]!r}")
+        check(
+            (despues.get("dominio_actual") or "") == "dolor",
+            "y el agente vuelve a preguntar por el dominio que se perdio",
+            f"dominio_actual={despues.get('dominio_actual')}",
+        )
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--url", default="http://127.0.0.1:8000")
@@ -677,6 +900,7 @@ def main() -> int:
     caso_conocimiento_vivo(cli)
     caso_alerta_anticipada(cli)
     caso_llamada_abandonada(cli, args.url)
+    caso_barge_in(cli, args.url)
     caso_metricas(cli)
 
     titulo("RESULTADO")

@@ -96,6 +96,15 @@ SUITES: tuple[Suite, ...] = (
         argumentos=["-m", "eval.tendencia"],
     ),
     Suite(
+        id="bargein",
+        titulo="Interrumpir al agente",
+        que="Mezcla las 53 locuciones reales del agente con 18 grabaciones de voz "
+            "humana a atenuaciones de eco conocidas. Reporta la latencia hasta que "
+            "baja la voz y publica a qué volumen de altavoz deja de funcionar. Falla "
+            "si un solo corte falso sobrevive a las dos capas.",
+        argumentos=["-m", "eval.bargein"],
+    ),
+    Suite(
         id="cifras",
         titulo="Cifras de los documentos",
         que="Compara los números que el README y el informe afirman contra la "

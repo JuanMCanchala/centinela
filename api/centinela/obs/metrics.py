@@ -54,6 +54,17 @@ class MedicionTurno:
     tts_desde_cache: bool = False
     intencion: str | None = None
     nivel: str | None = None
+    # --- ritmo de la conversacion -------------------------------------------
+    # Este turno empieza porque el paciente le corto la palabra al agente. No se anota
+    # en el turno interrumpido sino en el siguiente, y a proposito: la medicion del
+    # turno cortado ya se cerro cuando la interrupcion ocurre -- el ticket y las
+    # metricas se registran ANTES de hablar, para que una bandera roja no espere a que
+    # el agente termine de dar instrucciones.
+    tras_interrupcion: bool = False
+    # Silencio que hubo cuando el turno cerro. Cero significa que cerro el techo de
+    # 900 ms del cliente; un valor entre 450 y 900 es un cierre adaptativo, y es la
+    # medida de cuanta pausa se le quito a la conversacion.
+    ms_silencio_al_cerrar: float = 0.0
 
     def a_dict(self) -> dict:
         return asdict(self)

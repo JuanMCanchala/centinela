@@ -20,8 +20,23 @@ Están en [`api/centinela/config.py`](../api/centinela/config.py) y se publican 
 | `CENTINELA_SECRETO_WEBHOOK` | *(vacío)* | Secreto para la firma HMAC-SHA256 del cuerpo |
 | `CENTINELA_TOKEN` | *(vacío)* | Si se define, protege los endpoints que modifican algo |
 | `CENTINELA_MAX_MB_DOC` | `64` | Tope de tamaño de un PDF subido |
+| `CENTINELA_BARGEIN` | `1` | El paciente puede cortarle la palabra al agente. A `0`, la voz sale entera |
+| `CENTINELA_BARGEIN_MARGEN_ECO` | `1.8` | Cuánto por encima del eco medido hay que hablar para cortar |
+| `CENTINELA_BARGEIN_MS_CONF` | `250` | Cuánto audio se acumula antes de preguntarle al STT si eso era voz |
+| `CENTINELA_CIERRE_ADAPTATIVO` | `1` | El turno cierra en cuanto la respuesta se sostiene sola. A `0`, siempre el techo |
+| `CENTINELA_CIERRE_MIN_MS` | `450` | Plazo mínimo: por debajo no se cierra ni con la respuesta más clara |
 | `CENTINELA_LLM_MODEL` | `phi3.5:3.8b-mini-instruct-q4_K_M` | Modelo declarado (compuerta G3) |
 | `CENTINELA_DIR_RUNTIME` | `data/runtime` | Dónde vive la base de datos de llamadas |
+
+El `1.8` del margen de eco lo eligió el barrido de `make bargein-barrido`, y
+`tests/test_bargein.py` comprueba que la configuración no se separe del módulo: tener el
+número medido en un sitio y el que corre en otro es peor que no medirlo —pasó, y el test
+existe por eso. Subirlo hace más difícil interrumpir y más raro el bache falso; bajarlo, lo
+contrario.
+
+**No hay variable de techo del turno.** El techo de 900 ms lo pone el VAD del navegador,
+que es quien mide el silencio en el micrófono (`web/app.js`, `VAD.msSilencioParaCerrar`).
+Publicar aquí un `CENTINELA_CIERRE_MAX_MS` sería ofrecer un mando desconectado.
 
 ---
 
@@ -69,6 +84,25 @@ cuerpo con HMAC-SHA256 en la cabecera `X-Centinela-Firma`.
 lista lo que se pasó de plazo. La pestaña **Alertas** de la consola muestra las dos
 cosas y permite acusar desde ahí.
 
+### El registro dice lo que el paciente oyó
+
+Cuando el paciente le corta la palabra al agente, el turno del agente queda truncado en el
+registro con el marcador `[interrumpido]`, y la pregunta que no se llegó a oír **vuelve al
+guion sin gastar un intento**.
+
+Lo segundo es lo que importa y no se ve mirando la interfaz. La política avanza de dominio y
+carga el intento cuando *construye* los fragmentos, no cuando el paciente los oye. Sin la
+corrección, tres interrupciones agotarían el dominio, lo dejarían como desconocido, y un
+dominio desconocido al cerrar fuerza amarillo: una alerta producida por el transporte de
+audio y no por el estado del paciente.
+
+La corrección baja a la base de datos y no se queda en memoria (`reescribir_turno`), porque
+la hoja de traspaso se lee del registro durable. Se puede comparar lo uno con lo otro:
+`GET /api/llamadas/{id}/traza` publica `en_memoria.turnos` y `turnos_persistidos` uno al
+lado del otro, y deben decir lo mismo.
+
+`make test` · `tests/test_deuda_interrupcion.py` · `make humo` caso 11.
+
 ---
 
 ## Runbook
@@ -110,6 +144,63 @@ python scripts/sanear_alertas_sin_contacto.py --aplicar  # borra ticket, entrega
 
 Solo toca alertas cuya llamada no tiene **ni un turno, ni transcripción, ni
 `n_turnos`**. Si el paciente dijo aunque sea una palabra, la alerta se queda.
+
+### El WebSocket se cierra con código 1006 y no se puede interrumpir al agente
+
+Los turnos siguen funcionando —hay respaldo por HTTP— pero el barge-in desaparece, porque el
+WebSocket es el único camino por el que el micrófono llega al servidor mientras el agente
+habla. La consola lo dice ahora en la tira de la llamada en vez de callárselo.
+
+La causa que nos pasó es la menos evidente posible. **Las cookies se guardan por host, no
+por puerto**, así que todo lo que corra en `localhost` comparte el mismo tarro. Medido en una
+máquina de desarrollo normal: 14 cookies, **9 958 bytes**, de los cuales 9 KB eran tres
+tokens de Supabase de proyectos que no tienen nada que ver con esto. El navegador manda ese
+`Cookie:` de 10 KB en el handshake y `websockets` corta cualquier línea de cabecera por
+encima de 8 KB. En el log del servidor solo se ve `connection rejected (400 Bad Request)`; la
+verdad sale con `--log-level debug`:
+
+```
+websockets.exceptions.SecurityError: line too long
+```
+
+El tope está subido a 64 KB en el arranque (`main.py::_permitir_cabeceras_largas_en_el_websocket`)
+y `tests/test_cabeceras_largas.py` lo comprueba con un handshake real de 10 KB de cookies —el
+efecto, no la intención: el primer parche subía una constante que en esta versión de la
+librería se llama de otra forma, no dio error, y el fallo siguió igual.
+
+Si aun así aparece:
+
+```javascript
+// en la consola del navegador, para ver cuánto pesa el tarro de cookies
+document.cookie.length
+```
+
+Con más de 60 KB, abrir en una ventana de incógnito o servir en `127.0.0.1` en vez de
+`localhost` —son hosts distintos y por tanto tarros distintos—. Centinela no usa ni una
+cookie; borrarlas rompería los otros proyectos del usuario, así que se aceptan y no se leen.
+
+### «El agente se corta solo» / «no se deja interrumpir»
+
+Los dos síntomas tienen el mismo diagnóstico y está en el log. Cada resolución de una
+sospecha de interrupción deja el nivel que la disparó, el umbral vigente y el eco medido:
+
+```bash
+grep -E "interrupcion_(confirmada|descartada)" registro.log | tail -20
+```
+
+| Lo que se ve | Qué significa | Qué hacer |
+|---|---|---|
+| Muchos `interrupcion_descartada` | El detector sospecha y el STT lo desmiente: baches de 250 ms, el agente sigue | Subir `CENTINELA_BARGEIN_MARGEN_ECO` a 2.2 |
+| `interrupcion_confirmada` sin que nadie hablara | El eco se está transcribiendo como voz. Suele ser altavoz alto sin cancelación | Auriculares, o subir el margen a 3.0 |
+| Ninguno de los dos, y no se puede interrumpir | `umbral` muy por encima de la voz del paciente | Comparar `umbral` con `eco_p95`; si `eco_p95` es alto, el altavoz tapa al micrófono |
+| `tramas_eco: 0` | El cliente no manda tramas mientras el agente habla | Consola vieja en caché: recargar (ver la política de caché de `main.py`) |
+
+El límite medido está publicado: `make bargein` reporta hasta qué nivel de eco funciona y
+dónde deja de funcionar. Por encima de −6 dB de eco respecto a la voz, ningún ajuste de
+umbral lo arregla —el altavoz está tapando al paciente— y hacen falta auriculares.
+
+Si hay que apagarlo del todo, `CENTINELA_BARGEIN=0` deja la voz saliendo entera, que es la
+conducta con la que se midió todo lo anterior.
 
 ### El arranque tarda más de lo normal
 
@@ -197,6 +288,10 @@ Una línea JSON por evento, en stderr, con `llamada_id` como campo de primera cl
 | `alerta_entregada` | Salió por un canal | info |
 | `alerta_no_entregada` | Un canal falló; se reintentará | error |
 | `alerta_atendida` | Alguien acusó recibo | info |
+| `interrupcion_confirmada` | El paciente cortó al agente; con rms, umbral y eco | info |
+| `interrupcion_descartada` | Era una tos: el agente recupera la voz y sigue | info |
+| `turno_cerrado_por_completitud` | El turno cerró antes del techo, con el motivo | info |
+| `calibracion_recibida` | El cliente midió su sala (piso y umbral de voz) | info |
 | `llamada_cerrada_por_el_sistema` | Cierre forzado, con su motivo | info |
 | `llamada_cerrada_por_inactividad` | Expiró el plazo sin turnos | info |
 | `llamadas_recuperadas_al_arrancar` | Cuántas quedaron de un proceso anterior | info |
@@ -227,3 +322,13 @@ mismo PCM16 a 16 kHz que ya consume `ws_llamada`— pero no está construido ni 
 **Cifrado en reposo.** SQLite sin cifrar en el disco del servidor. Para datos clínicos
 reales hace falta cifrado de volumen o de base, y una decisión sobre dónde vive la
 clave.
+
+**Cancelación de eco propia.** La interrupción se apoya en el `echoCancellation` del
+navegador más un umbral que se calcula sobre el eco medido. Funciona hasta que el eco queda
+6 dB por debajo de la voz del paciente; por encima de eso el altavoz tapa al micrófono y el
+límite está publicado en `make bargein`, no escondido. Un cancelador propio —filtro
+adaptativo contra la señal de referencia, que el servidor sí conoce porque él la envió—
+cubriría el caso del altavoz abierto a todo volumen, y no está.
+
+**Solapamiento real.** La interrupción es excluyente: uno de los dos calla. En una
+conversación humana hay medio segundo en que los dos hablan y ninguno se detiene.
