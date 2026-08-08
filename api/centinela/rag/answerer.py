@@ -12,16 +12,30 @@ sostiene una respuesta, no se genera nada -- el agente dice que no sabe.
 
 **Despues** (aqui): tres verificaciones sobre el texto ya generado.
 
+Y cuando esas verificaciones descartan el texto, hay un nivel intermedio antes de
+callarse: **la cita literal**. Si la recuperacion estaba fundamentada, el corpus tiene
+la respuesta y el que falla es el modelo escribiendo encima; abstenerse ahi deja al
+paciente sin nada por un defecto que no es del corpus. Asi que se le lee la frase
+exacta de la guia, con su documento. Una cita no puede haber inventado nada.
+
+Tres niveles, en orden: generacion verificada, cita literal, abstencion.
+
 1. *Numeros no soportados.* Cualquier cifra que aparezca en la respuesta y no
    este en el contexto recuperado es una cifra inventada. Es el tipo de
    alucinacion mas peligroso en salud -- una dosis, un umbral, un plazo -- y es
-   detectable con exactitud sin otro modelo.
+   detectable con exactitud sin otro modelo. Se comprueba dos veces: la cifra, y
+   la cifra CON SU UNIDAD (ver `RE_NUMERO_UNIDAD`, y por que hicieron falta las
+   dos).
 2. *Tranquilizacion indebida.* Si el motor de decision ya marco el caso como
    amarillo o rojo, la respuesta no puede contener lenguaje que tranquilice.
 3. *Vocabulario prohibido.* El agente no diagnostica ni prescribe.
 
-Si alguna falla, se descarta la respuesta generada y se usa la abstencion. Vale
-mas un "no lo se" que una frase bonita y falsa.
+Si alguna falla, el texto generado se descarta. Vale mas un "no lo se" que una frase
+bonita y falsa -- y vale mas una frase del corpus que un "no lo se", que es lo que
+hace el nivel intermedio.
+
+Ser estricto aqui salio barato precisamente por ese nivel: endurecer la verificacion
+antes de tenerlo significaba convertir cada duda en un silencio.
 """
 
 from __future__ import annotations
@@ -58,7 +72,119 @@ PLANTILLA = (
     "Responde en maximo 2 frases usando solo el contexto."
 )
 
+# La respuesta extractiva dice de donde viene. No es cortesia: el paciente esta
+# oyendo una frase de una guia clinica, no una explicacion, y merece saberlo.
+PLANTILLA_EXTRACTIVA = "Le leo lo que dice {documento}: {frase}."
+
+# Por debajo de esto la cita no es una respuesta, es un fragmento.
+MIN_CARACTERES_CITA = 40
+
 RE_NUMERO = re.compile(r"\d+(?:[.,]\d+)?")
+
+# Cifra con la unidad que la acompana. Comprobar solo la cifra es demasiado debil, y
+# se vio fallar: a la pregunta "cuando me quitan los puntos" el modelo respondio "a
+# los 15 dias" y la verificacion lo acepto porque el "15" existia en el contexto --
+# en "la puntuacion del WOMAC disminuyo en 15 puntos", de un articulo de rodilla.
+#
+# La cifra estaba; el plazo era invencion. Un numero suelto que aparece en cualquier
+# parte del contexto le da licencia al modelo para usarlo en cualquier sentido, y en
+# salud el sentido es el dato: una dosis, un umbral, un plazo.
+#
+# Con la unidad pegada, "15 dias" y "15 puntos" son cosas distintas y la comparacion
+# sigue siendo exacta, sin otro modelo de por medio.
+# Ojo con los grados: el corpus entregado escribe "38ºc" y "38 ºC" con el INDICADOR
+# ORDINAL MASCULINO (U+00BA), no con el signo de grado (U+00B0). La primera version de
+# esta regex solo aceptaba el signo, asi que el par (38, c) no se extraia del contexto
+# y una respuesta correcta que decia "38 °C" quedaba marcada como cifra inventada.
+# Rechazar de mas no es inocuo: degradaba respuestas buenas a cita, en silencio.
+GRADOS = r"[°º]\s*c|grados?(?:\s+(?:centigrados?|celsius|c))?"
+
+RE_NUMERO_UNIDAD = re.compile(
+    r"(\d+(?:[.,]\d+)?)\s*"
+    r"(" + GRADOS + r"|dias?|semanas?|meses|mes|horas?|minutos?|veces|vez|"
+    r"mg|ml|gramos?|kilos?|libras?|puntos?|cm|metros?|%)",
+)
+
+UNIDADES_EQUIVALENTES = {
+    "c": "c", "grado": "c", "grados": "c",
+    "gradocentigrado": "c", "gradoscentigrados": "c", "gradoscentigrado": "c",
+    "gradocelsius": "c", "gradoscelsius": "c", "gradoc": "c", "gradosc": "c",
+    "dia": "dia", "dias": "dia",
+    "semana": "semana", "semanas": "semana",
+    "mes": "mes", "meses": "mes",
+    "hora": "hora", "horas": "hora",
+    "minuto": "minuto", "minutos": "minuto",
+    "vez": "vez", "veces": "vez",
+    "punto": "punto", "puntos": "punto",
+    "gramo": "gramo", "gramos": "gramo",
+    "kilo": "kilo", "kilos": "kilo",
+    "libra": "libra", "libras": "libra",
+    "metro": "metro", "metros": "metro",
+}
+
+# Numeros escritos en letra. El corpus alterna las dos formas -- "ocho dias" y "8
+# dias" -- y una respuesta que digitaliza lo que el corpus escribio en letra no esta
+# inventando nada.
+NUMERO_EN_LETRA = {
+    "un": "1", "uno": "1", "una": "1", "dos": "2", "tres": "3", "cuatro": "4",
+    "cinco": "5", "seis": "6", "siete": "7", "ocho": "8", "nueve": "9", "diez": "10",
+    "once": "11", "doce": "12", "trece": "13", "catorce": "14", "quince": "15",
+    "veinte": "20", "treinta": "30", "cuarenta": "40", "sesenta": "60",
+}
+
+RE_LETRA_UNIDAD = re.compile(
+    r"\b(" + "|".join(NUMERO_EN_LETRA) + r")\s+"
+    r"(" + GRADOS + r"|dias?|semanas?|meses|mes|horas?|minutos?|veces|vez|"
+    r"puntos?|cm|metros?)",
+)
+
+
+# Numero de pagina suelto entre saltos de linea. El OCR del corpus los deja pegados en
+# medio de una frase, y leerselos al paciente por telefono no tiene sentido: se oyen
+# como un dato clinico que nadie dijo.
+RE_PAGINA_SUELTA = re.compile(r"\n\s*\d{1,3}\s*\n")
+
+
+def _limpiar_para_hablar(frase: str) -> str:
+    """La cita, puesta en una linea y sin la basura del OCR.
+
+    Se limpia solo lo que se dice en voz alta. La `cita_textual` que viaja al informe
+    conserva el texto literal del PDF, porque es lo que el jurado busca con Ctrl+F.
+    """
+
+    limpia = RE_PAGINA_SUELTA.sub(" ", frase)
+    limpia = re.sub(r"\s+", " ", limpia).strip()
+    return limpia.rstrip(".")
+
+
+def _sin_tildes(texto: str) -> str:
+    tabla = str.maketrans("áéíóúü", "aeiouu")
+    return texto.lower().translate(tabla)
+
+
+def _normalizar_unidad(bruta: str) -> str:
+    unidad = re.sub(r"\s+", "", bruta).replace("°", "").replace("º", "")
+    return UNIDADES_EQUIVALENTES.get(unidad, unidad)
+
+
+def _cifras_con_unidad(texto: str) -> set[tuple[str, str]]:
+    """Pares (cifra, unidad normalizada) del texto, en digito o en letra.
+
+    La normalizacion es minima a proposito: singular/plural, las dos grafias de los
+    grados, y el numero escrito en letra. No hay que entender el texto, solo no tratar
+    "38 grados" y "38 dias" como el mismo dato.
+    """
+
+    base = _sin_tildes(texto)
+    pares: set[tuple[str, str]] = set()
+
+    for m in RE_NUMERO_UNIDAD.finditer(base):
+        pares.add((m.group(1).replace(",", "."), _normalizar_unidad(m.group(2))))
+
+    for m in RE_LETRA_UNIDAD.finditer(base):
+        pares.add((NUMERO_EN_LETRA[m.group(1)], _normalizar_unidad(m.group(2))))
+
+    return pares
 
 TRANQUILIZADORES = (
     "esta bien", "esta normal", "es normal", "no se preocupe", "no hay de que preocuparse",
@@ -85,6 +211,14 @@ class RespuestaClinica:
     verificaciones_falladas: list[str] = field(default_factory=list)
     pasajes_usados: int = 0
     generacion_corpus: int = 0
+    # La respuesta es una cita literal del corpus en vez de texto generado. Se
+    # distingue porque cambia lo que se puede afirmar de ella: una cita no puede
+    # haber inventado nada.
+    extractiva: bool = False
+    # El contexto exacto que se le puso delante al modelo. Se publica para que la
+    # comprobacion de "ninguna cifra sin respaldo" se pueda hacer desde fuera contra
+    # el texto de verdad, en vez de reimplementar la verificacion en el arnes.
+    contexto_usado: str = ""
 
 
 class ResponderClinico:
@@ -129,15 +263,12 @@ class ResponderClinico:
             fallos = self._verificar(texto, contexto, nivel_actual)
 
             if fallos:
-                respuesta = RespuestaClinica(
-                    texto=S.SIN_INFORMACION.texto,
-                    citas=[],
-                    fundamentado=False,
-                    razon="respuesta generada descartada por verificacion posterior",
-                    uso=generada.uso,
-                    verificaciones_falladas=fallos,
-                    pasajes_usados=len(recuperado.pasajes),
-                    generacion_corpus=recuperado.generacion,
+                # El corpus SI tenia la respuesta -- la recuperacion estaba
+                # fundamentada -- y lo que falla es el texto que el modelo escribio
+                # encima. Descartarlo y callar deja al paciente sin nada por un fallo
+                # que no es del corpus. Antes de abstenerse se intenta citar.
+                respuesta = self._respuesta_extractiva(
+                    recuperado, consulta, nivel_actual, generada.uso, fallos, contexto
                 )
             else:
                 citas = self._citas_con_frase(recuperado, consulta)
@@ -149,10 +280,88 @@ class ResponderClinico:
                     uso=generada.uso,
                     pasajes_usados=len(recuperado.pasajes),
                     generacion_corpus=recuperado.generacion,
+                    contexto_usado=contexto,
                 )
         return respuesta
 
     # ------------------------------------------------------------------
+
+    def _respuesta_extractiva(
+        self, recuperado, consulta: str, nivel_actual, uso, fallos: list[str],
+        contexto: str,
+    ) -> RespuestaClinica:
+        """La frase literal del corpus, sin pasar por el modelo.
+
+        Es el segundo nivel, entre la generacion verificada y la abstencion. La
+        recuperacion estaba fundamentada: el corpus tiene la respuesta y esta citada.
+        Lo que fallo es el texto que el modelo escribio encima. Abstenerse ahi deja al
+        paciente sin nada por un defecto que no es del corpus.
+
+        Riesgo de alucinacion cero por construccion: no se genera texto, se cita. Y se
+        comprueba: la frase tiene que ser subcadena literal del pasaje del que dice
+        venir, y tiene que pasar las mismas tres verificaciones que la generacion --
+        una cita del corpus tambien puede tranquilizar a un paciente con criticidad
+        activa, y ahi tampoco vale.
+
+        Si la cita no pasa, entonces si se abstiene. Vale mas un "no lo se" que una
+        frase bonita y falsa; pero vale mas una frase del corpus que un "no lo se".
+        """
+
+        elegida = ""
+        pasaje_usado = None
+        for p in recuperado.pasajes:
+            if not elegida:
+                frase = frase_mas_relevante(p.texto, consulta).strip()
+                # Subcadena literal del pasaje: si no lo es, `frase_mas_relevante`
+                # habria recortado o alterado algo y ya no seria una cita.
+                if frase and frase in p.texto and len(frase) >= MIN_CARACTERES_CITA:
+                    if not self._verificar(frase, p.texto, nivel_actual):
+                        elegida = frase
+                        pasaje_usado = p
+
+        if pasaje_usado is None:
+            respuesta = RespuestaClinica(
+                texto=S.SIN_INFORMACION.texto,
+                citas=[],
+                fundamentado=False,
+                razon="respuesta generada descartada y ninguna cita del corpus la sustituye",
+                uso=uso,
+                verificaciones_falladas=fallos,
+                pasajes_usados=len(recuperado.pasajes),
+                generacion_corpus=recuperado.generacion,
+                contexto_usado=contexto,
+            )
+        else:
+            doc = self.retriever.store.obtener_documento(pasaje_usado.doc_id)
+            respuesta = RespuestaClinica(
+                texto=PLANTILLA_EXTRACTIVA.format(
+                    documento=pasaje_usado.nombre,
+                    frase=_limpiar_para_hablar(elegida),
+                ),
+                citas=[{
+                    "doc_id": pasaje_usado.doc_id,
+                    "documento": pasaje_usado.nombre,
+                    "documento_sha256": doc.sha256 if doc else None,
+                    "tema": pasaje_usado.tema,
+                    "pagina": pasaje_usado.pagina,
+                    "cita_textual": elegida,
+                    "similitud": round(pasaje_usado.similitud, 4),
+                    "chunk_id": pasaje_usado.chunk_id,
+                    "generacion_corpus": recuperado.generacion,
+                }],
+                fundamentado=True,
+                extractiva=True,
+                razon=(
+                    "cita literal del corpus tras descartar el texto generado: "
+                    + "; ".join(fallos)
+                ),
+                uso=uso,
+                verificaciones_falladas=fallos,
+                pasajes_usados=len(recuperado.pasajes),
+                generacion_corpus=recuperado.generacion,
+                contexto_usado=contexto,
+            )
+        return respuesta
 
     def _armar_contexto(self, pasajes, consulta: str) -> str:
         partes = []
@@ -171,6 +380,10 @@ class ResponderClinico:
                     "doc_id": p.doc_id,
                     "documento": p.nombre,
                     "documento_sha256": doc.sha256 if doc else None,
+                    # El tema del documento viaja con la cita: es lo que permite
+                    # comprobar desde fuera que no se cruzaron procedimientos
+                    # (`eval/rag_cobertura.py`) sin volver a consultar el indice.
+                    "tema": p.tema,
                     "pagina": p.pagina,
                     "cita_textual": frase_mas_relevante(p.texto, consulta),
                     "similitud": round(p.similitud, 4),
@@ -197,7 +410,7 @@ class ResponderClinico:
         fallos: list[str] = []
         base = texto.lower()
 
-        # 1. Cifras que no estan en el contexto recuperado.
+        # 1a. Cifras que no estan en el contexto recuperado.
         numeros_texto = set(RE_NUMERO.findall(texto))
         numeros_contexto = set(RE_NUMERO.findall(contexto))
         inventados = {
@@ -207,6 +420,16 @@ class ResponderClinico:
         if inventados:
             fallos.append(
                 f"cifras sin respaldo en el contexto: {', '.join(sorted(inventados))}"
+            )
+
+        # 1b. Cifras que SI estan en el contexto pero midiendo otra cosa. Es el fallo
+        # que 1a no ve, y es el que importa: el dato clinico no es el numero, es el
+        # numero con su unidad.
+        descontextualizadas = _cifras_con_unidad(texto) - _cifras_con_unidad(contexto)
+        if descontextualizadas:
+            fallos.append(
+                "cifras con una unidad que no aparece asi en el contexto: "
+                + ", ".join(f"{n} {u}" for n, u in sorted(descontextualizadas))
             )
 
         # 2. Tranquilizacion cuando el motor ya marco alarma.

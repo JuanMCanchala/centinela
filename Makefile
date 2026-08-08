@@ -29,6 +29,7 @@ help:
 	@echo ""
 	@echo "  make eval        motor de decision sobre los 160 casos oficiales"
 	@echo "  make humo        extremo a extremo contra la API levantada"
+	@echo "  make rag         cobertura del corpus - 0 citas cruzadas, 0 cifras sin respaldo"
 	@echo "  make escucha     mide el STT sobre voz humana grabada"
 	@echo "  make redteam     suite adversarial (inyeccion, ruido, fuera de mision)"
 	@echo "  make bench       latencia de modelo y voz"
@@ -111,6 +112,12 @@ escucha:
 .PHONY: escucha-guion
 escucha-guion:
 	$(PY) -m eval.escucha --guion
+
+# Cuanto del corpus alcanza el agente y con que fidelidad. Falla si aparece una sola
+# cita de otro procedimiento o una cifra que el corpus no sostiene.
+.PHONY: rag
+rag:
+	$(PY) -m eval.rag_cobertura
 
 .PHONY: redteam
 redteam:

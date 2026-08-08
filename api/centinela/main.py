@@ -576,9 +576,16 @@ async def preguntar(q: str, procedimiento: str | None = None, dia: int = 7) -> d
         "consulta": q,
         "respuesta": r.texto,
         "fundamentado": r.fundamentado,
+        # True cuando la respuesta es una cita literal del corpus en vez de texto
+        # generado. Cambia lo que se puede afirmar de ella, asi que se publica.
+        "extractiva": r.extractiva,
         "razon": r.razon,
         "citas": r.citas,
         "verificaciones_falladas": r.verificaciones_falladas,
+        # El contexto exacto que vio el modelo. Se publica para que "ninguna cifra sin
+        # respaldo" se pueda comprobar desde fuera contra el texto de verdad
+        # (`eval/rag_cobertura.py`) en vez de reimplementar la verificacion.
+        "contexto_usado": r.contexto_usado,
         "tokens": {"entrada": r.uso.tokens_entrada, "salida": r.uso.tokens_salida},
         "ms": round(r.uso.ms_total, 1),
         "generacion_corpus": r.generacion_corpus,
