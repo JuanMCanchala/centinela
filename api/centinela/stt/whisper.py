@@ -129,6 +129,61 @@ MAX_PROB_SIN_VOZ = 0.55      # no_speech_prob por encima de esto: no era voz
 MIN_LOGPROB_MEDIO = -1.0     # avg_logprob por debajo de esto: el decoder dudaba
 MIN_DURACION_S = 0.25        # por debajo de esto no hay nada que transcribir
 
+# Por debajo de esta duracion NO se recorta por VAD, se manda el buffer completo.
+#
+# El recorte con Silero existe para que los silencios largos no lleguen al decoder,
+# porque el silencio es lo que hace que Whisper invente frases. En un buffer de
+# menos de dos segundos no hay silencio largo que quitar, y el recorte pasa de
+# ganancia a riesgo: sobre una respuesta corta y dicha en voz baja, Silero puede no
+# encontrar ninguna region por encima de su umbral y devolver vacio -- y entonces
+# se descarta un audio que Whisper habria transcrito sin problema.
+#
+# El sintoma medido: "Un seis" (0.8 s) descartado como "sin voz" de forma
+# intermitente. Y resulta que las respuestas de un cuestionario clinico son
+# justamente asi: "No", "Normal", "Un seis", "Si senora".
+#
+# Dejar pasar audio al decoder no lo vuelve inseguro: despues del decoder siguen
+# las dos puertas de calidad (no_speech_prob, avg_logprob) y el filtro de
+# alucinaciones conocidas. Lo que se quita es una puerta ANTES del decoder que en
+# este rango de duracion se equivoca mas de lo que acierta.
+SIN_RECORTE_BAJO_S = 2.0
+
+# Si Silero no encuentra voz pero el audio tiene energia de voz de verdad, se manda
+# el buffer completo en vez de descartarlo. Este piso esta por encima del ruido de
+# sala tipico y por debajo de una voz baja.
+RMS_MINIMO_PARA_INSISTIR = 0.010
+
+# En audio corto, `no_speech_prob` deja de ser fiable.
+#
+# Whisper calcula esa probabilidad sobre una ventana de 30 s: con un clip de un
+# segundo, la mayor parte de la ventana es relleno y la metrica se dispara sin que
+# haya nada malo en el audio. Medido con el guion de `eval/escucha.py`: "Duermo
+# bien" (1.11 s) daba 0.56 contra un umbral de 0.55, y "treinta y siete cinco"
+# (2.01 s) daba 0.86 -- las dos frases perfectamente pronunciadas y descartadas.
+#
+# En vez de bajar el umbral a ciegas, en audio corto se le pide una segunda
+# opinion al decoder: si `avg_logprob` dice que estaba seguro de lo que escribio,
+# gana el decoder. Solo se descarta cuando las DOS senales coinciden en que el
+# audio era malo, o cuando la probabilidad de no-voz es extrema.
+#
+# El filtro de alucinaciones conocidas sigue corriendo antes que todo esto, que es
+# la defensa que de verdad importa contra el texto inventado.
+MAX_PROB_SIN_VOZ_CORTO = 0.90
+MIN_LOGPROB_CORROBORA = -0.70
+
+# Hasta aqui se considera que `no_speech_prob` no es fiable. Es un umbral DISTINTO
+# de `SIN_RECORTE_BAJO_S` porque responde a otra pregunta:
+#
+#   SIN_RECORTE_BAJO_S      -> "hay silencio que valga la pena recortar?"  (2.0 s)
+#   DURACION_NO_VOZ_DUDOSA_S -> "es fiable la probabilidad de no-voz?"      (3.5 s)
+#
+# Tenerlos unidos en 2.0 s costo un descarte real y absurdo: "treinta y siete
+# cinco" dura 2.01 s, caia diez milisegundos por encima del corte, tomaba el camino
+# estricto y se descartaba con no-voz 0.86 pese a un logprob de -0.66 -- es decir,
+# con el decoder seguro de lo que habia escrito. Una temperatura perdida por un
+# umbral mal puesto.
+DURACION_NO_VOZ_DUDOSA_S = 3.5
+
 TEMPERATURAS = (0.0, 0.2, 0.4, 0.6, 0.8, 1.0)
 
 
@@ -396,9 +451,12 @@ class WhisperSTT:
             # El historial de la escalera se publica: si la GPU no sirvio, el
             # jurado ve por que y no tiene que adivinarlo.
             "intentos": self.intentos,
-            "vad": "silero (recorta el audio antes del decoder)",
+            "vad": (
+                f"silero recorta el audio antes del decoder solo si dura "
+                f"{SIN_RECORTE_BAJO_S}s o mas; por debajo va entero"
+            ),
             "defensas": [
-                "recorte a regiones con voz",
+                f"recorte a regiones con voz (solo sobre {SIN_RECORTE_BAJO_S}s+)",
                 "busqueda por haces (beam 5) y prompt clinico",
                 "filtro de alucinaciones conocidas",
                 f"no_speech_prob < {MAX_PROB_SIN_VOZ}",
@@ -460,16 +518,30 @@ class WhisperSTT:
                 motivo_descarte=f"audio de {duracion:.2f}s, por debajo del minimo",
             )
 
-        voz, segundos_voz = self._recortar_a_voz(muestras)
+        rms = energia_rms(muestras)
+
+        if duracion < SIN_RECORTE_BAJO_S:
+            # Respuesta corta: no hay silencio largo que quitar. Va entera.
+            voz, segundos_voz = muestras, duracion
+        else:
+            voz, segundos_voz = self._recortar_a_voz(muestras)
+
+            if segundos_voz < MIN_DURACION_S and rms >= RMS_MINIMO_PARA_INSISTIR:
+                # Silero dice que no hay voz, pero hay energia de voz. Antes de
+                # tirar el turno se le da la oportunidad al decoder, que tiene su
+                # propio criterio (`no_speech_prob`) y es mejor que este.
+                voz, segundos_voz = muestras, duracion
 
         if segundos_voz < MIN_DURACION_S:
-            # Ni una region con voz. Aqui se corta el camino: no se invoca a
+            # Ni region con voz ni energia. Aqui se corta el camino: no se invoca a
             # Whisper, asi que no puede alucinar.
             return Transcripcion(
                 texto="", ms=(time.perf_counter() - t0) * 1000,
                 duracion_audio_s=round(duracion, 2), duracion_voz_s=round(segundos_voz, 2),
                 sin_habla=True,
-                motivo_descarte="Silero VAD no encontro ninguna region con voz",
+                motivo_descarte=(
+                    f"Silero VAD no encontro voz y la energia es baja (rms {rms:.4f})"
+                ),
             )
 
         segmentos, info = self.modelo.transcribe(
@@ -517,7 +589,7 @@ class WhisperSTT:
         prob_sin_voz = max(probs_sin_voz) if probs_sin_voz else 0.0
         logprob_medio = min(logprobs) if logprobs else 0.0
 
-        motivo = self._evaluar_calidad(texto, prob_sin_voz, logprob_medio)
+        motivo = self._evaluar_calidad(texto, prob_sin_voz, logprob_medio, duracion)
 
         return Transcripcion(
             texto="" if motivo else texto,
@@ -535,11 +607,17 @@ class WhisperSTT:
 
     @staticmethod
     def _evaluar_calidad(
-        texto: str, prob_sin_voz: float, logprob_medio: float
+        texto: str, prob_sin_voz: float, logprob_medio: float, duracion: float = 99.0
     ) -> str | None:
-        """Decide si la transcripcion es utilizable. Devuelve el motivo si no."""
+        """Decide si la transcripcion es utilizable. Devuelve el motivo si no.
+
+        `duracion` cambia el criterio de no-voz: en audio corto esa probabilidad no
+        es fiable y hace falta que el decoder la corrobore. El razonamiento esta
+        junto a `MAX_PROB_SIN_VOZ_CORTO`.
+        """
 
         motivo: str | None = None
+        corto = duracion < DURACION_NO_VOZ_DUDOSA_S
 
         if not texto.strip():
             motivo = "el decoder no produjo texto"
@@ -547,6 +625,25 @@ class WhisperSTT:
             patron = es_alucinacion(texto)
             if patron:
                 motivo = f"alucinacion conocida de Whisper ({patron}): {texto[:60]!r}"
+            elif corto:
+                if prob_sin_voz > MAX_PROB_SIN_VOZ_CORTO:
+                    motivo = (
+                        f"audio corto y probabilidad de no-voz extrema "
+                        f"({prob_sin_voz:.2f} > {MAX_PROB_SIN_VOZ_CORTO})"
+                    )
+                elif (
+                    prob_sin_voz > MAX_PROB_SIN_VOZ
+                    and logprob_medio < MIN_LOGPROB_CORROBORA
+                ):
+                    motivo = (
+                        f"audio corto: no-voz alta ({prob_sin_voz:.2f}) y el decoder "
+                        f"tampoco estaba seguro (logprob {logprob_medio:.2f})"
+                    )
+                elif logprob_medio < MIN_LOGPROB_MEDIO:
+                    motivo = (
+                        f"el decoder dudaba demasiado "
+                        f"(logprob medio {logprob_medio:.2f} < {MIN_LOGPROB_MEDIO})"
+                    )
             elif prob_sin_voz > MAX_PROB_SIN_VOZ:
                 motivo = (
                     f"probabilidad de que no fuera voz demasiado alta "

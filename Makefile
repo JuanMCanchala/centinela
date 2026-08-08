@@ -28,7 +28,8 @@ help:
 	@echo "  make umbrales    resuelve la cita de corpus de cada umbral clinico"
 	@echo ""
 	@echo "  make eval        motor de decision sobre los 160 casos oficiales"
-	@echo "  make eval-e2e    pipeline completo sobre las 320 conversaciones"
+	@echo "  make humo        extremo a extremo contra la API levantada"
+	@echo "  make escucha     mide el STT sobre voz humana grabada"
 	@echo "  make redteam     suite adversarial (inyeccion, ruido, fuera de mision)"
 	@echo "  make bench       latencia de modelo y voz"
 	@echo "  make test        todos los tests"
@@ -101,9 +102,15 @@ g2:
 eval:
 	$(PY) -m eval.replay_triage
 
-.PHONY: eval-e2e
-eval-e2e:
-	$(PY) -m eval.replay_e2e
+# Mide si el sistema OYE bien, con las grabaciones de eval/audios/.
+# `make escucha-guion` imprime que hay que grabar y con que nombre.
+.PHONY: escucha
+escucha:
+	$(PY) -m eval.escucha
+
+.PHONY: escucha-guion
+escucha-guion:
+	$(PY) -m eval.escucha --guion
 
 .PHONY: redteam
 redteam:

@@ -304,6 +304,9 @@ SINONIMOS_FIEBRE_SUBJETIVA = (
 SIN_TERMOMETRO = (
     "no tengo termometro", "no me la he tomado", "no me he medido", "no tengo con que",
     "no me la tome", "no tengo termometro en casa", "sin termometro",
+    # Whisper confunde "la" con "lo" en esta frase con frecuencia; medido en
+    # eval/escucha.py. La variante cuesta una linea y salva el turno.
+    "no me lo he tomado", "no me lo tome", "no me he tomado la temperatura",
 )
 
 # El paciente NIEGA la fiebre. Es una respuesta, no un dato ausente.

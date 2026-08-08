@@ -21,7 +21,33 @@ import time
 import httpx
 import websockets
 
-from eval.probar_ws import _voz_sync
+import sys as _sys
+from pathlib import Path as _Path
+
+_sys.path.insert(0, str(_Path(__file__).resolve().parents[1] / "api"))
+from centinela.dialog.policy import MAX_REPETICIONES_SEGUIDAS  # noqa: E402
+
+DOMINIOS_CLINICOS = ("dolor_nrs", "fiebre_c", "movilidad", "herida", "apetito", "sueno")
+
+
+def _dominios_resueltos(estado: dict) -> int:
+    """Cuantos de los seis dominios tienen ya un valor.
+
+    Es la senal de que la conversacion AVANZA. Una fiebre negada cuenta: el
+    paciente respondio, aunque no haya temperatura que guardar.
+    """
+
+    n = 0
+    for campo in DOMINIOS_CLINICOS:
+        obs = estado.get(campo) or {}
+        if obs.get("conocido") and obs.get("valor") is not None:
+            n += 1
+    if estado.get("fiebre_negada") and not (estado.get("fiebre_c") or {}).get("conocido"):
+        n += 1
+    return n
+
+
+from eval.probar_ws import _voz_sync  # noqa: E402
 
 PACIENTE = {
     "paciente_id": "pac_42_00026", "nombre": "Ana Lucia Restrepo",
@@ -132,6 +158,9 @@ async def main() -> int:
 
     fallos: list[str] = []
     dominios: list[str | None] = []
+    # Cuantos dominios habia resueltos tras cada turno. Es lo que distingue una
+    # pregunta de profundizacion de un atasco de verdad.
+    resueltos: list[int] = []
     latencias: list[float] = []
     escalado = False
 
@@ -172,6 +201,7 @@ async def main() -> int:
                 print("  FALLA: marcado como audio degradado con transcripcion correcta")
 
             dominios.append(r.get("dominio"))
+            resueltos.append(_dominios_resueltos(r.get("estado_clinico") or {}))
             if r.get("ms_turno"):
                 latencias.append(r["ms_turno"])
             if r.get("escala"):
@@ -188,12 +218,39 @@ async def main() -> int:
     print("=" * 88)
 
     # La comprobacion que el fallo del usuario habria pillado: la conversacion
-    # tiene que avanzar de dominio, no repetir el mismo.
-    repetidos = sum(1 for a, b in zip(dominios, dominios[1:]) if a == b and a is not None)
+    # tiene que AVANZAR, no repetir la misma pregunta sin entender.
+    #
+    # Contar "el mismo dominio dos veces seguidas" mide lo que no debe. El agente
+    # repite dominio por dos motivos distintos y solo uno es un defecto:
+    #
+    #   - ATASCO: no entendio y vuelve a preguntar lo mismo. El estado clinico no
+    #     avanza. Esto es el fallo.
+    #   - PROFUNDIZACION: entendio, y hace una pregunta de seguimiento dentro del
+    #     mismo dominio -- "y ese dolor, le cede con las pastillas?". El estado SI
+    #     avanzo. Esto es comportamiento diseñado.
+    #
+    # La primera version daba por atasco los dos casos y fallaba en una llamada
+    # perfectamente sana: "Un seis" resolvia dolor=6 y el agente profundizaba.
+    # Lo que distingue un caso del otro es si el estado clinico crecio.
+    atascos = 0
+    for i in range(1, len(dominios)):
+        mismo = dominios[i] is not None and dominios[i] == dominios[i - 1]
+        avanzo = resueltos[i] > resueltos[i - 1]
+        if mismo and not avanzo:
+            atascos += 1
+
     print(f"  dominios recorridos : {dominios}")
-    print(f"  repeticiones seguidas del mismo dominio: {repetidos}")
-    if repetidos > 1:
-        fallos.append(f"la conversacion se atasco: {repetidos} repeticiones de dominio")
+    print(f"  dominios resueltos por turno: {resueltos}")
+    print(f"  repeticiones sin avance (atascos): {atascos}")
+
+    # El contrato lo fija `DialogPolicy.MAX_REPETICIONES_SEGUIDAS`: tras ese numero
+    # de intentos, el agente sigue adelante. Se compara contra la constante y no
+    # contra un numero a mano para que las dos no puedan divergir.
+    if atascos > MAX_REPETICIONES_SEGUIDAS:
+        fallos.append(
+            f"la conversacion se atasco: {atascos} repeticiones sin avance, "
+            f"por encima del maximo de diseño ({MAX_REPETICIONES_SEGUIDAS})"
+        )
 
     if latencias:
         print(f"  latencia por turno  : min {min(latencias):.0f} ms · "

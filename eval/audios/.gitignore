@@ -1,0 +1,4 @@
+# Las grabaciones son voz de una persona: no se versionan por defecto.
+*.wav
+!.gitignore
+!LEEME.md
