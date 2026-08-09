@@ -89,6 +89,13 @@ DEJAR_MS_FINAL = 55
 # frases del mismo turno cambiaba de duracion sin motivo.
 PAUSA_ENTRE_FRAGMENTOS_MS = 90
 
+# Cuantas veces se sintetiza una muletilla para quedarse con la mas breve, y el piso por
+# debajo del cual la realizacion se descarta por sospechosa de estar truncada. Ver
+# `_la_mas_breve`: solo se aplica a las locuciones marcadas `breve`, y solo al
+# pre-renderizar, asi que no toca el camino de latencia.
+INTENTOS_BREVEDAD = 6
+MIN_MS_MULETILLA = 260
+
 # Nivel objetivo. Piper entrega todo a pico 1.0 (las 59 locuciones del guion, sin
 # excepcion) mientras el RMS de voz varia 4.2 dB entre ellas: cero headroom y saltos
 # de volumen percibido entre frases. Se iguala el RMS y se deja el pico bajo el techo.
@@ -428,6 +435,51 @@ class PiperTTS:
 
     # ------------------------------------------------------------------
 
+    async def _la_mas_breve(self, loc) -> bytes:
+        """Sintetiza la locucion varias veces y se queda con la mas corta.
+
+        **Por que hace falta esto solo en las muletillas.** Un "aja" de una persona dura
+        unos 250-350 ms. Medido sobre las del guion, Piper las entregaba asi:
+
+            Mm-hm.        1205 ms
+            Mm, a ver.    1862 ms
+            Aja.          1049 ms
+            Ya.            491 ms
+
+        Cinco de seis pasaban del segundo, cuando el comentario del guion decia "son
+        cortas a proposito". Y peor: `noise_w` mete variabilidad por fonema, asi que la
+        MISMA palabra sale distinta cada vez -- "Ya." se midio en 491 ms cacheada y en
+        1013 ms recien sintetizada, el doble. Una muletilla que cambia de duracion al azar
+        es exactamente lo que no hace un humano, y es lo que suena a maquina.
+
+        Bajar `length_scale` no lo arregla: en un barrido de 1.0 a 0.65, "Aja." solo baja
+        de 1373 a 1013 ms. Piper alarga las locuciones aisladas porque no tienen contexto
+        de frase, y eso no es un parametro.
+
+        Lo que si se puede es ELEGIR. Las muletillas se pre-renderizan una vez al arrancar,
+        asi que su aleatoriedad queda congelada en el cache: sintetizando unas cuantas y
+        guardando la mas breve, se paga el costo una sola vez y la llamada recibe siempre
+        la realizacion buena. No es un truco: es aprovechar que el cache existe.
+        """
+
+        mejor = b""
+        mejor_ms = None
+        for _intento in range(INTENTOS_BREVEDAD):
+            datos = tratar(await self._ejecutar_piper(para_voz(loc.texto)))
+            if datos and tiene_voz(datos):
+                muestras, frecuencia = _muestras(datos)
+                ms = len(muestras) / frecuencia * 1000.0
+                if ms >= MIN_MS_MULETILLA and (mejor_ms is None or ms < mejor_ms):
+                    mejor, mejor_ms = datos, ms
+
+        if mejor:
+            (self.dir_cache / f"{loc.clave}.wav").write_bytes(mejor)
+            self._memoria[loc.clave] = mejor
+            self._anotar(loc.clave, loc.texto)
+            log("muletilla_elegida", clave=loc.clave, ms=round(mejor_ms or 0.0),
+                intentos=INTENTOS_BREVEDAD)
+        return mejor
+
     async def pre_renderizar(self, locuciones, forzar: bool = False) -> dict:
         """Sintetiza el guion completo. Se corre una vez al arrancar."""
 
@@ -469,6 +521,8 @@ class PiperTTS:
                         self._memoria[loc.clave] = datos
                         self._anotar(loc.clave, loc.texto, enfasis)
                         con_enfasis += 1
+                elif getattr(loc, "breve", False):
+                    datos = await self._la_mas_breve(loc)
                 else:
                     datos = (await self.sintetizar(loc.texto, clave=loc.clave)).wav
 

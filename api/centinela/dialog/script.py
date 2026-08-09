@@ -42,11 +42,17 @@ class Locucion:
 
     `enfasis` marca lo que se sintetiza con el perfil lento y nitido de
     `tts/piper.py`: hoy, solo la instruccion de urgencias.
+
+    `breve` es el opuesto y sirve para las muletillas: se sintetizan varias veces al
+    pre-renderizar y se guarda la realizacion mas corta. Piper alarga las locuciones
+    aisladas -- un "aja" salia en 1049 ms cuando una persona lo dice en 300 -- y su
+    duracion varia el doble entre dos sintesis del mismo texto. Ver `_la_mas_breve`.
     """
 
     clave: str
     texto: str
     enfasis: bool = False
+    breve: bool = False
 
 
 @dataclass(frozen=True)
@@ -320,13 +326,25 @@ ACUSES = (
 # Se emiten inmediatamente al detectar que el paciente termino de hablar, antes
 # de que el pipeline tenga la respuesta. Cubren el hueco de proceso con algo que
 # una persona diria, en vez de con silencio digital.
+# Todas son PALABRAS, y eso es un cambio con motivo. Estaban "Mm-hm." y "Mm, a ver.", y
+# un TTS no dice bien lo que no es una palabra: espeak-ng no tiene fonemas para una
+# vocalizacion nasal, asi que las estiraba -- 1205 ms y 1862 ms medidos -- y sonaban a
+# maquina. Es la queja que llego de una prueba real: "el mmmm suena muy lagueado".
+#
+# Y van marcadas `breve`, asi que el pre-renderizado se queda con la realizacion mas corta
+# de varias. Sin eso, la misma palabra dura entre 0.5 y 1.2 s segun la tirada.
+# Las cuatro que la sintesis entrega por debajo de 700 ms, medidas con `breve` puesto:
+#
+#   Sí.  386 ms    Ya.  466 ms    Bien.  607 ms    Claro.  662 ms
+#
+# "Ajá." (946) y "Okey." (892) se cayeron de la lista por lentas, aunque sean las mas
+# naturales de leer: una muletilla de casi un segundo no tapa un hueco, lo abre. El turno
+# de voz tiene una mediana de 185 ms, asi que la muletilla es lo que retrasa la respuesta.
 MULETILLAS_PENSANDO = (
-    Locucion("pensando_1", "Mm-hm."),
-    Locucion("pensando_2", "Ajá."),
-    Locucion("pensando_3", "Ya."),
-    Locucion("pensando_4", "Okey."),
-    Locucion("pensando_5", "Mm, a ver."),
-    Locucion("pensando_6", "Déjeme anotar eso."),
+    Locucion("pensando_1", "Sí.", breve=True),
+    Locucion("pensando_2", "Ya.", breve=True),
+    Locucion("pensando_3", "Bien.", breve=True),
+    Locucion("pensando_4", "Claro.", breve=True),
 )
 
 # Para cuando el proceso se alarga de verdad -- una consulta al corpus, un turno

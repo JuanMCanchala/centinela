@@ -625,6 +625,76 @@ PISTAS_HERIDA = {
     ),
 }
 
+# --------------------------------------------------------------------------
+# Menciones: ¿el paciente HABLO de este dominio, sea para bien o para mal?
+#
+# Es otra pregunta que las pistas de arriba, y por eso es otra tabla. `PISTAS_*` clasifica
+# la GRAVEDAD ("¿esta purulenta, roja o normal?"); esto solo detecta el TEMA ("¿dijo algo
+# de la herida?"). Una frase puede mencionar la herida sin decir nada clasificable --"le
+# tuve que cambiar la gasa tres veces"-- y por eso las dos tablas no se pueden fusionar.
+#
+# Existe por una alerta roja fabricada en una llamada real. El STT se comio un "no" y dejo
+# "cuando me tomo las pasillas ya me hace el dolor"; el modelo devolvio
+# `herida = secrecion_purulenta`; el motor escalo a rojo, correctamente, sobre un dato
+# inventado. El agente le leyo de vuelta "me dice liquido amarillo o pus saliendo de la
+# herida" y el paciente lo nego dos veces.
+#
+# Lo que estas listas sostienen: un hallazgo del valor MAS GRAVE de su escala, en un dominio
+# que nadie pregunto y que el paciente no menciono ni de pasada, no se admite como alarma.
+# Se anota en la traza y se le pregunta por ese dominio en su turno del guion -- que llega
+# igual, porque la conversacion la conduce una maquina de estados.
+#
+# Los terminos son de anatomia y de cuidado, no de gravedad, a proposito: son los que
+# aparecen cuando alguien habla del tema sin usar vocabulario clinico. Las cuatro parafrasis
+# rojas de `eval/redteam.py` entran todas por aqui -- "cortaron", "cortada", "herida",
+# "gasa" -- y la frase de las pastillas no entra por ninguno.
+# --------------------------------------------------------------------------
+
+MENCIONES = {
+    "herida": (
+        "herida", "cortada", "cortaron", "cortadura", "cicatriz", "cicatriz",
+        "punto", "puntos", "sutura", "incision", "gasa", "venda", "vendaje",
+        "aposito", "curacion", "curaciones", "costra", "grapa", "grapas",
+        "me operaron", "donde me abrieron", "la operacion se",
+    ),
+    "movilidad": (
+        "caminar", "camino", "camina", "andar", "ando", "pararme", "parar",
+        "levantarme", "levantar", "moverme", "mover", "movilidad", "pierna",
+        "piernas", "pie", "pies", "rodilla", "cadera", "apoyar", "apoyo",
+        "muleta", "muletas", "caminador", "baston", "arrastrar", "arrastrarme",
+        "sostener", "sostenerme", "sentarme", "acostarme", "escalera",
+    ),
+    "apetito": (
+        "comer", "como", "comida", "apetito", "hambre", "tragar", "alimento",
+        "desayun", "almuerzo", "almorzar", "cenar", "cena", "probar bocado",
+        "ganas de comer", "nausea", "vomit", "asco",
+    ),
+    "sueno": (
+        "dormir", "duermo", "duerme", "sueno", "noche", "noches", "despierto",
+        "despierta", "desvel", "descansar", "descanso", "insomnio", "acostar",
+        "madrugada", "pesadilla",
+    ),
+}
+
+
+def menciona(texto: str, dominio: str) -> bool:
+    """Si el paciente habló de ese dominio, aunque no dijera nada clasificable.
+
+    Sin tildes y en minúsculas, como el resto del normalizador: el paciente dice «cicatriz»
+    y el STT escribe «cicatríz» según el día.
+    """
+
+    terminos = MENCIONES.get(dominio)
+    if terminos:
+        plano = sin_tildes((texto or "").lower())
+        hallado = any(t in plano for t in terminos)
+    else:
+        # Un dominio sin lista no se puede negar: dolor y fiebre son numericos y su
+        # respaldo lo da la regex que leyo la cifra, no una palabra clave.
+        hallado = True
+    return hallado
+
+
 PISTAS_MOVILIDAD = {
     # Las cuatro ultimas formas las encontro la familia `parafraseo_rojo` de
     # `eval/redteam.py`, que describe criterios de alarma con palabras que NO estan en

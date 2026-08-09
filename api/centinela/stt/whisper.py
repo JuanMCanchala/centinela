@@ -107,10 +107,31 @@ DLLS_CUDA = _registrar_dlls_cuda()
 # fuerza que el parametro `language`, que por si solo no evito "Season young".
 PROMPT_CLINICO = (
     "Llamada de seguimiento postoperatorio en Colombia. El paciente responde sobre "
-    "dolor, fiebre, temperatura, movilidad, la herida quirurgica, apetito y sueno. "
+    "dolor, fiebre, temperatura, movilidad, la herida quirurgica, apetito, sueno y las "
+    "pastillas que le formularon. "
     "Ejemplos: si senora, no he tenido fiebre, el dolor esta como en un seis, "
-    "la herida se ve enrojecida, tengo treinta y siete cinco de temperatura."
+    "la herida se ve enrojecida, tengo treinta y siete cinco de temperatura, "
+    "cuando me tomo las pastillas ya no me duele, me tomo el acetaminofen cada ocho "
+    "horas, no me ha cedido con las pastillas."
 )
+
+# Las tres frases nuevas del prompt salen de un fallo de una llamada real, y las dos cosas
+# que arreglan son distintas.
+#
+# El agente pregunto si el dolor cedia con las pastillas. El paciente contesto "cuando me
+# tomo las pastillas ya NO me hace el dolor" y el STT escribio "cuando me tomo las
+# PASILLAS ya me hace el dolor": cambio una palabra por otra que existe --un pasillo es un
+# pasillo-- y se comio la negacion. La frase quedo diciendo lo contrario de lo que el
+# paciente dijo, y de ahi salio un hallazgo inventado y una alerta roja.
+#
+# El prompt es la palanca que el encabezado de este archivo ya senala como la que mas baja
+# el error, y no tenia ni una palabra de medicacion: ni "pastillas", ni "acetaminofen", ni
+# un ejemplo con "ya no". Ahora tiene las tres, y las dos negaciones estan a proposito --
+# sesgar hacia conservar el "no" es sesgar del lado seguro, porque perder una negacion
+# invierte el significado clinico entero.
+#
+# Lo que NO cambia: `es_eco_del_prompt` mira solo la mitad instruccional (lo anterior a
+# "Ejemplos:"), asi que anadir ejemplos no debilita la deteccion de regurgitacion.
 
 # Frases que Whisper inventa cuando no hay voz. Vienen de su corpus de YouTube.
 # La comparacion se hace sobre el texto normalizado y solo cuando la frase
