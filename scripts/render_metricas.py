@@ -86,6 +86,57 @@ def main() -> int:
                  "del guion se conocen antes de que suene el teléfono. El P95 y el P99 son "
                  "los turnos que sí necesitan sintetizar voz nueva o invocar al modelo.")
         L.append("")
+
+        # Una sola cifra sobre la mezcla se mueve con la proporción de preguntas del
+        # guion que tenga la muestra, no con el sistema: un turno cacheado sale en 0.6 ms
+        # y uno que consulta el corpus tarda segundos. Publicado por camino, cada número
+        # dice de qué habla.
+        cam = runtime.get("por_camino", {})
+        if cam.get("disponible"):
+            L.append("#### Partido por camino")
+            L.append("")
+            L.append(f"Sobre los **{cam['n_turnos_medidos']} turnos** medidos en "
+                     f"`{cam['fuente']}`, no sobre la ventana en memoria de un proceso.")
+            L.append("")
+            L.append("| Camino | n | P50 | P95 | P99 |")
+            L.append("|---|---:|---:|---:|---:|")
+            for c in cam["caminos"]:
+                L.append(f"| {c['camino']} | {c['n']} | {c['p50_ms']} ms | "
+                         f"{c['p95_ms']} ms | {c['p99_ms']} ms |")
+            L.append("")
+
+        if cam.get("voz_por_configuracion"):
+            L.append("El histórico cruza un cambio de sistema, así que el camino de voz se "
+                     "publica separado por configuración de transcripción: mezclarlas daría "
+                     "un percentil que no describe ninguna de las dos.")
+            L.append("")
+            L.append("| Configuración | n | P50 | P95 |")
+            L.append("|---|---:|---:|---:|")
+            for c in cam["voz_por_configuracion"]:
+                L.append(f"| {c['camino']} | {c['n']} | {c['p50_ms']} ms | {c['p95_ms']} ms |")
+            L.append("")
+            L.append(f"Vigente: **{cam.get('configuracion_vigente')}**.")
+            L.append("")
+
+        e2e = runtime.get("extremo_a_extremo", {})
+        if e2e.get("disponible"):
+            L.append("#### Desde que el paciente deja de hablar")
+            L.append("")
+            L.append(f"> {e2e['definicion']}")
+            L.append("")
+            ep = e2e["endpointing_ms"]
+            L.append("| Medida | Valor |")
+            L.append("|---|---:|")
+            L.append(f"| P50 con cierre adaptativo ({ep['adaptativo']:.0f} ms) | "
+                     f"**{e2e['p50_ms_con_cierre_adaptativo']} ms** |")
+            L.append(f"| P50 con el techo ({ep['techo']:.0f} ms) | "
+                     f"{e2e['p50_ms_con_techo']} ms |")
+            L.append(f"| P95 con el techo | {e2e['p95_ms_con_techo']} ms |")
+            L.append("")
+            L.append(f"> {ep['nota']} Medido sobre {e2e['medido_sobre']} "
+                     f"({e2e['n']} turnos).")
+            L.append("")
+
         L.append("### Consumo")
         L.append("")
         L.append("| Métrica | Valor |")

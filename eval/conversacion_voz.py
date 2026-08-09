@@ -99,12 +99,47 @@ async def turno(ws, pcm: bytes, rapido: bool) -> dict:
 
     # Igual que el navegador: pausa corta primero, fin de turno despues.
     await ws.send(json.dumps({"tipo": "pausa_corta"}))
-    if not rapido:
-        await asyncio.sleep(0.4)
-    t0 = time.perf_counter()
-    await ws.send(json.dumps({"tipo": "fin_habla"}))
 
-    resultado: dict = {"ms_primer_sonido": None, "ms_turno": None, "tipos_recibidos": []}
+    # Y como el navegador, se atiende `cerrando_turno`.
+    #
+    # **Sin esto el arnes se acusaba a si mismo.** La `pausa_corta` dispara el cierre
+    # adaptativo del servidor, que cierra el turno en cuanto la respuesta se sostiene
+    # sola -- a los 450 ms. Este arnes esperaba 400 ms y mandaba `fin_habla` de todas
+    # formas, asi que las dos cosas corrian una carrera: cuando ganaba el servidor, el
+    # `fin_habla` llegaba con el turno ya servido y la sesion ya drenada, el servidor
+    # contestaba `sin_habla` -- correctamente, no habia audio nuevo -- y el arnes lo
+    # anotaba como "turno descartado como sin voz". Turnos que se habian entendido
+    # perfectamente. El sintoma alternaba, que es lo que delata una carrera: fallaban el
+    # 2 y el 4, y con el STT en CPU fallaban otros, porque cambia quien llega primero.
+    #
+    # El navegador nunca tuvo el fallo: `cerrarTurnoPorOrden` ya atiende ese mensaje.
+    # Lo que faltaba era que el arnes hablara el mismo protocolo que mide.
+    pendientes: list = []
+    cerrado_por_el_servidor = False
+    if not rapido:
+        limite = time.perf_counter() + 0.4
+        while not cerrado_por_el_servidor and time.perf_counter() < limite:
+            try:
+                msg = await asyncio.wait_for(
+                    ws.recv(), timeout=max(0.01, limite - time.perf_counter())
+                )
+            except asyncio.TimeoutError:
+                msg = None
+            if msg is not None:
+                pendientes.append(msg)
+                if isinstance(msg, str) and json.loads(msg).get("tipo") == "cerrando_turno":
+                    cerrado_por_el_servidor = True
+
+    t0 = time.perf_counter()
+    if not cerrado_por_el_servidor:
+        await ws.send(json.dumps({"tipo": "fin_habla"}))
+
+    resultado: dict = {
+        "ms_primer_sonido": None,
+        "ms_turno": None,
+        "tipos_recibidos": [],
+        "cerrado_por_el_servidor": cerrado_por_el_servidor,
+    }
     esperando_relleno = False
 
     # El turno se lee hasta que el servidor dice que acabo de hablar (`fin_voz`), no
@@ -119,11 +154,17 @@ async def turno(ws, pcm: bytes, rapido: bool) -> dict:
     # atrasado era el lector. El tope alto de abajo es solo una red contra un bucle
     # infinito, no un criterio de fin de turno.
     for _ in range(4000):
-        try:
-            msg = await asyncio.wait_for(ws.recv(), timeout=60)
-        except asyncio.TimeoutError:
-            resultado["timeout"] = True
-            break
+        # Lo que llego durante la ventana de `cerrando_turno` se procesa primero: son
+        # mensajes de este turno, no del siguiente, y perderlos era el fallo que ya
+        # documenta el comentario del tope de abajo.
+        if pendientes:
+            msg = pendientes.pop(0)
+        else:
+            try:
+                msg = await asyncio.wait_for(ws.recv(), timeout=60)
+            except asyncio.TimeoutError:
+                resultado["timeout"] = True
+                break
 
         ms = (time.perf_counter() - t0) * 1000
 
@@ -163,6 +204,27 @@ async def turno(ws, pcm: bytes, rapido: bool) -> dict:
             elif tipo == "error":
                 resultado["error"] = d.get("mensaje")
                 break
+
+    # El navegador avisa cuando su cola de audio se vacia, y **sin ese aviso el turno
+    # siguiente se pierde entero**.
+    #
+    # `fin_reproduccion` es lo unico que llama a `soltar_la_palabra()` en el servidor.
+    # Mientras el agente "tiene la palabra", las tramas del microfono son eco por
+    # definicion y no entran en la sesion: es justo lo que hace posible el barge-in. Este
+    # arnes no lo mandaba nunca, asi que despues del primer turno el detector se quedaba
+    # vigilando el suelo para siempre y el audio del paciente se descartaba como eco. El
+    # turno salia con `audio de 0.00s`.
+    #
+    # Y de ahi la alternancia que lo delataba: el camino `sin_habla` del servidor tambien
+    # llama a `soltar_la_palabra()`, asi que el turno perdido liberaba el suelo y el
+    # siguiente funcionaba. Fallaban el 2 y el 4, nunca el 1, el 3 ni el 5. Con el STT en
+    # CPU fallaban otros, porque cambiaban los tiempos, y eso hacia parecer que el fallo
+    # era del STT.
+    #
+    # El servidor esta bien: el eco existe hasta que suena la ultima muestra, no hasta que
+    # se envia, asi que solo el cliente sabe cuando ha terminado. Lo que faltaba era que
+    # el arnes hablara el protocolo que mide.
+    await ws.send(json.dumps({"tipo": "fin_reproduccion"}))
 
     return resultado
 

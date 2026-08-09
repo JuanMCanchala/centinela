@@ -107,25 +107,36 @@ así que una muestra sin ellos mide una conversación que nadie tiene.
 **1. Latencia de respuesta** — *desde que se cierra el VAD (fin de habla del paciente)
 hasta que el primer byte de audio del agente sale hacia el navegador.*
 
-| Percentil | Latencia |
-|---|---:|
-| **P50** | **1.0 ms** |
-| **P95** | **1 433.3 ms** |
-| P99 | 6 080.5 ms |
+Se publica **partida por camino**, sobre los 7 321 turnos medidos en
+`data/runtime/metricas.jsonl`. Una sola cifra sobre la mezcla no describe nada: un turno
+del guion sale del caché en 0.6 ms y uno que consulta el corpus tarda segundos, así que
+el número se movería con la proporción de preguntas del guion que tuviera la muestra, no
+con el sistema. La tabla completa la genera `make metricas` en
+[`docs/metricas.md`](docs/metricas.md); aquí van las dos filas que importan:
 
-El P50 es de milisegundos porque **83 % de los turnos se sirven desde el caché de audio
-pre-renderizado**: la conversación la conduce una máquina de estados, así que las
-locuciones del guion se conocen antes de que suene el teléfono.
-
-Desglose por etapa, sobre la misma muestra:
-
-| Etapa | P50 | P95 | n |
+| Camino | n | P50 | P95 |
 |---|---:|---:|---:|
-| Transcripción (Whisper) | **72.9 ms** | 730.2 ms | 13 |
-| Extracción clínica | **0.2 ms** | 0.5 ms | 42 |
-| Síntesis de voz (Piper) | **0.5 ms** | 1 085.7 ms | 42 |
+| Pregunta del guion, voz desde caché | 6 623 | **0.6 ms** | 126.7 ms |
+| Turno de voz, configuración vigente (`medium/cuda`) | 22 | **171.8 ms** | 2 197.7 ms |
 
-**Estas tres cifras costaron dos correcciones, y las dos merecen contarse.**
+El P50 del primer camino es de microsegundos porque **90 % de los turnos se sirven desde
+el caché de audio pre-renderizado**: la conversación la conduce una máquina de estados,
+así que las locuciones del guion se conocen antes de que suene el teléfono.
+
+**Y contada como la cuenta el mercado**, que mide desde que el llamante deja de hablar
+—endpointing incluido— y no desde que el VAD cierra:
+
+| Medida | Valor |
+|---|---:|
+| P50 con cierre adaptativo (450 ms) | **621.8 ms** |
+| P50 con el techo del cliente (900 ms) | 1 071.8 ms |
+| P95 con el techo | 3 097.7 ms |
+
+Los 622 ms de mediana quedan dentro del umbral en que una conversación se siente natural.
+El P95 no: son los turnos donde el modelo tiene que intervenir, y es el trabajo que sigue
+abierto.
+
+**Estas cifras costaron tres correcciones, y las tres merecen contarse.**
 
 La primera fue de medición. El README decía *"el STT tarda 5.6 s en P50 sobre este equipo
 sin GPU"*, y las dos mitades eran falsas: hay CUDA (`medium` en `cuda/int8_float16`,
@@ -153,16 +164,41 @@ otra y la voz se queda baja un poco más. Un bache baja el volumen 250 ms y el a
 sigue; lo que nunca pasa es perder el turno, y eso sigue en **0 cortes falsos con 100 % de
 detección hasta −12 dB** (`make bargein`, tres corridas).
 
+La tercera es la más incómoda, porque **la afirmación de arriba se volvió falsa sin que
+nada avisara**. Este README decía que había CUDA y que el STT corría en
+`medium/cuda/int8_float16` —y era cierto cuando se escribió—. Después dejó de serlo: la
+escalera de configuraciones probaba `medium/cuda`, la primera inferencia fallaba con
+`Library cublas64_12.dll is not found or cannot be loaded`, y bajaba dos peldaños hasta
+`small/cpu`. Siguió atendiendo llamadas, más lento y con más error, sin una línea de log
+que lo llamara problema, mientras el documento publicaba las cifras del peldaño de arriba.
+La DLL estaba en el disco, en los wheels de NVIDIA: en Windows Python no la busca ahí.
+
+Lo que costaba, medido sobre las 18 grabaciones humanas de `eval/audios`:
+
+| | Latencia | WER medio | Dato clínico mal | Repreguntas |
+|---|---:|---:|---:|---:|
+| `small/cpu` (lo que corría) | 1 054 ms | 0.126 | **1** | **1 de 18** |
+| `medium/cuda` (lo que decía) | **231 ms** | **0.053** | 0 | 0 |
+
+De ahí que `GET /api/salud` publique ahora `degradado_a_cpu`, que cada medición de
+`metricas.jsonl` anote con qué configuración se tomó, y que el P95 del camino de voz se
+publique separado por configuración: mezclar las dos poblaciones daba 13 732 ms, un
+percentil que no describe ninguno de los dos sistemas.
+
 **2. Consumo por turno y por llamada**
 
 | Métrica | Valor |
 |---|---:|
 | Tokens de entrada / salida por turno (P50) | **0 / 0** |
-| Tokens de entrada / salida por turno (media) | 109.3 / 2.8 |
-| Tokens de entrada / salida **por llamada** (media) | **415.4 / 10.8** |
-| Turnos por llamada (media) | 3.8 |
+| Tokens de entrada / salida por turno (media) | 108.7 / 8.7 |
+| Tokens de entrada / salida **por llamada** (media) | **462.2 / 37.0** |
+| Turnos por llamada (media) | 4.2 |
 
-**3. Invocaciones al modelo por turno** — **P50 = 0**, media 0.04, máximo 1. La mayoría de
+Estas cuatro se miden sobre la ventana del proceso vivo, así que se mueven con lo que se
+haya ejecutado antes. Las regenera `make runtime && make metricas`; las de la tabla salen
+de la última corrida sobre `make humo` más cuatro llamadas por voz.
+
+**3. Invocaciones al modelo por turno** — **P50 = 0**, media 0.12, máximo 1. La mayoría de
 los turnos no llegan al modelo: si la regex ya extrajo el dolor y el léxico resolvió la
 herida, no hay nada que preguntarle. Es la consecuencia directa de que la decisión clínica
 la tome el motor de reglas.
@@ -317,7 +353,7 @@ clasificador aislado. Resultado: **42/42**.
 - Intentos de manipulación resistidos: **11/11**
 - Casos donde la criticidad bajó porque el paciente lo pidió: **0**
 
-Más `make test`: **671 tests**, que incluyen cero falsos positivos de manipulación sobre
+Más `make test`: **687 tests**, que incluyen cero falsos positivos de manipulación sobre
 turnos textuales del dataset oficial. Ese grupo importa tanto como el primero: un agente
 que acusa a un paciente asustado de intentar manipularlo es inservible.
 
@@ -695,7 +731,7 @@ ejecuta exactamente estos comandos como subprocesos. El veredicto es su código 
 así que no hay una segunda implementación dentro del panel.
 
 ```bash
-make test        # 671 tests unitarios y de regresión
+make test        # 687 tests unitarios y de regresión
 make eval        # 160 casos oficiales · cero falsos negativos clínicos
 make redteam     # 43 casos adversariales (requiere la API levantada)
 make humo        # 103 comprobaciones de extremo a extremo (requiere la API levantada)

@@ -1,66 +1,66 @@
 {
   "resumen": {
-    "n_turnos": 42,
-    "n_llamadas": 11,
+    "n_turnos": 51,
+    "n_llamadas": 12,
     "latencia_hasta_primer_audio": {
-      "p50_ms": 1.0,
-      "p95_ms": 1433.3,
-      "p99_ms": 6080.5,
+      "p50_ms": 2.1,
+      "p95_ms": 2141.5,
+      "p99_ms": 5207.4,
       "min_ms": 0.4,
-      "max_ms": 6305.2,
+      "max_ms": 7180.8,
       "definicion": "desde que se cierra el VAD (fin de habla del paciente) hasta que el primer byte de audio del agente sale hacia el navegador"
     },
     "por_etapa": {
       "stt": {
-        "p50_ms": 72.9,
-        "p95_ms": 730.2,
-        "n": 13
+        "p50_ms": 69.2,
+        "p95_ms": 506.6,
+        "n": 22
       },
       "extraccion": {
         "p50_ms": 0.2,
-        "p95_ms": 0.5,
-        "n": 42
+        "p95_ms": 1975.2,
+        "n": 51
       },
       "tts": {
-        "p50_ms": 0.5,
-        "p95_ms": 1085.7,
-        "n": 42
+        "p50_ms": 0.3,
+        "p95_ms": 552.8,
+        "n": 51
       }
     },
     "tokens_por_turno": {
       "entrada_p50": 0.0,
       "salida_p50": 0.0,
-      "entrada_media": 108.8,
-      "salida_media": 2.8
+      "entrada_media": 108.7,
+      "salida_media": 8.7
     },
     "tokens_por_llamada": {
-      "entrada_media": 415.4,
-      "salida_media": 10.8,
-      "turnos_media": 3.8
+      "entrada_media": 462.2,
+      "salida_media": 37,
+      "turnos_media": 4.2
     },
     "invocaciones_llm_por_turno": {
       "p50": 0.0,
       "max": 1,
-      "media": 0.05
+      "media": 0.1
     },
     "consultas_rag_por_llamada": {
-      "media": 0.18,
+      "media": 0.17,
       "max": 1
     },
     "tts": {
-      "turnos_servidos_desde_cache": 35,
-      "proporcion_desde_cache": 0.833
+      "turnos_servidos_desde_cache": 42,
+      "proporcion_desde_cache": 0.824
     }
   },
   "costo": {
     "modelo_de_costo": "extrapolacion a precios de API de produccion",
     "aclaracion": "Centinela corre local; el costo marginal real por llamada es electricidad. Estas cifras son lo que costaria el mismo trafico medido si se sirviera desde APIs comerciales.",
     "insumos_medidos": {
-      "tokens_entrada_por_llamada": 415.4,
-      "tokens_salida_por_llamada": 10.8,
-      "turnos_por_llamada": 3.8,
-      "segundos_audio_entrada": 30.4,
-      "caracteres_tts": 342.0
+      "tokens_entrada_por_llamada": 462.2,
+      "tokens_salida_por_llamada": 37,
+      "turnos_por_llamada": 4.2,
+      "segundos_audio_entrada": 33.6,
+      "caracteres_tts": 378.0
     },
     "tarifas_referencia": {
       "llm_entrada_usd_por_mtok": 0.1,
@@ -74,11 +74,108 @@
       "usd_cop_referencia": "tasa redondeada de referencia, agosto 2026"
     },
     "desglose_usd": {
-      "llm": 4.3e-05,
-      "stt": 0.000937,
-      "tts": 0.001368
+      "llm": 5e-05,
+      "stt": 0.001036,
+      "tts": 0.001512
     },
-    "costo_total_usd_por_llamada": 0.002348,
-    "costo_total_cop_por_llamada": 9.4
+    "costo_total_usd_por_llamada": 0.002598,
+    "costo_total_cop_por_llamada": 10.4
+  },
+  "por_camino": {
+    "disponible": true,
+    "fuente": "data/runtime/metricas.jsonl",
+    "n_turnos_medidos": 7321,
+    "caminos": [
+      {
+        "camino": "todos",
+        "definicion": "cualquier turno, de voz o de texto",
+        "n": 7321,
+        "p50_ms": 0.6,
+        "p95_ms": 2153.7,
+        "p99_ms": 5850.2,
+        "max_ms": 17961.7
+      },
+      {
+        "camino": "voz del agente desde cache",
+        "definicion": "pregunta del guion: la locucion ya estaba sintetizada",
+        "n": 6623,
+        "p50_ms": 0.6,
+        "p95_ms": 126.7,
+        "p99_ms": 2339.5,
+        "max_ms": 14856.6
+      },
+      {
+        "camino": "voz del agente sintetizada en el turno",
+        "definicion": "el agente dijo algo que no estaba en el guion",
+        "n": 698,
+        "p50_ms": 472.0,
+        "p95_ms": 6660.3,
+        "p99_ms": 15437.1,
+        "max_ms": 17961.7
+      },
+      {
+        "camino": "con invocacion al modelo",
+        "definicion": "el regex no resolvio y hubo que preguntarle al LLM",
+        "n": 458,
+        "p50_ms": 2554.9,
+        "p95_ms": 11478.1,
+        "p99_ms": 16362.2,
+        "max_ms": 17961.7
+      },
+      {
+        "camino": "con consulta al corpus",
+        "definicion": "el paciente pregunto algo que se responde con la guia",
+        "n": 104,
+        "p50_ms": 6045.9,
+        "p95_ms": 16273.7,
+        "p99_ms": 17398.8,
+        "max_ms": 17961.7
+      },
+      {
+        "camino": "turno de voz (entro por el microfono)",
+        "definicion": "el unico camino que un paciente recorre de verdad",
+        "n": 254,
+        "p50_ms": 445.1,
+        "p95_ms": 13431.9,
+        "p99_ms": 16713.2,
+        "max_ms": 17961.7
+      }
+    ],
+    "muestra_de_voz_suficiente": true,
+    "voz_por_configuracion": [
+      {
+        "camino": "voz con STT medium/cuda",
+        "definicion": "turnos de voz medidos con esa configuracion de transcripcion",
+        "n": 22,
+        "p50_ms": 171.8,
+        "p95_ms": 2197.7,
+        "p99_ms": 3017.7,
+        "max_ms": 3234.0
+      },
+      {
+        "camino": "voz con STT sin registrar",
+        "definicion": "turnos de voz medidos con esa configuracion de transcripcion",
+        "n": 232,
+        "p50_ms": 461.1,
+        "p95_ms": 13732.4,
+        "p99_ms": 16771.6,
+        "max_ms": 17961.7
+      }
+    ],
+    "configuracion_vigente": "medium/cuda"
+  },
+  "extremo_a_extremo": {
+    "disponible": true,
+    "definicion": "desde que el paciente deja de hablar hasta el primer byte de audio del agente, endpointing incluido. Es la definicion con la que se publican los benchmarks de agentes de voz.",
+    "endpointing_ms": {
+      "adaptativo": 450.0,
+      "techo": 900.0,
+      "nota": "el turno cierra a los 450 ms cuando la respuesta ya resuelve el dominio preguntado, y espera el techo de 900 ms cuando no. `eval/escucha.py` mide cuantas grabaciones cierran pronto."
+    },
+    "p50_ms_con_cierre_adaptativo": 621.8,
+    "p50_ms_con_techo": 1071.8,
+    "p95_ms_con_techo": 3097.7,
+    "n": 22,
+    "medido_sobre": "voz con STT medium/cuda"
   }
 }

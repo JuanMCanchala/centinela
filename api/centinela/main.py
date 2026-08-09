@@ -919,6 +919,11 @@ async def _empaquetar_turno(llamada_id, policy, accion, crono, audio) -> dict:
     medicion.tokens_entrada = accion.uso.tokens_entrada
     medicion.tokens_salida = accion.uso.tokens_salida
     medicion.invocaciones_llm = accion.uso.invocaciones
+    # Con que se transcribio. Sin esto, el historico mezcla configuraciones y sus
+    # percentiles no describen ningun sistema. Ver `MedicionTurno.stt`.
+    transcriptor = E.get("stt")
+    if transcriptor is not None:
+        medicion.stt = f"{transcriptor.tamano}/{transcriptor.dispositivo}"
     medicion.tts_desde_cache = all(f.clave for f in accion.fragmentos)
     E["metrics"].registrar(medicion)
 

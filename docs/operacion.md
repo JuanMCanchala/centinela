@@ -433,6 +433,42 @@ cubriría el caso del altavoz abierto a todo volumen, y no está.
 **Solapamiento real.** La interrupción es excluyente: uno de los dos calla. En una
 conversación humana hay medio segundo en que los dos hablan y ninguno se detiene.
 
+### La latencia publicada no cuadra con la que se siente
+
+Tres cosas distintas se llaman "latencia" aquí, y confundirlas explica casi cualquier
+discrepancia:
+
+| Cifra | Qué mide | Dónde sale |
+|---|---|---|
+| `ms_hasta_primer_audio` | desde que el VAD cierra hasta el primer byte de audio | `/api/metricas`, es la que nombra la rúbrica |
+| extremo a extremo | lo anterior **más el endpointing** (450–900 ms) | `runtime.json → extremo_a_extremo` |
+| por camino | lo mismo, separado por cache / modelo / corpus / voz | `runtime.json → por_camino` |
+
+Dos reglas para no publicar una cifra que no describe nada:
+
+**Nunca una sola cifra sobre la mezcla.** Un turno del guion sale del caché en 0.6 ms y uno
+que consulta el corpus tarda segundos: cuatro órdenes de magnitud. El agregado se mueve con
+la proporción de preguntas del guion que tenga la muestra, no con el sistema.
+
+**Nunca cruzando configuraciones.** Cada medición anota su `stt` (por ejemplo
+`medium/cuda`). Mezclar el histórico de `small/cpu` con el de `medium/cuda` daba un P95 de
+voz de 13 732 ms cuando la configuración vigente está en 2 198. Los turnos anteriores al
+campo salen como `sin registrar` y se publican aparte, porque no se sabe con qué se
+midieron.
+
+`make runtime` avisa si el camino de voz tiene menos de 20 turnos. Para llenarlo:
+
+```bash
+python -m eval.conversacion_voz --url ws://127.0.0.1:8000   # 5 turnos de voz por corrida
+```
+
+Ese arnés **tiene que mandar `fin_reproduccion`** como hace el navegador. Es lo único que
+libera el suelo en el servidor: mientras el agente tiene la palabra las tramas del
+micrófono son eco por definición y no entran en la sesión. Un cliente que no lo manda
+pierde el turno siguiente entero, con `audio de 0.00s`, y el siguiente funciona —porque el
+camino `sin_habla` también libera el suelo—. El síntoma alterna, y esa alternancia es la
+firma.
+
 ### El STT transcribe en CPU teniendo GPU (y no lo dice)
 
 Es el fallo más caro de detectar que ha tenido este sistema, porque **no produce ningún

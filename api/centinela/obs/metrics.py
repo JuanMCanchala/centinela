@@ -65,6 +65,18 @@ class MedicionTurno:
     # 900 ms del cliente; un valor entre 450 y 900 es un cierre adaptativo, y es la
     # medida de cuanta pausa se le quito a la conversacion.
     ms_silencio_al_cerrar: float = 0.0
+    # Con que configuracion de transcripcion se midio este turno, como "medium/cuda".
+    #
+    # **Por que hace falta.** El historico de `metricas.jsonl` acumula desde el primer
+    # dia, y al mover el STT de `small/cpu` a `medium/cuda` la latencia del camino de voz
+    # cambio de p50 410 ms a 134 ms. Un percentil sobre las dos poblaciones juntas no
+    # describe ninguno de los dos sistemas: el p95 de voz salia 13 732 ms mezclando 198
+    # turnos de CPU con 34 de GPU. Sin este campo la unica forma de separarlos es la fecha,
+    # y una fecha a mano en un script es una cifra escrita a mano.
+    #
+    # Los turnos anteriores a este campo salen con `None`, y se publican aparte en vez de
+    # sumarse: no se sabe con que se midieron, y eso es un dato, no un estorbo.
+    stt: str | None = None
 
     def a_dict(self) -> dict:
         return asdict(self)
