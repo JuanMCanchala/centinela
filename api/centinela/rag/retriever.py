@@ -26,7 +26,7 @@ from typing import Sequence
 
 from ..models import Cita
 from .embedder import Embedder, embedder_compartido
-from .ingest import TEMA_POR_PROCEDIMIENTO, normalizar
+from .ingest import CATEGORIA_CONSOLA, TEMA_POR_PROCEDIMIENTO, normalizar
 from .store import KnowledgeStore
 
 K_RRF = 60
@@ -48,6 +48,11 @@ MIN_SOLAPE_LEXICO = 0.12
 # porque su soporte no es complementario.
 MIN_SOLAPE_COMPLEMENTARIO = 0.38
 MIN_PASAJES = 1
+
+# Como se guarda "no se pudo determinar el procedimiento" en los metadatos del indice.
+# Chroma no admite `None` en un valor de metadato, asi que el almacen escribe la cadena
+# vacia (ver `KnowledgeStore.registrar_documento`).
+SIN_TEMA = ""
 
 
 @dataclass
@@ -181,7 +186,20 @@ class Retriever:
 
     def _buscar_denso(self, consulta: str, tema: str | None = None) -> list[Pasaje]:
         vector = self.embedder.embed_consulta(consulta)
-        filtro = {"tema": tema} if tema else None
+        # Lo que entro por la consola pasa el filtro aunque no tenga tema. Sin esto la
+        # compuerta G5 se quedaba sin efecto en el unico camino que la compuerta nombra:
+        # en una llamada el paciente TIENE procedimiento, asi que el filtro esta activo, y
+        # un documento de prueba cuyo texto no menciona ninguno de los cinco no coincide
+        # con nada. El jurado lo habria subido, lo habria visto indexado, y el agente no
+        # lo habria usado nunca.
+        #
+        # Y es "lo que entro por la consola", no "lo que no tiene tema". La version amplia
+        # tambien dejaba entrar el PDF del corpus que el clasificador no supo etiquetar, y
+        # eso rompio la abstencion de mastectomia en la misma corrida en que se probo: la
+        # pregunta por la herida paso de "no la tengo" a una respuesta fundamentada. Un
+        # documento que un operador acaba de subir mientras la llamada corre y un PDF que
+        # el clasificador no entendio no son la misma cosa.
+        filtro = {"$or": [{"tema": tema}, {"categoria": CATEGORIA_CONSOLA}]} if tema else None
         try:
             crudo = self.store.coleccion.query(
                 query_embeddings=[vector],
@@ -223,7 +241,11 @@ class Retriever:
             # corpus completo y aqui se descarta lo que no corresponde al
             # procedimiento, manteniendo el ranking relativo de lo que queda.
             if tema:
-                mejores = [i for i in mejores if self._chunks_bm25[i].get("tema") == tema]
+                mejores = [
+                    i for i in mejores
+                    if self._chunks_bm25[i].get("tema") == tema
+                    or self._chunks_bm25[i].get("categoria") == CATEGORIA_CONSOLA
+                ]
             for rango, idx in enumerate(mejores[:N_CANDIDATOS]):
                 if puntajes[idx] > 0:
                     c = self._chunks_bm25[idx]

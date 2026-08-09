@@ -108,10 +108,10 @@ class Cliente:
     def documentos(self) -> dict:
         return self.c.get("/api/documentos").json()
 
-    def subir(self, nombre: str, datos: bytes) -> dict:
+    def subir(self, nombre: str, datos: bytes, tipo: str = "application/pdf") -> dict:
         r = self.c.post(
             "/api/documentos",
-            files={"archivo": (nombre, datos, "application/pdf")},
+            files={"archivo": (nombre, datos, tipo)},
         )
         return r.json()
 
@@ -532,6 +532,65 @@ def caso_conocimiento_vivo(cli: Cliente) -> None:
         "despues del borrado el documento ya no aparece en la recuperacion",
         f"docs={docs_final[:3]}",
     )
+
+    # ----------------------------------------------------------------------
+    # Y ahora la compuerta como esta escrita: "el agente lo usa".
+    #
+    # Lo de arriba prueba la ingesta y el olvido contra los endpoints del RAG. La
+    # compuerta habla de la conversacion, y ese camino tiene una diferencia que casi la
+    # tira: en una llamada el paciente TIENE un procedimiento, asi que el filtro por tema
+    # esta activo. Un documento de prueba cuyo texto no nombra ninguno de los cinco
+    # procedimientos no recibe tema -- el de arriba, por ejemplo -- y el filtro lo
+    # excluia: el jurado lo habria subido, lo habria visto indexado, y el agente no lo
+    # habria usado nunca.
+    #
+    # Se sube en .txt a proposito. La compuerta dice "un documento de prueba que no forma
+    # parte de ningun corpus entregado" y no dice PDF; escribir un .txt es la forma mas
+    # rapida de fabricar uno, y hasta ahora la respuesta era `400 solo se aceptan PDF`.
+    marcador2 = "protocolo Amatista-3312"
+    texto_plano = (
+        f"Protocolo institucional {marcador2} para seguimiento telefonico.\n\n"
+        "Indicacion especifica: cuando el paciente refiere que la zona operada esta "
+        "tibia al tacto pero sin enrojecimiento, el protocolo Amatista-3312 establece "
+        "aplicar frio local durante diez minutos cada cuatro horas y registrar la "
+        "temperatura de la piel en cada control telefonico.\n\n"
+        f"El protocolo {marcador2} no reemplaza el juicio clinico del equipo tratante y "
+        "aplica solo a la institucion que lo emite.\n"
+    )
+
+    sub2 = cli.subir("protocolo_amatista.txt", texto_plano.encode("utf-8"), "text/plain")
+    check(
+        sub2.get("ingerido") is True,
+        "un documento en .txt tambien se ingiere (la compuerta no dice PDF)",
+        json.dumps(sub2, ensure_ascii=False)[:200],
+    )
+    doc_id2 = sub2.get("doc_id")
+
+    pregunta_viva = "que hago si la zona operada esta tibia al tacto pero sin enrojecimiento"
+    en_llamada = cli.iniciar(PACIENTE_VERDE)
+    lid_viva = en_llamada["llamada_id"]
+    cli.turno(lid_viva, "Sí, soy yo")
+    r_viva = cli.turno(lid_viva, pregunta_viva)
+    citas_vivas = [c.get("documento", "") for c in (r_viva.get("citas") or [])]
+    print(f"       en llamada: {r_viva.get('agente_dice', '')[:150]}")
+    print(f"       citas: {citas_vivas[:3]}")
+    check(
+        any("amatista" in c.lower() for c in citas_vivas),
+        "EL AGENTE LO USA EN UNA LLAMADA, con el filtro por procedimiento activo",
+        f"citas={citas_vivas[:3]}",
+    )
+
+    borrado2 = cli.borrar(doc_id2, consulta=pregunta_viva)
+    check(borrado2.get("eliminado") is True, "el .txt tambien se borra")
+
+    r_muerta = cli.turno(lid_viva, pregunta_viva)
+    citas_muertas = [c.get("documento", "") for c in (r_muerta.get("citas") or [])]
+    check(
+        not any("amatista" in c.lower() for c in citas_muertas),
+        "y despues de borrarlo el agente ya no lo cita en la llamada",
+        f"citas={citas_muertas[:3]}",
+    )
+    cli.cerrar(lid_viva)
 
 
 def _pdf_minimo(texto: str) -> bytes:

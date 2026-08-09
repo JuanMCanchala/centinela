@@ -280,12 +280,14 @@
         <section class="panel">
           <h2><svg class="icono" aria-hidden="true"><use href="#subir"/></svg> Subir documento clínico</h2>
           <p class="ayuda">
-            PDF. Se extrae el texto, se aplica OCR a las páginas que no tienen capa de
-            texto, se detecta el tema por contenido y se rechaza si el contenido ya está
-            indexado con otro nombre de archivo.
+            PDF o texto plano (<code>.txt</code>, <code>.md</code>). Se extrae el texto, se
+            aplica OCR a las páginas del PDF que no tienen capa de texto, se detecta el
+            tema por contenido y se rechaza si el contenido ya está indexado con otro
+            nombre de archivo.
           </p>
           <div class="fila">
-            <input type="file" id="archivo" accept="application/pdf">
+            <input type="file" id="archivo"
+                   accept="application/pdf,text/plain,text/markdown,.pdf,.txt,.md">
             <button class="boton primario" id="btn-subir">Subir e indexar</button>
           </div>
           <div id="resultado-subida"></div>

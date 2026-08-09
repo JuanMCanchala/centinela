@@ -247,15 +247,67 @@ class _MotorOCR:
 _OCR = _MotorOCR()
 
 
-def extraer_documento(ruta: Path, tema_declarado: str | None = None, con_ocr: bool = True) -> DocumentoExtraido:
-    datos = ruta.read_bytes()
-    lector = PdfReader(str(ruta))
+# Extensiones de texto plano que se ingieren sin PDF de por medio.
+#
+# El corpus del reto son PDFs, y la ingesta se escribio para eso. Pero la compuerta G5 se
+# verifica "con un documento de prueba que no forma parte de ningun corpus entregado", y no
+# dice PDF: quien lo pruebe puede traer perfectamente un .txt con un dato inventado, que es
+# la forma mas rapida de fabricar uno. Rechazarlo costaria la compuerta entera --y con ella
+# la puntuacion-- por un formato que aqui es mas facil de leer que el que si aceptabamos.
+EXTENSIONES_TEXTO = (".txt", ".md", ".markdown")
+EXTENSIONES_ACEPTADAS = (".pdf",) + EXTENSIONES_TEXTO
+
+# La categoria con la que se marca lo que entra por la consola de administracion. La usa
+# el recuperador para decidir que un documento sin tema detectado aplica a cualquier
+# procedimiento: lo subio una persona a proposito, mientras esta llamada, y excluirlo por
+# no mencionar ninguno de los cinco procedimientos dejaria la compuerta G5 sin efecto.
+#
+# La distincion importa y costo una corrida: NO vale "cualquier documento sin tema". Un PDF
+# del corpus que el clasificador no supo etiquetar no es lo mismo que uno que un operador
+# acaba de subir, y tratarlos igual degrado la abstencion de mastectomia -- que es una
+# garantia publicada.
+CATEGORIA_CONSOLA = "subido_por_consola"
+
+# Cuantos caracteres van en cada "pagina" sintetica de un texto plano. Un texto plano no
+# tiene paginas, y la cita las necesita: sin partirlo, un documento largo citaria siempre
+# "pagina 1" y el jurado no podria verificar la cita contra la fuente.
+CARACTERES_POR_PAGINA_SINTETICA = 2400
+
+
+def _paginas_de_texto_plano(texto: str) -> list[PaginaExtraida]:
+    """Parte un texto plano en paginas sinteticas, cortando por parrafo.
+
+    Se corta en el limite de parrafo mas cercano y no a mitad de palabra: la cita textual
+    que viaja al informe tiene que poder buscarse en el original, y una frase partida por
+    la mitad no se encuentra.
+    """
 
     paginas: list[PaginaExtraida] = []
-    for i, pagina in enumerate(lector.pages):
+    pendiente = _limpiar(texto)
+    numero = 1
+    while pendiente:
+        if len(pendiente) <= CARACTERES_POR_PAGINA_SINTETICA:
+            trozo, pendiente = pendiente, ""
+        else:
+            corte = pendiente.rfind("\n", 0, CARACTERES_POR_PAGINA_SINTETICA)
+            if corte <= 0:
+                corte = pendiente.rfind(" ", 0, CARACTERES_POR_PAGINA_SINTETICA)
+            if corte <= 0:
+                corte = CARACTERES_POR_PAGINA_SINTETICA
+            trozo, pendiente = pendiente[:corte], pendiente[corte:].lstrip()
+        paginas.append(PaginaExtraida(numero=numero, texto=trozo.strip()))
+        numero += 1
+    return paginas
+
+
+def _paginas_de_pdf(ruta: Path, con_ocr: bool) -> list[PaginaExtraida]:
+    """Las paginas de un PDF, con OCR solo donde la extraccion directa no da texto."""
+
+    paginas: list[PaginaExtraida] = []
+    for i, pagina in enumerate(PdfReader(str(ruta)).pages):
         try:
             crudo = pagina.extract_text() or ""
-        except Exception:
+        except Exception:  # noqa: BLE001
             crudo = ""
         limpio = _limpiar(crudo)
         necesita_ocr = len(limpio) < MIN_CARACTERES_PAGINA and con_ocr and _OCR.disponible()
@@ -263,7 +315,7 @@ def extraer_documento(ruta: Path, tema_declarado: str | None = None, con_ocr: bo
         if necesita_ocr:
             try:
                 limpio_ocr = _limpiar(_OCR.texto_de_pagina(ruta, i))
-            except Exception:
+            except Exception:  # noqa: BLE001
                 limpio_ocr = ""
             if len(limpio_ocr) > len(limpio):
                 paginas.append(PaginaExtraida(numero=i + 1, texto=limpio_ocr, por_ocr=True))
@@ -271,6 +323,18 @@ def extraer_documento(ruta: Path, tema_declarado: str | None = None, con_ocr: bo
                 paginas.append(PaginaExtraida(numero=i + 1, texto=limpio))
         else:
             paginas.append(PaginaExtraida(numero=i + 1, texto=limpio))
+    return paginas
+
+
+def extraer_documento(ruta: Path, tema_declarado: str | None = None, con_ocr: bool = True) -> DocumentoExtraido:
+    datos = ruta.read_bytes()
+
+    if ruta.suffix.lower() in EXTENSIONES_TEXTO:
+        # `errors="replace"` y no un fallo: un acento mal codificado no puede tirar una
+        # ingesta entera, y lo que se pierde es un caracter, no el documento.
+        paginas = _paginas_de_texto_plano(datos.decode("utf-8", errors="replace"))
+    else:
+        paginas = _paginas_de_pdf(ruta, con_ocr)
 
     doc = DocumentoExtraido(
         nombre=ruta.name,

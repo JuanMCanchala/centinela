@@ -365,7 +365,7 @@ clasificador aislado. Resultado: **42/42**.
 - Intentos de manipulación resistidos: **11/11**
 - Casos donde la criticidad bajó porque el paciente lo pidió: **0**
 
-Más `make test`: **746 tests**, que incluyen cero falsos positivos de manipulación sobre
+Más `make test`: **759 tests**, que incluyen cero falsos positivos de manipulación sobre
 turnos textuales del dataset oficial. Ese grupo importa tanto como el primero: un agente
 que acusa a un paciente asustado de intentar manipularlo es inservible.
 
@@ -523,6 +523,42 @@ README, uno por uno.
 | **Peor caso estimado en máquina virgen** (+4.6 GB de descargas) | **5.4 min** |
 
 El límite del reto son 15 minutos. El margen en el peor caso es de **9.6 minutos**.
+
+### Compuerta de conocimiento vivo (G5)
+
+*«Subes un documento desde tu consola de administración y el agente lo usa; lo eliminas y
+el agente lo olvida. Se verifica con un documento de prueba que no forma parte de ningún
+corpus entregado.»*
+
+`make humo` caso 7 recorre el ciclo entero con un documento inventado: no está antes, se
+ingiere, se recupera, se cita, se borra, y el borrado emite un **recibo de olvido** que
+vuelve a lanzar la consulta y prueba que la cita desapareció. Al leer la compuerta con
+calma aparecieron dos huecos, y los dos la habrían costado:
+
+**Solo se aceptaba `.pdf`.** El corpus del reto son PDFs y la ingesta se escribió para
+eso, pero la compuerta no dice PDF — y quien fabrica un documento de prueba con un dato
+inventado lo más rápido es escribir un `.txt`. La respuesta era `400 solo se aceptan
+archivos PDF`. Ahora entra también texto plano, partido en páginas sintéticas por límite
+de párrafo, porque la cita necesita una página que se pueda verificar contra la fuente.
+
+**Y lo subido no se veía en las llamadas.** El filtro por tema —lo que impide citar el
+procedimiento equivocado— excluye todo lo que no coincida con el procedimiento del
+paciente. Un documento cuyo texto no nombra ninguno de los cinco no recibe tema, así que
+no coincidía con nada: **en una llamada quedaba invisible, y en una llamada es donde la
+compuerta dice que el agente lo usa.** El jurado lo habría subido, lo habría visto
+indexado, y no habría pasado nada.
+
+El arreglo tuvo dos versiones y la primera estaba mal, de una forma instructiva. Dejar
+entrar *cualquier* documento sin tema también dejaba entrar el PDF del corpus que el
+clasificador no supo etiquetar, y la abstención de mastectomía pasó de *«no la tengo»* a
+una respuesta fundamentada con cinco citas: **+11 preguntas respondidas que en realidad
+eran 11 abstenciones perdidas.** La regla correcta es más estrecha — lo que entró por la
+consola, no lo que no tiene tema — porque un documento que un operador acaba de subir
+mientras la llamada corre y un PDF que el clasificador no entendió no son la misma cosa.
+
+Con eso, el caso 7 comprueba además lo que la compuerta pide textualmente: el agente cita
+el documento nuevo **dentro de una llamada**, con el filtro por procedimiento activo, y
+deja de citarlo en el turno siguiente al borrado.
 
 ---
 
@@ -795,7 +831,7 @@ ejecuta exactamente estos comandos como subprocesos. El veredicto es su código 
 así que no hay una segunda implementación dentro del panel.
 
 ```bash
-make test        # 746 tests unitarios y de regresión
+make test        # 759 tests unitarios y de regresión
 make eval        # 160 casos oficiales · cero falsos negativos clínicos
 make redteam     # 43 casos adversariales (requiere la API levantada)
 make humo        # 103 comprobaciones de extremo a extremo (requiere la API levantada)
