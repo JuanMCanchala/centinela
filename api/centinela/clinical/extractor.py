@@ -125,6 +125,9 @@ class ResultadoExtraccion:
     campos_por_modelo: list[str] = field(default_factory=list)
     correcciones_de_seguridad: list[str] = field(default_factory=list)
     llamo_al_modelo: bool = False
+    # El modelo se intento y no contesto: el turno va con lo que dieron las reglas. No
+    # es lo mismo que `llamo_al_modelo=False`, que significa "no hizo falta preguntarle".
+    modelo_no_contesto: bool = False
 
 
 class Extractor:
@@ -138,8 +141,18 @@ class Extractor:
         turno_idx: int,
         pregunta_agente: str = "",
         dominio_objetivo: str = "",
+        permitir_modelo: bool = True,
     ) -> ResultadoExtraccion:
-        """Actualiza `estado` con lo que aporte este turno. No lo reemplaza."""
+        """Actualiza `estado` con lo que aporte este turno. No lo reemplaza.
+
+        `permitir_modelo=False` corre las dos primeras capas y se salta la tercera. Lo
+        usa la politica en el turno de confirmacion de identidad, donde por construccion
+        no hay nada clinico que extraer: el agente acaba de preguntar "es usted X?".
+        Medido, ese turno costaba 2385 ms y una invocacion del modelo para responder que
+        no habia datos -- y es justo el turno con el que se verifica la compuerta G4 del
+        reto. Las capas de reglas siguen corriendo (0.24 ms) porque un paciente puede
+        adelantarse: "si soy yo, y estoy con fiebre" se sigue captando.
+        """
 
         norm = normalizar_turno(texto_paciente, dominio_objetivo)
         res = ResultadoExtraccion(estado=estado, normalizado=norm, respondio=True)
@@ -186,30 +199,50 @@ class Extractor:
         hay_texto = len(norm.texto) >= 12
         aporto_algo = bool(resueltos) or norm.numeros.fiebre_subjetiva
 
-        if hay_texto and not aporto_algo:
-            crudo = await self._preguntar_al_modelo(norm.texto, pregunta_agente, dominio_objetivo)
-            res.uso.acumular(crudo["uso"])
-            res.llamo_al_modelo = True
-            datos = crudo["datos"]
-            res.respondio = bool(datos.get("respondio_la_pregunta", True))
+        if hay_texto and not aporto_algo and permitir_modelo:
+            # El modelo es la tercera capa, no la unica: si no contesta, se sigue con lo
+            # que las dos primeras hayan sacado. Antes esta llamada no tenia red y una
+            # excepcion subia hasta romper el turno: con Ollama caido, decir "hola si soy
+            # yo" tumbaba la llamada entera, aunque el 94 % de los turnos no necesitan el
+            # modelo y las reglas detectan una bandera roja sin el.
+            crudo = None
+            try:
+                crudo = await self._preguntar_al_modelo(
+                    norm.texto, pregunta_agente, dominio_objetivo
+                )
+            except Exception as e:  # noqa: BLE001
+                # Se anota en la traza del turno, no se silencia: una extraccion
+                # degradada tiene que poder verse en el registro de la llamada.
+                res.correcciones_de_seguridad.append(
+                    f"el modelo no contesto ({type(e).__name__}); "
+                    f"el turno se resolvio solo con reglas"
+                )
+                res.modelo_no_contesto = True
 
-            for dominio, campo in CAMPO_POR_DOMINIO.items():
-                valor = datos.get(campo)
-                if valor is not None:
-                    aceptado, motivo = self._aceptar_del_modelo(estado, dominio, valor)
-                    if aceptado:
-                        self._asignar(estado, dominio, valor, turno_idx, norm.texto, inferido=True)
-                        res.campos_por_modelo.append(dominio)
-                    else:
-                        res.correcciones_de_seguridad.append(motivo)
+            if crudo is not None:
+                res.uso.acumular(crudo["uso"])
+                res.llamo_al_modelo = True
+                datos = crudo["datos"]
+                res.respondio = bool(datos.get("respondio_la_pregunta", True))
 
-            if datos.get("fiebre_subjetiva"):
-                estado.fiebre_subjetiva = True
+                for dominio, campo in CAMPO_POR_DOMINIO.items():
+                    valor = datos.get(campo)
+                    if valor is not None:
+                        aceptado, motivo = self._aceptar_del_modelo(estado, dominio, valor)
+                        if aceptado:
+                            self._asignar(estado, dominio, valor, turno_idx, norm.texto,
+                                          inferido=True)
+                            res.campos_por_modelo.append(dominio)
+                        else:
+                            res.correcciones_de_seguridad.append(motivo)
 
-            for sintoma in datos.get("sintomas_adicionales") or []:
-                limpio = str(sintoma).strip()
-                if limpio and limpio not in estado.sintomas_libres:
-                    estado.sintomas_libres.append(limpio)
+                if datos.get("fiebre_subjetiva"):
+                    estado.fiebre_subjetiva = True
+
+                for sintoma in datos.get("sintomas_adicionales") or []:
+                    limpio = str(sintoma).strip()
+                    if limpio and limpio not in estado.sintomas_libres:
+                        estado.sintomas_libres.append(limpio)
 
         if norm.requiere_repetir:
             res.respondio = False

@@ -456,7 +456,7 @@ lo que **tiene que hacer** para lograrlo.
 Intentos de manipulación resistidos: **11/11**. Casos donde la criticidad bajó porque el
 paciente lo pidió: **0**.
 
-### Tests (`make test`) — 488/488
+### Tests (`make test`) — 563/563
 
 Incluye cero falsos positivos de manipulación sobre turnos textuales del dataset, la
 regresión del extractor malicioso, la verificación de que el resumen de cierre contiene los
@@ -644,6 +644,28 @@ Cuatro defectos reales aparecieron al ejecutar los arneses, no al leer el códig
 
 Cada corrección lleva su test de regresión.
 
+**Y una auditoría posterior encontró cuatro más, tres de ellos con consecuencia clínica o
+de latencia.** Se listan aquí porque el hallazgo importa tanto como el arreglo.
+
+| Cómo apareció | Defecto | Consecuencia | Corrección |
+|---|---|---|---|
+| Probar cómo dice la gente una temperatura | `"treinta y siete y medio"` se leía **37.0** en vez de 37.5 | **Falso negativo clínico**: 37.5 es febrícula (`FIEBRE_AMARILLO_C = 37.4`), 37.0 no. El paciente reportaba febrícula y el sistema anotaba normal | Tres formas del decimal en el patrón: `punto`/`coma`/`con`, `y medio`, `y pico` |
+| Una llamada por voz real | Whisper transcribe *«treinta y siete cinco»* como **`"Tres, siete, cinco."`**, que no se reconocía | El dato se oía bien y se perdía al escribirlo | Patrón de temperatura deletreada, solo con contexto de fiebre |
+| Cronometrar el turno de G4 | `"hola sí soy yo"` costaba **2 385 ms y 301 tokens** invocando al modelo | Era el turno más lento del sistema y el primero que oye el jurado —G4 se verifica con *«saludo y una pregunta trivial»* | El turno de identidad no llega al modelo: por construcción no hay nada clínico que extraer. **6 ms** |
+| Apuntar el sistema a un Ollama muerto | La extracción llamaba al modelo sin `try/except`; una `ConnectError` rompía la llamada | El 94 % de los turnos no necesitan el modelo, y las reglas detectan una bandera roja sin él: caerse ahí era perder una llamada que podía atenderse | Degradación a las dos capas de reglas, anotada en la traza. Timeout de 60 s → 12 s y `keep_alive` para que Ollama no descargue el modelo |
+
+Dos de esos cuatro son del mismo tipo y conviene nombrarlo: **los 160 casos oficiales no
+podían encontrarlos**. Vienen con la cifra ya escrita (`"38.5"`), así que ejercitan el camino
+del decimal en dígitos. El error vivía en el camino de las palabras, que es el único que
+existe cuando alguien **habla**. Un dataset de texto no cubre un agente de voz.
+
+Y un quinto, que resultó ser del instrumento y no del producto: `eval/conversacion_voz.py`
+leía un número fijo de mensajes por turno, así que salía con la cola del socket sin drenar y
+esos bytes se contaban como la respuesta del turno siguiente. El síntoma apuntaba al sitio
+equivocado —el sistema parecía ir un turno por detrás, se le decía *«treinta y siete cinco»*
+y contestaba a *«un seis»*— cuando lo que iba atrasado era el lector. Se deja escrito porque
+un arnés que miente es peor que no tenerlo.
+
 ### Los prompts están versionados
 
 En `prompts/`, un archivo por prompt, con su historial de cambios, el esquema de salida y
@@ -728,7 +750,7 @@ make instalar && make ollama && make piper && make modelos
 make up                    # http://localhost:8000
 
 # en otra terminal
-make test                  # 488 tests
+make test                  # 563 tests
 make eval                  # 160 casos, cero falsos negativos
 make humo                  # 79 comprobaciones de extremo a extremo
 make redteam               # 43 casos adversariales

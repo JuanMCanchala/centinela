@@ -251,10 +251,26 @@ PALABRA_A_NUMERO = {
 # cinco" es exactamente como un paciente colombiano dice 37.5.
 DECENAS = {"treinta": 30, "cuarenta": 40}
 
+_DIGITOS = "cero|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve"
+
+# Las tres formas de decir el decimal, en un solo patron y con grupos nombrados porque
+# ya no caben en la cabeza. La tercera -- **"y medio"** -- faltaba, y no era un detalle
+# de estilo: es probablemente la forma mas comun de decir una temperatura en espanol, y
+# sin ella "treinta y siete y medio" se leia 37.0 en vez de 37.5. Eso cruza el umbral de
+# febricula (`FIEBRE_AMARILLO_C = 37.4`) en la direccion mala: el paciente reportaba
+# febricula y el sistema anotaba temperatura normal. Un falso negativo clinico que los
+# 160 casos oficiales no podian ver, porque vienen con la cifra ya escrita.
 RE_TEMP_PALABRAS = re.compile(
-    r"\b(treinta|cuarenta)"
-    r"(?:\s+y\s+(uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve))?"
-    r"(?:\s+(?:punto\s+|coma\s+)?(cero|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve))?"
+    r"\b(?P<decena>treinta|cuarenta)"
+    r"(?:\s+y\s+(?P<unidad>uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve))?"
+    r"(?:"
+    rf"\s+(?:punto|coma|con)\s+(?P<dec_marcado>{_DIGITOS})"   # "punto cinco", "con cinco"
+    # "y medio" y "y pico" valen los dos +0.5. Lo de "y pico" ya estaba resuelto para
+    # la cifra ("37 y pico") con el mismo criterio -- es el punto medio del intervalo
+    # que el paciente describe -- pero no para la letra, que es como se dice hablando.
+    r"|\s+y\s+(?P<dec_medio>medio|pico)"
+    rf"|\s+(?P<dec_suelto>{_DIGITOS})"                         # "treinta y siete cinco"
+    r")?"
 )
 
 # "un 6", "como un 6", "en 5", "6 de 10", "6/10", "seis"
@@ -287,6 +303,18 @@ RE_NUMERO_SUELTO = re.compile(
 RE_TEMP_DECIMAL = re.compile(r"\b(3[5-9]|4[0-2])[.,]([0-9])\b")
 RE_TEMP_ENTERA = re.compile(r"\b(3[5-9]|4[0-2])\b(?!\s*[.,]?\s*\d)")
 RE_TEMP_Y_PICO = re.compile(r"\b(3[5-9])\s*(?:grados?\s*)?y\s*pico\b")
+
+# La temperatura deletreada digito a digito. No es una forma de hablar: es lo que
+# **Whisper escribe** cuando la oye. Medido en una llamada por voz real, el paciente dijo
+# "treinta y siete cinco" y la transcripcion fue "Tres, siete, cinco." -- que el
+# normalizador no reconocia, asi que el turno no producia temperatura.
+#
+# Solo se aplica con contexto de temperatura o cuando el agente acaba de preguntar por
+# la fiebre. Sin esa guarda, tres digitos sueltos son demasiadas otras cosas.
+RE_TEMP_DELETREADA = re.compile(
+    r"\btres[\s,]+(cinco|seis|siete|ocho|nueve)[\s,]+"
+    r"(cero|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve)\b"
+)
 
 # Magnitudes que se dicen con las mismas cifras que una temperatura. Es la unica
 # fuente real de confusion cuando el numero se acepta sin contexto: "tengo 38
@@ -395,19 +423,37 @@ def temperatura_en_palabras(base: str) -> tuple[float, str] | None:
     m = _primera_valida(RE_TEMP_PALABRAS, base)
 
     if m is not None:
-        valor = float(DECENAS[m.group(1)])
-        if m.group(2):
-            valor += PALABRA_A_NUMERO[m.group(2)]
-        if m.group(3):
-            # El decimal se dice suelto tras el entero: "treinta y siete cinco".
-            valor += PALABRA_A_NUMERO[m.group(3)] / 10
+        valor = float(DECENAS[m.group("decena")])
+        if m.group("unidad"):
+            valor += PALABRA_A_NUMERO[m.group("unidad")]
+
+        decimal = m.group("dec_marcado") or m.group("dec_suelto")
+        if m.group("dec_medio"):
+            valor += 0.5
+        elif decimal:
+            valor += PALABRA_A_NUMERO[decimal] / 10
+
         if 34.0 <= valor <= 43.0:
             resultado = (valor, m.group(0))
 
     return resultado
 
 
-def buscar_temperatura(base: str) -> tuple[float, str] | None:
+def temperatura_deletreada(base: str) -> tuple[float, str] | None:
+    """"Tres, siete, cinco." -> 37.5. Lo que Whisper escribe, no lo que se dice."""
+
+    resultado = None
+    m = RE_TEMP_DELETREADA.search(base)
+
+    if m is not None:
+        valor = 30.0 + PALABRA_A_NUMERO[m.group(1)] + PALABRA_A_NUMERO[m.group(2)] / 10
+        if 34.0 <= valor <= 43.0:
+            resultado = (valor, m.group(0))
+
+    return resultado
+
+
+def buscar_temperatura(base: str, con_contexto: bool = False) -> tuple[float, str] | None:
     """La temperatura del turno, dicha en cifra o en letra.
 
     Las cuatro formas van en orden de especificidad. El entero pelado va ultimo a
@@ -434,6 +480,11 @@ def buscar_temperatura(base: str) -> tuple[float, str] | None:
                 m = _primera_valida(RE_TEMP_ENTERA, base)
                 if m is not None:
                     encontrada = (float(m.group(1)), m.group(0))
+                elif con_contexto:
+                    # La ultima y la menos especifica: tres digitos deletreados. Va al
+                    # final y solo con contexto, porque es la que mas se parece a otra
+                    # cosa dicha con las mismas palabras.
+                    encontrada = temperatura_deletreada(base)
 
     return encontrada
 
@@ -483,7 +534,7 @@ def extraer_numeros(texto: str, dominio_objetivo: str = "") -> NumerosClinicos:
     hay_contexto_temp = any(t in base for t in CONTEXTO_TEMPERATURA)
     pregunta_por_fiebre = dominio_objetivo == "fiebre"
 
-    encontrada = buscar_temperatura(base)
+    encontrada = buscar_temperatura(base, con_contexto=hay_contexto_temp or pregunta_por_fiebre)
     if encontrada is not None:
         n.temperatura_c, n.evidencia_temperatura = encontrada
         n.temperatura_fuera_de_dominio = not (hay_contexto_temp or pregunta_por_fiebre)
@@ -556,7 +607,17 @@ PISTAS_HERIDA = {
     ),
     "eritema_leve": (
         "rojita", "rojito", "enrojecid", "enrojecimiento", "roja alrededor",
-        "un poco roja", "colorad", "irritada", "inflamadita", "rosadita",
+        "un poco roja", "colorad", "irritada", "rosadita",
+        # Hinchazon e inflamacion son signos inflamatorios locales y faltaban enteras:
+        # estaba solo el diminutivo "inflamadita". Medido, "la herida se ve roja e
+        # hinchada" y "esta hinchada alrededor" no producian ninguna pista, asi que
+        # caian al modelo -- 2.2 s -- y con el modelo caido se perdian. La categoria es
+        # la amarilla, que es la direccion segura: inflamacion sin secrecion no es
+        # purulencia, pero tampoco es una herida normal.
+        "hinchad", "hinchazon", "inflamad", "inflamacion",
+        # "roja" sola no entra: aparece fuera de la herida ("la pastilla roja"). Se
+        # exige el contexto que la ata a la herida.
+        "se ve roja", "esta roja", "muy roja", "bien roja", "roja y", "roja e",
     ),
     "normal": (
         "se ve bien", "esta bien", "normal", "limpiecita", "cerrando bien",

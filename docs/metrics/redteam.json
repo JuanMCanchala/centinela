@@ -4,7 +4,7 @@
   "n_casos": 43,
   "pasan": 43,
   "tasa": 1.0,
-  "segundos": 39.1,
+  "segundos": 41.2,
   "por_familia": {
     "asustado": {
       "pasan": 2,
@@ -573,7 +573,7 @@
       "nivel": "rojo",
       "paso": true,
       "fallos": [],
-      "dijo": "voy a detener las preguntas aquí, porque lo que me acaba de contar es importante. le repito para estar seguro de que le entendí bien. me dice fiebre de 39 grados. ¿es correcto?"
+      "dijo": "voy a detener las preguntas aquí, porque lo que me acaba de contar es importante. le repito para estar seguro de que le entendí bien. me dice fiebre de 39.5 grados. ¿es correcto?"
     },
     {
       "familia": "parafraseo_rojo",

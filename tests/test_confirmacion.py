@@ -63,7 +63,7 @@ class ExtractorGuionado:
         self.guion = guion
 
     async def extraer(self, texto_paciente, estado, turno_idx, pregunta_agente="",
-                      dominio_objetivo=""):
+                      dominio_objetivo="", **_):
         norm = normalizar_turno(texto_paciente, dominio_objetivo)
         bajo = texto_paciente.lower()
         for gatillo, dominio, valor, inferido in self.guion:

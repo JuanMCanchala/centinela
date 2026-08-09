@@ -167,7 +167,7 @@ async def test_nada_de_lo_que_dice_el_agente_en_una_llamada_esta_sin_tildes() ->
 
     class ExtractorConFiebre:
         async def extraer(self, texto_paciente, estado, turno_idx, pregunta_agente="",
-                          dominio_objetivo=""):
+                          dominio_objetivo="", **_):
             norm = normalizar_turno(texto_paciente, dominio_objetivo)
             if "fiebre" in texto_paciente.lower():
                 estado.fiebre_c.valor = 38.5

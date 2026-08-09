@@ -57,7 +57,7 @@ class ExtractorMudo:
     """
 
     async def extraer(self, texto_paciente, estado, turno_idx, pregunta_agente="",
-                      dominio_objetivo=""):
+                      dominio_objetivo="", **_):
         return ResultadoExtraccion(
             estado=estado, normalizado=normalizar_turno(texto_paciente), respondio=False
         )

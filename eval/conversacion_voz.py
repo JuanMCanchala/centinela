@@ -104,10 +104,21 @@ async def turno(ws, pcm: bytes, rapido: bool) -> dict:
     t0 = time.perf_counter()
     await ws.send(json.dumps({"tipo": "fin_habla"}))
 
-    resultado: dict = {"ms_primer_sonido": None, "ms_turno": None}
+    resultado: dict = {"ms_primer_sonido": None, "ms_turno": None, "tipos_recibidos": []}
     esperando_relleno = False
 
-    for _ in range(10):
+    # El turno se lee hasta que el servidor dice que acabo de hablar (`fin_voz`), no
+    # hasta un numero fijo de mensajes.
+    #
+    # Antes eran diez, y ese limite hacia que el arnes MINTIERA. Un turno del agente son
+    # mas de diez mensajes -- relleno, transcripcion, turno y un trozo de audio por
+    # fragmento -- asi que el bucle salia con la cola sin leer, y esos bytes se
+    # interpretaban como la respuesta del turno SIGUIENTE. El sintoma era espectacular y
+    # apuntaba al sitio equivocado: el sistema parecia ir un turno por detras -- se le
+    # decia "treinta y siete cinco" y contestaba a "un seis" -- cuando lo que iba
+    # atrasado era el lector. El tope alto de abajo es solo una red contra un bucle
+    # infinito, no un criterio de fin de turno.
+    for _ in range(4000):
         try:
             msg = await asyncio.wait_for(ws.recv(), timeout=60)
         except asyncio.TimeoutError:
@@ -121,11 +132,14 @@ async def turno(ws, pcm: bytes, rapido: bool) -> dict:
                 resultado["ms_primer_sonido"] = ms
             if esperando_relleno:
                 esperando_relleno = False
-            elif resultado.get("agente_dice"):
-                break
         else:
             d = json.loads(msg)
             tipo = d.get("tipo")
+            resultado["tipos_recibidos"].append(tipo)
+            if tipo in ("fin_voz", "fin_llamada"):
+                # El servidor declara que termino de hablar. Aqui acaba el turno, y con
+                # el socket drenado el siguiente empieza limpio.
+                break
             if tipo == "relleno":
                 esperando_relleno = True
             elif tipo == "transcripcion":
@@ -192,6 +206,11 @@ async def main() -> int:
     print(f"{len(audios)} turnos listos\n")
 
     fallos: list[str] = []
+    # Turnos en los que el agente no emitio audio. Se cuentan aparte de `fallos` porque
+    # no siempre son un defecto del sistema: este arnes manda el turno siguiente sin
+    # esperar a que el agente termine de hablar, asi que puede llegar dentro de la
+    # ventana del barge-in. Contarlos es lo que permite distinguir una cosa de la otra.
+    sin_respuesta: list[int] = []
     dominios: list[str | None] = []
     # Cuantos dominios habia resueltos tras cada turno. Es lo que distingue una
     # pregunta de profundizacion de un atasco de verdad.
@@ -218,33 +237,42 @@ async def main() -> int:
             if r.get("error"):
                 print(f"  error: {r['error']}")
                 fallos.append(f"turno {i}: {r['error']}")
-                continue
+            else:
+                print(f"  oido      : {r.get('oido')!r}")
+                print(f"  intencion : {r.get('intencion')}   nivel: {r.get('nivel')}")
+                print(f"  dominio   : {r.get('dominio')}")
+                print(f"  AGENTE    : {(r.get('agente_dice') or '')[:96]}")
 
-            print(f"  oido      : {r.get('oido')!r}")
-            print(f"  intencion : {r.get('intencion')}   nivel: {r.get('nivel')}")
-            print(f"  dominio   : {r.get('dominio')}")
-            print(f"  AGENTE    : {(r.get('agente_dice') or '')[:96]}")
-            print(f"  latencia  : primer sonido {r['ms_primer_sonido']:.0f} ms · "
-                  f"turno {r['ms_turno']:.0f} ms · stt {r.get('ms_stt', 0):.0f} ms "
-                  f"({r.get('origen')})")
+                # Un turno puede no producir audio del agente, y entonces no hay latencia
+                # que imprimir. Pasaba con `--audios`: el arnes revienta con un TypeError
+                # al formatear None y se pierde el diagnostico justo del turno raro, que
+                # es el unico que interesaba. Decir que no hubo respuesta es el dato.
+                if r.get("ms_primer_sonido") is None or r.get("ms_turno") is None:
+                    print(f"  latencia  : el agente no emitio audio en este turno "
+                          f"(mensajes recibidos: {r.get('tipos_recibidos') or 'ninguno'})")
+                    sin_respuesta.append(i)
+                else:
+                    print(f"  latencia  : primer sonido {r['ms_primer_sonido']:.0f} ms · "
+                          f"turno {r['ms_turno']:.0f} ms · stt {r.get('ms_stt', 0):.0f} ms "
+                          f"({r.get('origen')})")
 
-            if r.get("intencion") == "audio_degradado":
-                fallos.append(
-                    f"turno {i}: {frase!r} se clasifico como AUDIO DEGRADADO "
-                    f"aunque se transcribio como {r.get('oido')!r}"
-                )
-                print("  FALLA: marcado como audio degradado con transcripcion correcta")
+                if r.get("intencion") == "audio_degradado":
+                    fallos.append(
+                        f"turno {i}: {frase!r} se clasifico como AUDIO DEGRADADO "
+                        f"aunque se transcribio como {r.get('oido')!r}"
+                    )
+                    print("  FALLA: marcado como audio degradado con transcripcion correcta")
 
-            dominios.append(r.get("dominio"))
-            resueltos.append(_dominios_resueltos(r.get("estado_clinico") or {}))
-            if r.get("ms_turno"):
-                latencias.append(r["ms_turno"])
-            if r.get("escala"):
-                escalado = True
-                print(f"  ESCALA: nivel {r.get('nivel')}")
-            if r.get("terminada"):
-                print("  (llamada terminada por el agente)")
-                break
+                dominios.append(r.get("dominio"))
+                resueltos.append(_dominios_resueltos(r.get("estado_clinico") or {}))
+                if r.get("ms_turno"):
+                    latencias.append(r["ms_turno"])
+                if r.get("escala"):
+                    escalado = True
+                    print(f"  ESCALA: nivel {r.get('nivel')}")
+                if r.get("terminada"):
+                    print("  (llamada terminada por el agente)")
+                    break
 
     # ------------------------------------------------------------------
     print()
@@ -277,6 +305,14 @@ async def main() -> int:
     print(f"  dominios recorridos : {dominios}")
     print(f"  dominios resueltos por turno: {resueltos}")
     print(f"  repeticiones sin avance (atascos): {atascos}")
+
+    if sin_respuesta:
+        print(f"  turnos sin audio del agente: {sin_respuesta} de {len(audios)}")
+        print("    Este arnes no espera a que el agente termine de hablar antes de mandar")
+        print("    el turno siguiente, asi que un turno puede caer dentro de la ventana de")
+        print("    barge-in y contar como interrupcion. Es el precio de medir a ritmo fijo.")
+        print("    Lo que NO puede pasar es que el estado clinico deje de avanzar, y eso lo")
+        print("    mide la cuenta de atascos de arriba.")
 
     # El contrato lo fija `DialogPolicy.MAX_REPETICIONES_SEGUIDAS`: tras ese numero
     # de intentos, el agente sigue adelante. Se compara contra la constante y no

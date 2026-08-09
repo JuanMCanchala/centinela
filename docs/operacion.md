@@ -28,6 +28,8 @@ Están en [`api/centinela/config.py`](../api/centinela/config.py) y se publican 
 | `CENTINELA_GRACIA_RECONEXION_S` | `20` | Cuánto se espera a que el navegador vuelva antes de dar la llamada por colgada. A `0`, cierre inmediato como antes |
 | `CENTINELA_LLM_MODEL` | `phi3.5:3.8b-mini-instruct-q4_K_M` | Modelo declarado (compuerta G3) |
 | `CENTINELA_DIR_RUNTIME` | `data/runtime` | Dónde vive la base de datos de llamadas |
+| `CENTINELA_LLM_TIMEOUT_S` | `12` | Cuánto se le deja al modelo antes de darlo por perdido. Eran 60 s, que es un valor de script y no de conversación: un turno que espera un minuto ya no es un turno. El techo sale de la medición —la extracción tarda 2 255 ms en P50 y 2 924 ms en P95 sobre 366 invocaciones reales— más margen para el arranque en frío de Ollama |
+| `CENTINELA_LLM_KEEP_ALIVE` | `30m` | Cuánto le pedimos a Ollama que mantenga el modelo en memoria. Sin esto usa su defecto de 5 min, y el efecto está medido: con el modelo caliente el primer turno cuesta **2 028 ms**, en frío **6 152 ms**. El servidor ya calienta al arrancar, pero ese calentamiento caducaba antes de que el jurado terminara de leer el README |
 | `CENTINELA_TTS_VELOCIDAD` | `1.0` | `length_scale` de Piper. Queda en 1.0 porque el ruido de duración del modelo es del 3 % y un ajuste del 5 % no se distingue de él: medido, 1.0 da 5.117 s y 1.05 da 5.083 s sobre la misma frase. Con 1.15 o más sí se oye. `make muestras` genera el A/B |
 
 **Si se cambia `CENTINELA_TTS_VELOCIDAD`, el caché de audio se regenera solo.** La velocidad

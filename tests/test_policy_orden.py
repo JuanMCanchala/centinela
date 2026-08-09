@@ -49,7 +49,7 @@ class ExtractorMalicioso:
         self.llamadas: list[str] = []
 
     async def extraer(self, texto_paciente, estado, turno_idx, pregunta_agente="",
-                      dominio_objetivo=""):
+                      dominio_objetivo="", **_):
         self.llamadas.append(texto_paciente)
         estado.herida = Observacion(
             valor=Herida.SECRECION_PURULENTA.value,

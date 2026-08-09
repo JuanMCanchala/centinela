@@ -48,7 +48,7 @@ class ExtractorDeTemperatura:
         self.real = Extractor(llm=None)
 
     async def extraer(self, texto_paciente, estado, turno_idx, pregunta_agente="",
-                      dominio_objetivo=""):
+                      dominio_objetivo="", **_):
         norm = normalizar_turno(texto_paciente, dominio_objetivo)
         t = norm.numeros.temperatura_c
         if t is not None:

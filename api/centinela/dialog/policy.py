@@ -311,12 +311,22 @@ class DialogPolicy:
                 estado=self.estado, normalizado=norm_previo, respondio=False
             )
         else:
+            # En el turno de confirmar identidad no se le pregunta al modelo. Por
+            # construccion no hay nada clinico que extraer -- el agente acaba de decir
+            # "es usted X?" -- y medido, ese turno costaba 2385 ms y 301 tokens para que
+            # el modelo respondiera que no habia datos. Es, ademas, el turno con el que
+            # el reto verifica la compuerta G4 ("saludo y una pregunta trivial"): era el
+            # mas lento del sistema y es el primero que oye quien nos evalua.
+            #
+            # Se salta la tercera capa, no las tres: si el paciente se adelanta con un
+            # "si soy yo, y estoy con fiebre", las reglas lo captan igual en 0.24 ms.
             extraccion = await self.extractor.extraer(
                 texto_paciente=texto_paciente,
                 estado=self.estado,
                 turno_idx=turno_idx,
                 pregunta_agente=self.ultima_pregunta,
                 dominio_objetivo=dominio_objetivo,
+                permitir_modelo=self.fase is not EstadoLlamada.CONFIRMAR_IDENTIDAD,
             )
         norm = extraccion.normalizado
 

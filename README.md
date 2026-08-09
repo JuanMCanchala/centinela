@@ -96,43 +96,73 @@ estos números son los mismos en cada corrida.
 
 Medidas por `obs/metrics.py` durante la ejecución real, congeladas con `make runtime` y
 escritas por `make metricas`. **Ninguna se escribe a mano**, porque la rúbrica advierte que
-lo reportado se contrasta con los logs de la sesión. Muestra: **31 turnos en 8 llamadas
-completas**, la que produce `make humo` sobre un servidor recién arrancado.
+lo reportado se contrasta con los logs de la sesión. Muestra: **70 turnos en 19 llamadas
+completas**, de las cuales **12 turnos entran por voz de verdad** —`make humo` sobre un
+servidor recién arrancado, más tres llamadas completas de `eval/conversacion_voz.py` con
+las grabaciones de voz humana de `eval/audios/`.
+
+Los turnos de audio son los que hacen honesta la medición: el jurado habla por micrófono,
+así que una muestra sin ellos mide una conversación que nadie tiene.
 
 **1. Latencia de respuesta** — *desde que se cierra el VAD (fin de habla del paciente)
 hasta que el primer byte de audio del agente sale hacia el navegador.*
 
 | Percentil | Latencia |
 |---|---:|
-| **P50** | **0.6 ms** |
-| **P95** | **3 370.6 ms** |
-| P99 | 13 285.4 ms |
+| **P50** | **0.7 ms** |
+| **P95** | **2 457.2 ms** |
+| P99 | 10 885.9 ms |
 
-El P50 es de milisegundos porque **84 % de los turnos se sirven desde el caché de audio
-pre-renderizado** (26 de 31): la conversación la conduce una máquina de estados, así que
+El P50 es de milisegundos porque **86 % de los turnos se sirven desde el caché de audio
+pre-renderizado** (60 de 70): la conversación la conduce una máquina de estados, así que
 las locuciones del guion se conocen antes de que suene el teléfono.
 
-La cola es alta y conviene decir de qué está hecha, porque no es la del turno normal. Los
-turnos que sintetizan voz nueva —la lectura de vuelta de un hallazgo, una respuesta del
-corpus— pagan el TTS en caliente, y los dos turnos de esta muestra que además vienen de
-**audio** pagan Whisper: el STT tarda 5.6 s en P50 sobre este equipo sin GPU. Con 31
-muestras un P99 es un dato anecdótico, no una estadística; se reporta por completitud.
+Desglose por etapa, sobre la misma muestra:
+
+| Etapa | P50 | P95 | n |
+|---|---:|---:|---:|
+| Transcripción (Whisper) | **287.3 ms** | 9 909.9 ms | 12 |
+| Extracción clínica | **0.2 ms** | 6.4 ms | 70 |
+| Síntesis de voz (Piper) | **0.4 ms** | 772.1 ms | 70 |
+
+**De qué está hecha la cola, dicho con precisión.** El P95 del STT no es el coste de
+transcribir: es el **arranque en frío**. La primera inferencia de un servidor recién
+levantado carga los kernels de CUDA y tarda ~4 s de más; sobre esta muestra de 12 turnos
+con audio, esa primera contamina el percentil alto mientras la mediana —287 ms— es lo que
+el paciente vive en el resto de la llamada. Medido aparte sobre las 18 grabaciones de voz
+humana: **216–361 ms, RTF 0.16** con `medium` en `cuda/int8_float16`.
+
+Esa distinción no es un matiz: hasta esta medición, el README decía *"el STT tarda 5.6 s
+en P50 sobre este equipo sin GPU"*. Las dos mitades eran falsas —hay CUDA, y son 287 ms—
+y la cifra venía de una muestra de **n = 2** en la que las dos únicas transcripciones eran
+arranques en frío. La muestra pasó de 31 turnos con 2 de audio a **70 turnos con 12 de
+audio**, corriendo `eval/conversacion_voz.py` con las grabaciones humanas además de
+`make humo`.
 
 **2. Consumo por turno y por llamada**
 
 | Métrica | Valor |
 |---|---:|
 | Tokens de entrada / salida por turno (P50) | **0 / 0** |
-| Tokens de entrada / salida por turno (media) | 148.9 / 4.4 |
-| Tokens de entrada / salida **por llamada** (media) | **577.1 / 17.1** |
-| Turnos por llamada (media) | 3.9 |
+| Tokens de entrada / salida por turno (media) | 103.8 / 3.4 |
+| Tokens de entrada / salida **por llamada** (media) | **382.5 / 12.7** |
+| Turnos por llamada (media) | 3.7 |
 
-**3. Invocaciones al modelo por turno** — **P50 = 0**, máximo 1. La mayoría de los turnos
-no llegan al modelo: si la regex ya extrajo el dolor y el léxico resolvió la herida, no hay
-nada que preguntarle. Es la consecuencia directa de que la decisión clínica la tome el
-motor de reglas.
+**3. Invocaciones al modelo por turno** — **P50 = 0**, media 0.04, máximo 1. La mayoría de
+los turnos no llegan al modelo: si la regex ya extrajo el dolor y el léxico resolvió la
+herida, no hay nada que preguntarle. Es la consecuencia directa de que la decisión clínica
+la tome el motor de reglas.
 
-**4. Consultas al RAG por llamada** — **0.25 de media**, máximo 1. Son bajas a propósito:
+Y hay un turno que **nunca** llega al modelo, por construcción: el de confirmar identidad.
+El agente acaba de preguntar *«¿es usted X?»*, así que no hay nada clínico que extraer.
+Costaba **2 385 ms y 301 tokens** para que el modelo respondiera que no había datos, y es
+justo el turno con el que se verifica la compuerta G4 del reto —*«saludo y una pregunta
+trivial»*—: era el más lento del sistema y el primero que oye quien evalúa. Ahora cuesta
+**6 ms**. Las dos capas de reglas siguen corriendo, así que un paciente que se adelanta
+—*«sí soy yo, y estoy con treinta y ocho y medio de fiebre»*— entra igual, con su bandera
+roja, en 0.4 ms.
+
+**4. Consultas al RAG por llamada** — **0.16 de media**, máximo 1. Son bajas a propósito:
 el cuestionario no consulta el corpus, recorre seis dominios con preguntas fijas. El RAG
 entra cuando el paciente pregunta algo clínico —*«¿puedo ducharme?»*— y entonces la
 respuesta va fundamentada y con su cita. Una media alta aquí significaría que el agente
@@ -250,7 +280,7 @@ juzgarlo por oído.
 herida, no se invoca — de ahí que el P50 de invocaciones sea 0. La optimización quedó
 registrada en `eval/probar_tokens.py`, sobre un escenario fijo de seis turnos: **1359 → 672
 tokens de entrada por llamada**. Es un escenario fijo, distinto de la muestra de §5, así que
-su cifra no tiene por qué coincidir con los 577.1 tokens/llamada de arriba: son dos
+su cifra no tiene por qué coincidir con los 382.5 tokens/llamada de arriba: son dos
 mediciones de dos cosas distintas y las dos son reales.
 
 ### Suite adversarial
@@ -273,7 +303,7 @@ clasificador aislado. Resultado: **42/42**.
 - Intentos de manipulación resistidos: **11/11**
 - Casos donde la criticidad bajó porque el paciente lo pidió: **0**
 
-Más `make test`: **488 tests**, que incluyen cero falsos positivos de manipulación sobre
+Más `make test`: **563 tests**, que incluyen cero falsos positivos de manipulación sobre
 turnos textuales del dataset oficial. Ese grupo importa tanto como el primero: un agente
 que acusa a un paciente asustado de intentar manipularlo es inservible.
 
@@ -651,7 +681,7 @@ ejecuta exactamente estos comandos como subprocesos. El veredicto es su código 
 así que no hay una segunda implementación dentro del panel.
 
 ```bash
-make test        # 488 tests unitarios y de regresión
+make test        # 563 tests unitarios y de regresión
 make eval        # 160 casos oficiales · cero falsos negativos clínicos
 make redteam     # 43 casos adversariales (requiere la API levantada)
 make humo        # 103 comprobaciones de extremo a extremo (requiere la API levantada)

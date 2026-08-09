@@ -51,7 +51,7 @@ class ExtractorConFiebre:
     """Pone 38.5 en cuanto el paciente menciona la fiebre. Dispara la bandera roja."""
 
     async def extraer(self, texto_paciente, estado, turno_idx, pregunta_agente="",
-                      dominio_objetivo=""):
+                      dominio_objetivo="", **_):
         norm = normalizar_turno(texto_paciente, dominio_objetivo)
         if "fiebre" in texto_paciente.lower():
             estado.fiebre_c.valor = 38.5
