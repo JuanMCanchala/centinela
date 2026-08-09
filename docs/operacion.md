@@ -20,6 +20,8 @@ Están en [`api/centinela/config.py`](../api/centinela/config.py) y se publican 
 | `CENTINELA_SECRETO_WEBHOOK` | *(vacío)* | Secreto para la firma HMAC-SHA256 del cuerpo |
 | `CENTINELA_TOKEN` | *(vacío)* | Si se define, protege los endpoints que modifican algo y la llamada entera, canal de voz incluido. **Una sola palabra** (ver más abajo) |
 | `CENTINELA_MAX_MB_DOC` | `64` | Tope de tamaño de un PDF subido |
+| `CENTINELA_PUERTO` | `8000` | A qué puerto apuntan **los arneses** (`eval/destino.py`). `make PUERTO=8001` lo propaga solo |
+| `CENTINELA_URL` | *(vacío)* | Para apuntar los arneses a otra máquina entera. Gana sobre el puerto |
 | `CENTINELA_BARGEIN` | `1` | El paciente puede cortarle la palabra al agente. A `0`, la voz sale entera |
 | `CENTINELA_BARGEIN_MARGEN_ECO` | `1.8` | Cuánto por encima del eco medido hay que hablar para cortar |
 | `CENTINELA_BARGEIN_MS_CONF` | `250` | Cuánto audio se acumula antes de preguntarle al STT si eso era voz |

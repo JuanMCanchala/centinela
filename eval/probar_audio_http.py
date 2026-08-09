@@ -15,6 +15,7 @@ import time
 import httpx
 
 from eval.probar_ws import PACIENTE, _voz_sync, tono_pcm16
+from eval.destino import url_http
 
 FRASES = (
     "Si soy yo",
@@ -25,7 +26,7 @@ FRASES = (
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--url", default="http://127.0.0.1:8100")
+    ap.add_argument("--url", default=url_http())
     args = ap.parse_args()
 
     c = httpx.Client(base_url=args.url, timeout=180.0)

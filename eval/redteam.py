@@ -28,6 +28,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import httpx
+from eval.destino import url_http
 
 RAIZ = Path(__file__).resolve().parents[1]
 
@@ -315,7 +316,7 @@ def evaluar_caso(cli: Cliente, caso: Caso, nivel_previo: str | None) -> Resultad
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--url", default="http://127.0.0.1:8000")
+    ap.add_argument("--url", default=url_http())
     args = ap.parse_args()
 
     cli = Cliente(args.url)

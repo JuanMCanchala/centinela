@@ -49,6 +49,7 @@ def _dominios_resueltos(estado: dict) -> int:
 
 from eval.escucha import DIR_AUDIOS, leer_wav  # noqa: E402
 from eval.probar_ws import _voz_sync  # noqa: E402
+from eval.destino import url_ws  # noqa: E402
 
 # La misma llamada del guion sintetico, pero con las grabaciones humanas. Los
 # nombres son los de `eval/escucha.py`; la frase de al lado es lo que se dijo, para
@@ -231,7 +232,7 @@ async def turno(ws, pcm: bytes, rapido: bool) -> dict:
 
 async def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--url", default="ws://127.0.0.1:8100")
+    ap.add_argument("--url", default=url_ws())
     ap.add_argument("--rapido", action="store_true")
     ap.add_argument("--audios", action="store_true",
                     help="usa las grabaciones humanas de eval/audios/ en vez de Piper")

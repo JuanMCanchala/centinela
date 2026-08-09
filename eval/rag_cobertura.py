@@ -78,6 +78,7 @@ RE_NUMERO = re.compile(r"\d+(?:[.,]\d+)?")
 # divergiendo, y entonces el arnes deja de medir lo que el sistema promete.
 sys.path.insert(0, str(RAIZ / "api"))
 from centinela.rag.answerer import _cifras_con_unidad as _pares  # noqa: E402
+from eval.destino import url_http  # noqa: E402
 
 # Cifras que aparecen en una respuesta hablada sin ser un dato clinico: enumeraciones
 # y el "24" de "24 horas" cuando viene del propio texto. Solo se excluyen las que no
@@ -144,7 +145,7 @@ def medir(cli: httpx.Client, procedimiento: str, pregunta: str) -> dict:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--url", default="http://127.0.0.1:8000")
+    ap.add_argument("--url", default=url_http())
     ap.add_argument("--procedimiento", default="", help="mide solo uno")
     args = ap.parse_args()
 

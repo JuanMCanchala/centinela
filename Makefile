@@ -13,6 +13,12 @@ endif
 DATASET ?= ../ParticipantArtifacts/dataset
 PUERTO ?= 8000
 
+# El puerto viaja a los arneses por el entorno, no repetido en cada regla. Asi
+# `make PUERTO=8001 up` y `make PUERTO=8001 humo` apuntan al mismo sitio sin tener que
+# pasar `--url` suite por suite -- que es como tres de ellas se quedaron apuntando a un
+# 8100 que el README no menciona (ver eval/destino.py).
+export CENTINELA_PUERTO = $(PUERTO)
+
 .PHONY: help
 help:
 	@echo "Centinela - comandos disponibles"
@@ -117,6 +123,13 @@ diagrama:
 .PHONY: cifras
 cifras:
 	$(PY) scripts/verificar_cifras.py
+
+# Las escribe en vez de solo delatarlas. Es el modo normal despues de `make runtime`:
+# una medicion nueva mueve las diez cifras de la seccion 5 a la vez, y sincronizarlas a
+# mano es como llegaron a estar diez mal al mismo tiempo.
+.PHONY: cifras-corregir
+cifras-corregir:
+	$(PY) scripts/verificar_cifras.py --corregir
 
 # Deja la consola limpia para grabar o demostrar. Respalda antes de borrar y no toca el
 # indice del corpus. Sin --aplicar solo enumera. Correr ANTES de medir las metricas de

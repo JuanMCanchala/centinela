@@ -43,6 +43,12 @@ RAIZ = Path(__file__).resolve().parents[1]
 DESTINO = RAIZ / "docs" / "metrics" / "runtime.json"
 HISTORICO = RAIZ / "data" / "runtime" / "metricas.jsonl"
 
+# El destino se decide en un solo sitio para todos los arneses; este vive en `scripts/`,
+# asi que hay que poner la raiz en la ruta de importacion antes de pedirlo.
+sys.path.insert(0, str(RAIZ))
+
+from eval.destino import url_http  # noqa: E402
+
 # Por debajo de esto la muestra no da para publicar percentiles. Es un aviso, no
 # un error: puede que se este midiendo a proposito una sola llamada.
 MINIMO_TURNOS = 20
@@ -231,7 +237,7 @@ def extremo_a_extremo(caminos: dict) -> dict:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--url", default="http://127.0.0.1:8000")
+    ap.add_argument("--url", default=url_http())
     ap.add_argument("--salida", default=str(DESTINO))
     args = ap.parse_args()
 

@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 
 import httpx
+from eval.destino import url_http
 
 PACIENTE = {
     "paciente_id": "pac_tokens", "nombre": "Prueba de Consumo",
@@ -43,7 +44,7 @@ TURNOS = (
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--url", default="http://127.0.0.1:8000")
+    ap.add_argument("--url", default=url_http())
     args = ap.parse_args()
 
     c = httpx.Client(base_url=args.url, timeout=180.0)

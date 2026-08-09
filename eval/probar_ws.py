@@ -21,6 +21,7 @@ import time
 
 import httpx
 import websockets
+from eval.destino import url_ws
 
 PACIENTE = {
     "paciente_id": "pac_ws", "nombre": "Prueba WebSocket",
@@ -125,7 +126,7 @@ def tono_pcm16(segundos: float, frecuencia: int = 16000) -> bytes:
 
 async def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--url", default="ws://127.0.0.1:8100")
+    ap.add_argument("--url", default=url_ws())
     ap.add_argument("--segundos", type=float, default=3.0)
     ap.add_argument(
         "--decir",

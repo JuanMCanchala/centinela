@@ -197,9 +197,17 @@ class MetricsCollector:
 
         agregados_llamada = list(por_llamada.values())
 
+        # Cuantos turnos entraron por microfono. Un turno de voz es el que tiene etapa
+        # `stt`: los de texto no la tienen. Se publica porque el README afirma el tamano
+        # de la muestra de voz -- "de los cuales N entran por voz de verdad" -- y esa
+        # afirmacion no era comprobable contra nada: se escribia a mano y se quedaba
+        # rancia como se quedaron las otras seis cifras de la seccion.
+        n_voz = sum(1 for m in muestras if "stt" in m.ms_por_etapa)
+
         return {
             "n_turnos": len(muestras),
             "n_llamadas": len(llamadas),
+            "n_turnos_voz": n_voz,
             "latencia_hasta_primer_audio": {
                 "p50_ms": round(_percentil(latencias, 50), 1),
                 "p95_ms": round(_percentil(latencias, 95), 1),

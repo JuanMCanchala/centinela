@@ -18,9 +18,19 @@ Qué comprueba, y de dónde saca la verdad:
   cobertura RAG    docs/metrics/rag_cobertura.json (lo escribe `make rag`)
   tendencia        docs/metrics/tendencia.json (lo escribe `make tendencia`)
   locuciones       el guion clínico, contando las que existen
+  consumo y costo  docs/metrics/runtime.json (lo escribe `make runtime`)
 
-Lo que NO comprueba: las cifras de latencia y consumo. Esas ya vienen de
-`docs/metricas.md`, que se genera del mismo `runtime.json`, y el README lo dice.
+La última línea se añadió después, y la añadió un fallo. Este archivo decía «lo que NO
+comprueba: las cifras de latencia y consumo, porque ya vienen de `docs/metricas.md`, que
+se genera del mismo `runtime.json`». El razonamiento tenía un agujero: `docs/metricas.md`
+se genera, pero **el README las copia a mano**, y para cuando alguien las miró seis de
+ellas eran falsas —la muestra decía 42 turnos y eran 51, el costo decía USD 0.002425 y
+era 0.002598, y una frase remitía a «los 415.4 tokens/llamada de arriba» cuando arriba
+decía 462.2—. Justo la clase de discrepancia que la rúbrica castiga por nombre.
+
+La lección, que vale más que el arreglo: **una cifra queda fuera del verificador solo si
+ningún documento la afirma.** Que exista un generado en otro archivo no protege a la
+copia escrita a mano.
 
     python scripts/verificar_cifras.py
 """
@@ -46,10 +56,38 @@ class Comprobacion:
     esperado: object
     afirmado: object
     donde: str
+    # Donde esta escrita la cifra en su documento. Solo lo traen las que el script sabe
+    # corregir; las que se cuentan de otra forma -- los tests, las locuciones -- no.
+    span: tuple[int, int] | None = None
 
     @property
     def cuadra(self) -> bool:
-        return str(self.esperado) == str(self.afirmado)
+        """Compara por valor cuando los dos lados son números.
+
+        `37` y `37.0` son la misma cifra y la comparación textual los separaba: el JSON
+        redondea a un decimal y el documento escribe el que le sale. Comparar el texto
+        habría marcado como rancia una cifra correcta, que es el fallo que este script
+        cometió una vez y no debe volver a cometer.
+        """
+
+        try:
+            igual = float(str(self.esperado)) == float(
+                str(self.afirmado).replace(" ", "")
+            )
+        except ValueError:
+            igual = str(self.esperado) == str(self.afirmado)
+        return igual
+
+    @property
+    def medible(self) -> bool:
+        """False cuando la medición no trae la cifra que el documento afirma.
+
+        No es lo mismo que estar mal: significa que falta correr `make runtime`, o que
+        el campo cambió de nombre. Se reporta aparte para que no se confunda con una
+        cifra rancia, y para que no se pierda de vista, que es lo que la haría inútil.
+        """
+
+        return self.esperado is not None
 
 
 def leer(ruta: Path) -> dict:
@@ -103,10 +141,232 @@ def contar_locuciones() -> int:
 RE_CITA = re.compile(r"«[^»]*»")
 
 
+def enmascarar(texto: str) -> str:
+    """Borra las citas sin mover nada de sitio.
+
+    Sustituir por un espacio bastaba mientras el script solo comparaba. Para corregir
+    hacen falta las posiciones del documento original, asi que la mascara conserva la
+    longitud: un blanco por caracter tapado.
+    """
+
+    return RE_CITA.sub(lambda m: " " * len(m.group(0)), texto)
+
+
+def formatear(valor: object, agrupado: bool = False) -> str:
+    """La cifra como se escribe en un documento, nunca en notacion cientifica.
+
+    El desglose del costo tiene sumandos del orden de 1e-05, y `str()` los escribe
+    `5e-05`. Escribir eso en el README seria cierto y a la vez ilegible para quien
+    compara con su propia factura.
+
+    `agrupado` reproduce el separador de miles del documento —«7 321 turnos», con un
+    espacio— porque la correccion no debe cambiar la tipografia de la frase que arregla.
+    Se decide mirando la cifra que habia, no por configuracion: si estaba agrupada, la
+    nueva tambien.
+    """
+
+    if isinstance(valor, float):
+        texto = f"{valor:.10f}".rstrip("0")
+        if texto.endswith("."):
+            texto = f"{texto}0"
+    else:
+        texto = str(valor)
+
+    if agrupado and texto.replace(".", "").isdigit():
+        entera, _punto, decimal = texto.partition(".")
+        trozos = []
+        while len(entera) > 3:
+            trozos.insert(0, entera[-3:])
+            entera = entera[:-3]
+        trozos.insert(0, entera)
+        texto = " ".join(trozos) + (f".{decimal}" if decimal else "")
+    return texto
+
+
+def aplanar(datos: dict) -> dict:
+    """Añade claves sintéticas para lo que vive en listas o hay que derivar.
+
+    `hondo` navega diccionarios, y los caminos de latencia son una lista de filas. En vez
+    de enseñarle a indexar listas —que obligaría a escribir el índice en la ruta, y el
+    índice cambia cuando cambia el orden— se les pone nombre aquí:
+
+      caminos_planos.<nombre del camino con _>   cada fila por su nombre
+      voz_vigente                               la fila de la configuración de STT en uso
+      derivados.proporcion_cache_pct            la de caché, en la unidad en que se lee
+    """
+
+    plano = dict(datos)
+    caminos = datos.get("por_camino") or {}
+
+    por_nombre: dict[str, dict] = {}
+    for grupo in ("caminos", "voz_por_configuracion"):
+        for fila in caminos.get(grupo) or []:
+            por_nombre[str(fila.get("camino", "")).replace(" ", "_")] = fila
+    plano["caminos_planos"] = por_nombre
+
+    vigente = caminos.get("configuracion_vigente")
+    if vigente:
+        plano["voz_vigente"] = por_nombre.get(
+            f"voz_con_STT_{vigente}".replace(" ", "_"), {}
+        )
+
+    derivados: dict[str, object] = {}
+    proporcion = ((datos.get("resumen") or {}).get("tts") or {}).get(
+        "proporcion_desde_cache"
+    )
+    if proporcion is not None:
+        derivados["proporcion_cache_pct"] = round(proporcion * 100)
+
+    # El texto vuelve a citar la mediana redondeada -- «los 622 ms de mediana quedan
+    # dentro del umbral» -- y esa copia se queda rancia igual que la tabla.
+    e2e = (datos.get("extremo_a_extremo") or {}).get("p50_ms_con_cierre_adaptativo")
+    if e2e is not None:
+        derivados["p50_e2e_ms"] = round(e2e)
+
+    plano["derivados"] = derivados
+    return plano
+
+
 def cifras_afirmadas(texto: str, patron: str) -> list[str]:
     """Todas las cifras que el documento AFIRMA para un concepto dado."""
 
     return re.findall(patron, RE_CITA.sub(" ", texto))
+
+
+# ==========================================================================
+# Las cifras de consumo, muestra y costo que exige la rúbrica (§5)
+#
+# Cada entrada es: nombre, el patrón que la AFIRMA en el documento, y la ruta del
+# `runtime.json` que la MIDE. Los grupos del patrón se emparejan en orden con las rutas,
+# así que una tabla de dos columnas —«462.2 / 37.0»— se comprueba de una sola pasada.
+#
+# El patrón va anclado a la redacción, no solo al número: buscar `\d+ turnos` a secas
+# habría capturado los 7 321 turnos del histórico, que es otra población y otra cifra.
+# ==========================================================================
+
+# Un número como el documento lo escribe: con separador de miles de espacio y decimales
+# opcionales. «6 623», «126.7» y «1 071.8» son todos esto.
+NUM = r"\d+(?: \d{3})*(?:\.\d+)?"
+
+CIFRAS_DE_RUNTIME: tuple[tuple[str, str, tuple[str, ...]], ...] = (
+    ("muestra", r"\*\*(\d+) turnos en (\d+) llamadas",
+     ("resumen.n_turnos", "resumen.n_llamadas")),
+    # --- las cifras de latencia, que son las que el jurado contrasta con la sesion ---
+    ("histórico medido", rf"sobre los ({NUM}) turnos medidos",
+     ("por_camino.n_turnos_medidos",)),
+    ("camino desde caché", rf"voz desde caché \| ({NUM}) \| \*\*({NUM}) ms\*\* \| ({NUM}) ms",
+     ("caminos_planos.voz_del_agente_desde_cache.n",
+      "caminos_planos.voz_del_agente_desde_cache.p50_ms",
+      "caminos_planos.voz_del_agente_desde_cache.p95_ms")),
+    ("configuración vigente", r"configuración vigente \(`([^`]+)`\)",
+     ("por_camino.configuracion_vigente",)),
+    ("camino de voz vigente",
+     rf"configuración vigente \(`[^`]+`\) \| ({NUM}) \| \*\*({NUM}) ms\*\* \| ({NUM}) ms",
+     ("voz_vigente.n", "voz_vigente.p50_ms", "voz_vigente.p95_ms")),
+    ("proporción desde caché", r"\*\*(\d+) % de los turnos se sirven desde",
+     ("derivados.proporcion_cache_pct",)),
+    ("extremo a extremo, cierre adaptativo",
+     rf"cierre adaptativo \(450 ms\) \| \*\*({NUM}) ms\*\*",
+     ("extremo_a_extremo.p50_ms_con_cierre_adaptativo",)),
+    ("extremo a extremo, techo P50", rf"techo del cliente \(900 ms\) \| ({NUM}) ms",
+     ("extremo_a_extremo.p50_ms_con_techo",)),
+    ("extremo a extremo, techo P95", rf"P95 con el techo \| ({NUM}) ms",
+     ("extremo_a_extremo.p95_ms_con_techo",)),
+    ("mediana citada en el texto", r"Los (\d+) ms de mediana",
+     ("derivados.p50_e2e_ms",)),
+    ("muestra de voz", r"\*\*(\d+) turnos entran por voz",
+     ("resumen.n_turnos_voz",)),
+    ("tokens/turno P50", r"por turno \(P50\) \| \*\*([\d.]+) / ([\d.]+)\*\*",
+     ("resumen.tokens_por_turno.entrada_p50", "resumen.tokens_por_turno.salida_p50")),
+    ("tokens/turno media", r"por turno \(media\) \| ([\d.]+) / ([\d.]+)",
+     ("resumen.tokens_por_turno.entrada_media", "resumen.tokens_por_turno.salida_media")),
+    ("tokens/llamada", r"\*\*por llamada\*\* \(media\) \| \*\*([\d.]+) / ([\d.]+)\*\*",
+     ("resumen.tokens_por_llamada.entrada_media",
+      "resumen.tokens_por_llamada.salida_media")),
+    ("tokens/llamada citado", r"los ([\d.]+) tokens/llamada",
+     ("resumen.tokens_por_llamada.entrada_media",)),
+    ("turnos/llamada", r"Turnos por llamada \(media\) \| ([\d.]+)",
+     ("resumen.tokens_por_llamada.turnos_media",)),
+    ("invocaciones/turno", r"P50 = ([\d.]+)\*\*, media ([\d.]+), máximo (\d+)",
+     ("resumen.invocaciones_llm_por_turno.p50",
+      "resumen.invocaciones_llm_por_turno.media",
+      "resumen.invocaciones_llm_por_turno.max")),
+    ("consultas RAG/llamada", r"\*\*([\d.]+) de media\*\*, máximo (\d+)",
+     ("resumen.consultas_rag_por_llamada.media",
+      "resumen.consultas_rag_por_llamada.max")),
+    ("costo/llamada", r"Costo estimado por llamada: USD ([\d.]+)\*\* \(COP ([\d.]+)\)",
+     ("costo.costo_total_usd_por_llamada", "costo.costo_total_cop_por_llamada")),
+    # Los tres cierran frase, asi que el grupo no puede ser `[\d.]+`: se traga el punto
+    # final y la cifra pasa a ser "0.001404." -- que no es un numero y no cuadra nunca.
+    ("desglose del costo",
+     r"modelo USD (\d+\.\d+) · transcripción USD (\d+\.\d+) · voz USD (\d+\.\d+)",
+     ("costo.desglose_usd.llm", "costo.desglose_usd.stt", "costo.desglose_usd.tts")),
+)
+
+
+def hondo(datos: dict, ruta: str) -> object:
+    """El valor de una ruta con puntos, o None si el camino se corta."""
+
+    valor: object = datos
+    for parte in ruta.split("."):
+        if isinstance(valor, dict):
+            valor = valor.get(parte)
+        else:
+            valor = None
+    return valor
+
+
+def comprobar_runtime(
+    textos: tuple[tuple[str, str], ...], datos: dict
+) -> list[Comprobacion]:
+    """Cada cifra de §5 que un documento afirma, contra la medición que la sostiene."""
+
+    fuera: list[Comprobacion] = []
+    for nombre, patron, rutas in CIFRAS_DE_RUNTIME:
+        for doc, texto in textos:
+            for hallado in re.finditer(patron, enmascarar(texto)):
+                for orden, ruta in enumerate(rutas, start=1):
+                    fuera.append(
+                        Comprobacion(
+                            f"{nombre} · {ruta.rsplit('.', 1)[-1]}",
+                            hondo(datos, ruta),
+                            hallado.group(orden),
+                            doc,
+                            hallado.span(orden),
+                        )
+                    )
+    return fuera
+
+
+def corregir(malas: list[Comprobacion]) -> list[str]:
+    """Escribe la medición encima de la cifra rancia, en su sitio exacto.
+
+    Existe porque la alternativa no funciona. Cada `make runtime` mueve diez cifras de
+    §5, sincronizarlas a mano es un trámite, y un trámite que se repite se acaba
+    salteando: así llegaron a haber diez cifras falsas a la vez en un documento que
+    presume de que sus números los escriben los scripts.
+
+    Se reemplaza de atrás hacia adelante para que las posiciones ya calculadas no se
+    desplacen cuando la cifra nueva tiene otra longitud.
+    """
+
+    tocados: list[str] = []
+    por_documento: dict[str, list[Comprobacion]] = {}
+    for c in malas:
+        if c.span is not None:
+            por_documento.setdefault(c.donde, []).append(c)
+
+    for doc, cifras in por_documento.items():
+        ruta = RAIZ / doc if doc == "README.md" else RAIZ / "docs" / doc
+        texto = ruta.read_text(encoding="utf-8")
+        for c in sorted(cifras, key=lambda c: c.span[0], reverse=True):
+            inicio, fin = c.span
+            agrupado = " " in str(c.afirmado)
+            texto = texto[:inicio] + formatear(c.esperado, agrupado) + texto[fin:]
+        ruta.write_text(texto, encoding="utf-8")
+        tocados.append(f"{doc} ({len(cifras)} cifras)")
+
+    return tocados
 
 
 def main() -> int:
@@ -116,8 +376,17 @@ def main() -> int:
     triage = leer(METRICAS / "triage_160_casos.json")
     redteam = leer(METRICAS / "redteam.json")
     rag = leer(METRICAS / "rag_cobertura.json")
+    runtime = leer(METRICAS / "runtime.json")
 
     comprobaciones: list[Comprobacion] = []
+
+    # --- consumo, muestra y costo (§5) -------------------------------------
+    if runtime:
+        comprobaciones.extend(
+            comprobar_runtime(
+                (("README.md", readme), ("informe-final.md", informe)), aplanar(runtime)
+            )
+        )
 
     # --- tests -------------------------------------------------------------
     n_tests = contar_tests()
@@ -193,21 +462,43 @@ def main() -> int:
         print("  mediciones, y vuelva a intentarlo.")
         return 0
 
-    malas = [c for c in comprobaciones if not c.cuadra]
+    medibles = [c for c in comprobaciones if c.medible]
+    sin_medir = [c for c in comprobaciones if not c.medible]
+    malas = [c for c in medibles if not c.cuadra]
 
     for c in comprobaciones:
-        marca = "OK  " if c.cuadra else "MAL "
-        print(f"  {marca} {c.nombre:32s} dice {str(c.afirmado):>8s} "
-              f"y es {str(c.esperado):>8s}   ({c.donde})")
+        if c.medible:
+            marca = "OK  " if c.cuadra else "MAL "
+            esperado = str(c.esperado)
+        else:
+            marca = "?   "
+            esperado = "sin medir"
+        print(f"  {marca} {c.nombre:38s} dice {str(c.afirmado):>9s} "
+              f"y es {esperado:>9s}   ({c.donde})")
 
     print()
-    if malas:
-        print(f"  {len(malas)} cifra(s) de los documentos ya no son ciertas.")
-        print("  Corregirlas, o regenerar la medicion si lo que cambio es el sistema.")
-    else:
-        print(f"  {len(comprobaciones)} cifras comprobadas, todas cuadran.")
+    if sin_medir:
+        print(f"  {len(sin_medir)} cifra(s) no se pudieron comprobar: la medicion no las")
+        print("  trae. Corra `make runtime` para regenerarla.")
 
-    return 1 if malas else 0
+    a_mano = [c for c in malas if c.span is None]
+    if not malas:
+        print(f"  {len(medibles)} cifras comprobadas, todas cuadran.")
+        codigo = 0
+    elif "--corregir" in sys.argv:
+        for linea in corregir(malas):
+            print(f"  ESCRITO  {linea}")
+        if a_mano:
+            print(f"  {len(a_mano)} cifra(s) no se corrigen solas: se cuentan del codigo,")
+            print("  no de una medicion, asi que lo que cambio es el sistema.")
+        codigo = 1 if a_mano else 0
+    else:
+        print(f"  {len(malas)} cifra(s) de los documentos ya no son ciertas.")
+        print("  Corregirlas con `--corregir`, o regenerar la medicion si lo que cambio")
+        print("  es el sistema.")
+        codigo = 1
+
+    return codigo
 
 
 if __name__ == "__main__":

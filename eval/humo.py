@@ -29,6 +29,7 @@ from pathlib import Path
 
 import httpx
 import numpy as np
+from eval.destino import url_http
 
 RAIZ = Path(__file__).resolve().parents[1]
 
@@ -1084,7 +1085,7 @@ def caso_barge_in(cli: Cliente, url: str) -> None:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--url", default="http://127.0.0.1:8000")
+    ap.add_argument("--url", default=url_http())
     args = ap.parse_args()
 
     cli = Cliente(args.url)
