@@ -43,10 +43,23 @@ DIR_KOKORO = RAIZ / "data" / "kokoro"
 DIR_MUESTRAS = RAIZ / "data" / "ab_voz"
 DESTINO = RAIZ / "docs" / "metrics" / "ab_voz_kokoro.json"
 
-# El modelo cuantizado y no el `q8f16`: ese revienta al cargar con onnxruntime 1.28 --
-# violacion de acceso, sin excepcion de Python que atrapar. Queda escrito porque es el que
-# la pagina del modelo lista primero por tamano.
-MODELO = "model_quantized.onnx"
+# El fp32, y las dos alternativas mas pequenas estan descartadas por motivos distintos:
+#
+#   model_q8f16.onnx    86 MB   revienta al cargar con onnxruntime 1.28 -- violacion de
+#                               acceso, sin excepcion de Python que atrapar
+#   model_quantized.onnx 88 MB  carga, pero RTF 1.025: tarda en generar un segundo de audio
+#                               lo que ese segundo dura
+#   model.onnx          311 MB  RTF 0.213
+#
+# **El grande es cinco veces mas rapido que el cuantizado**, que es lo contrario de lo que
+# uno espera y la razon por la que conviene medir en vez de suponer: los kernels int8 de
+# este export caen a rutas lentas en el proveedor de CPU. Con el fp32 la cuantizacion no
+# compra ni tamano util ni velocidad, y encima mete artefactos en la voz.
+#
+# Los 311 MB no pesan en la compuerta G2: el 85 % de lo que oye el paciente sale del cache
+# de audio, que esta versionado en el repo. El modelo es una herramienta de pre-renderizado,
+# no una dependencia de ejecucion.
+MODELO = "model.onnx"
 
 FRASES = (
     ("saludo", S.SALUDO.texto),
