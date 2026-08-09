@@ -537,3 +537,72 @@ async def test_la_serie_de_dias_anteriores_llega_a_la_hoja(tmp_path) -> None:
         assert "d7: 6.0" in cierre["ticket"]["hoja_legible"]
     finally:
         servicio.cerrar()
+
+
+@pytest.mark.asyncio
+async def test_el_historial_no_entierra_el_cuadro_de_esta_llamada(tmp_path) -> None:
+    """La hoja la lee alguien con prisa, y lo urgente es la llamada de AHORA.
+
+    Sin tope, un paciente con muchas alertas sin acuse producia una hoja donde el cuadro
+    actual quedaba debajo de un historial de doce entradas. Se listan las mas recientes y
+    se dice cuantas hay en total: recortar sin declararlo seria peor que no recortar.
+
+    Aparece en la demo antes que en produccion: el jurado llama al mismo paciente varias
+    veces seguidas, y a la quinta la hoja ya arrastraba cuatro alertas previas.
+    """
+
+    from centinela.escalation.service import MAX_PREVIAS_EN_HOJA
+
+    servicio = EscalationService(tmp_path)
+    try:
+        # Seis llamadas rojas del mismo paciente, ninguna atendida.
+        for i in range(MAX_PREVIAS_EN_HOJA + 3):
+            policy, decision = await llamada_hasta_la_bandera(servicio, f"ll{i}")
+            cierre = servicio.cerrar_llamada(f"ll{i}", policy, decision, [], CIERRE_NORMAL)
+
+        hoja = cierre["ticket"]["hoja_legible"]
+        listadas = [l for l in hoja.splitlines() if l.strip().startswith("- [TK-")]
+
+        assert len(listadas) == MAX_PREVIAS_EN_HOJA, (
+            f"la hoja lista {len(listadas)} alertas previas; el tope es "
+            f"{MAX_PREVIAS_EN_HOJA}"
+        )
+        assert "en total" in hoja, "hay que decir cuantas se dejaron fuera"
+
+        # Y el cuadro de esta llamada sigue por encima del historial.
+        assert hoja.index("CUADRO REPORTADO POR EL PACIENTE") < hoja.index("ALERTAS ANTERIORES")
+    finally:
+        servicio.cerrar()
+
+
+@pytest.mark.asyncio
+async def test_la_hoja_de_una_alerta_no_lleva_hallazgos_que_nadie_reporto(tmp_path) -> None:
+    """El turno de confirmacion no puede meter un sintoma en la hoja.
+
+    Medido antes del arreglo: ante "si es correcto" el modelo devolvia
+    `fiebre_subjetiva: true` y `sintomas_adicionales: ["correcto"]`. Eso fabricaba una
+    bandera A2_FEBRICULA -- un hallazgo que el paciente nunca reporto -- y la escribia en
+    la hoja de traspaso de una alerta ROJA, que es donde menos puede haber ruido.
+
+    El extractor de esta suite no tiene modelo, asi que lo que se comprueba aqui es la
+    consecuencia: que la palabra de la confirmacion no acabe en el cuadro clinico.
+    """
+
+    servicio = EscalationService(tmp_path)
+    try:
+        policy, decision = await llamada_hasta_la_bandera(servicio, "conf")
+        await policy.procesar("si es correcto")
+        cierre = servicio.cerrar_llamada(
+            "conf", policy, policy.decision_vigente, [], CIERRE_NORMAL
+        )
+
+        hoja = cierre["ticket"]["hoja_legible"]
+
+        assert "correcto" not in hoja.lower().split("DECISION")[0], (
+            "la respuesta de la confirmacion aparece en el cuadro clinico"
+        )
+        assert policy.estado.sintomas_libres == [], (
+            f"sintomas inventados: {policy.estado.sintomas_libres}"
+        )
+    finally:
+        servicio.cerrar()

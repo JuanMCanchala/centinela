@@ -149,6 +149,12 @@ PRIORIDAD_FHIR = {"rojo": "urgent", "amarillo": "routine", "verde": "routine"}
 
 DOMINIOS_RESUMEN = ("dolor", "fiebre", "movilidad", "herida", "apetito", "sueno")
 
+# Cuantas alertas previas sin acuse se listan en la hoja de traspaso. La hoja la lee una
+# persona con prisa: lo que importa es el cuadro de esta llamada, y el historial es
+# contexto. Tres avisan de que el sistema ya alerto y nadie respondio, que es el punto;
+# doce entierran lo urgente. La cuenta total se escribe siempre.
+MAX_PREVIAS_EN_HOJA = 3
+
 # Reintento del despachador: 30 s, 1 min, 2 min... con tope. La progresion importa
 # poco; lo que importa es que no se rinda y que no golpee un webhook caido.
 ESPERA_BASE_S = 30
@@ -1056,7 +1062,16 @@ class EscalationService:
         if previas:
             L.append("")
             L.append("  ALERTAS ANTERIORES DE ESTE PACIENTE SIN ACUSE:")
-            for t in previas:
+            # Se listan las mas recientes y se dice cuantas hay. Sin tope, un paciente
+            # con doce alertas sin acuse producia una hoja en la que el cuadro de ESTA
+            # llamada -- lo que hay que atender ahora -- quedaba enterrado bajo el
+            # historial. Recortar sin declararlo seria peor: la cuenta va escrita.
+            if len(previas) > MAX_PREVIAS_EN_HOJA:
+                L.append(
+                    f"    ({len(previas)} en total; se listan las "
+                    f"{MAX_PREVIAS_EN_HOJA} mas recientes)"
+                )
+            for t in previas[:MAX_PREVIAS_EN_HOJA]:
                 L.append(f"    - [{t['ticket_id']}] {t['nivel'].upper()} del {t['creado_en'][:16]}")
                 L.append(f"        {t['motivo'][:110]}")
 

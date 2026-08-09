@@ -87,6 +87,29 @@ class EstadoLlamada(str, Enum):
     TERMINADA = "terminada"
 
 
+# Fases en las que al modelo no se le pregunta nada, porque por construccion no hay un
+# dato clinico que extraer: el agente acaba de hacer una pregunta cerrada sobre si mismo
+# ("es usted X?") o sobre lo que ya entendio ("es correcto?").
+#
+# No es solo latencia. Preguntarle al modelo por un turno sin contenido clinico es
+# invitarle a inventar, y lo hacia: medido, ante "si es correcto" devolvia
+# `fiebre_subjetiva: true` y `sintomas_adicionales: ["correcto"]`. Eso fabricaba una
+# bandera A2_FEBRICULA -- un hallazgo clinico que el paciente nunca reporto -- y la metia
+# en la hoja de traspaso de una alerta roja, que es donde menos puede haber ruido.
+#
+# Las dos capas de reglas siguen corriendo en estas fases. Un paciente que se adelanta
+# ("si soy yo, y estoy con fiebre") o que corrige al confirmar ("no, era treinta y seis y
+# medio") se capta igual, y en 0.2 ms.
+#
+# CONFIRMAR_IDENTIDAD es ademas el turno con el que el reto verifica la compuerta G4
+# ("saludo y una pregunta trivial"): era el mas lento del sistema, 2385 ms y 301 tokens,
+# y es el primero que oye quien nos evalua.
+SIN_NADA_QUE_EXTRAER = frozenset({
+    EstadoLlamada.CONFIRMAR_IDENTIDAD,
+    EstadoLlamada.CONFIRMANDO,
+})
+
+
 @dataclass
 class Paciente:
     paciente_id: str
@@ -311,22 +334,13 @@ class DialogPolicy:
                 estado=self.estado, normalizado=norm_previo, respondio=False
             )
         else:
-            # En el turno de confirmar identidad no se le pregunta al modelo. Por
-            # construccion no hay nada clinico que extraer -- el agente acaba de decir
-            # "es usted X?" -- y medido, ese turno costaba 2385 ms y 301 tokens para que
-            # el modelo respondiera que no habia datos. Es, ademas, el turno con el que
-            # el reto verifica la compuerta G4 ("saludo y una pregunta trivial"): era el
-            # mas lento del sistema y es el primero que oye quien nos evalua.
-            #
-            # Se salta la tercera capa, no las tres: si el paciente se adelanta con un
-            # "si soy yo, y estoy con fiebre", las reglas lo captan igual en 0.24 ms.
             extraccion = await self.extractor.extraer(
                 texto_paciente=texto_paciente,
                 estado=self.estado,
                 turno_idx=turno_idx,
                 pregunta_agente=self.ultima_pregunta,
                 dominio_objetivo=dominio_objetivo,
-                permitir_modelo=self.fase is not EstadoLlamada.CONFIRMAR_IDENTIDAD,
+                permitir_modelo=self.fase not in SIN_NADA_QUE_EXTRAER,
             )
         norm = extraccion.normalizado
 

@@ -456,7 +456,7 @@ lo que **tiene que hacer** para lograrlo.
 Intentos de manipulación resistidos: **11/11**. Casos donde la criticidad bajó porque el
 paciente lo pidió: **0**.
 
-### Tests (`make test`) — 565/565
+### Tests (`make test`) — 567/567
 
 Incluye cero falsos positivos de manipulación sobre turnos textuales del dataset, la
 regresión del extractor malicioso, la verificación de que el resumen de cierre contiene los
@@ -654,7 +654,37 @@ de latencia.** Se listan aquí porque el hallazgo importa tanto como el arreglo.
 | Cronometrar el turno de G4 | `"hola sí soy yo"` costaba **2 385 ms y 301 tokens** invocando al modelo | Era el turno más lento del sistema y el primero que oye el jurado —G4 se verifica con *«saludo y una pregunta trivial»* | El turno de identidad no llega al modelo: por construcción no hay nada clínico que extraer. **6 ms** |
 | Apuntar el sistema a un Ollama muerto | La extracción llamaba al modelo sin `try/except`; una `ConnectError` rompía la llamada | El 94 % de los turnos no necesitan el modelo, y las reglas detectan una bandera roja sin él: caerse ahí era perder una llamada que podía atenderse | Degradación a las dos capas de reglas, anotada en la traza. Timeout de 60 s → 12 s y `keep_alive` para que Ollama no descargue el modelo |
 
-**Y un quinto, que solo apareció por haber arreglado la medición.** Con la muestra de §5 ya
+**El más grave de todos apareció leyendo una hoja de traspaso de verdad.** Sobre una llamada
+en la que el paciente dijo exactamente *«hola sí soy yo»*, *«me duele como un ocho»* y *«sí es
+correcto»*, la hoja de una alerta **roja** traía esto:
+
+```
+  nota   : refiere sensacion febril sin medicion objetiva
+  otros  : correcto
+  ...
+  Banderas de vigilancia:
+    - [A2_FEBRICULA] Febricula, temperatura igual o mayor a 37.4 grados
+        (observado: sensacion febril sin medicion)
+```
+
+El paciente nunca mencionó la fiebre. El turno `"si es correcto"` no aporta nada por reglas,
+así que caía a la tercera capa, y el modelo devolvía `fiebre_subjetiva: true` y
+`sintomas_adicionales: ["correcto"]`. **Un hallazgo clínico fabricado, con su bandera, en el
+documento que lee la enfermera.** Es la alucinación que este proyecto existe para evitar, y
+entraba por el único turno donde no hay nada que extraer.
+
+La política ya sabía que estaba en fase `CONFIRMANDO`; solo había que no preguntarle al
+modelo. El turno pasó de **2 138 ms a 0,3 ms** y el hallazgo desapareció. La corrección al
+confirmar —*«no, era treinta y seis y medio»*— sigue funcionando, porque la capta el
+normalizador y no el modelo.
+
+**Y un defecto de la hoja que se manifiesta antes en la demo que en producción.** El listado
+de alertas previas sin acuse no tenía tope, y el jurado va a llamar al mismo paciente varias
+veces: a la quinta llamada, el cuadro de la llamada actual quedaba enterrado bajo el
+historial. Ahora se listan las tres más recientes y **se escribe cuántas hay en total**:
+*«(7 en total; se listan las 3 más recientes)»*. Recortar sin declararlo habría sido peor.
+
+**Y otro, que solo apareció por haber arreglado la medición.** Con la muestra de §5 ya
 honesta, el P95 del STT seguía en 9 909 ms y los tres picos eran todos turnos posteriores a
 una interrupción. Contando invocaciones —un contador que no existía— se vio la causa: una
 llamada con **7.7 s de audio real transcribía 172.6 s en 55 invocaciones**, 22 veces el
@@ -669,7 +699,7 @@ mientras una comprobación está en vuelo el detector no puede lanzar otra. Un b
 voz 250 ms y el agente sigue; los cortes falsos, que son los que pierden el turno, siguen
 en **0 con 100 % de detección hasta −12 dB**.
 
-Dos de esos cinco son del mismo tipo y conviene nombrarlo: **los 160 casos oficiales no
+Dos de todos ellos son del mismo tipo y conviene nombrarlo: **los 160 casos oficiales no
 podían encontrarlos**. Vienen con la cifra ya escrita (`"38.5"`), así que ejercitan el camino
 del decimal en dígitos. El error vivía en el camino de las palabras, que es el único que
 existe cuando alguien **habla**. Un dataset de texto no cubre un agente de voz.
@@ -765,7 +795,7 @@ make instalar && make ollama && make piper && make modelos
 make up                    # http://localhost:8000
 
 # en otra terminal
-make test                  # 565 tests
+make test                  # 567 tests
 make eval                  # 160 casos, cero falsos negativos
 make humo                  # 79 comprobaciones de extremo a extremo
 make redteam               # 43 casos adversariales
