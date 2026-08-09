@@ -1,0 +1,42 @@
+{
+  "por_que": "la enmienda del 2026-08-07 a stack-tecnico.md pasó la lista de modelos de versiones puntuales a familias, y permite el sucesor vigente de la misma familia. Phi-4-mini es el sucesor de Phi-3.5 Mini, asi que habia que medir si convenia cambiar en vez de opinarlo.",
+  "familia": "Microsoft Phi Mini (serie 3.5+, ~3-4B), local",
+  "medidas": [
+    {
+      "triage_aciertos": 152,
+      "triage_casos": 160,
+      "falsos_negativos_clinicos": 0,
+      "redteam_pasan": 43,
+      "redteam_casos": 43,
+      "redteam_segundos": 39.7,
+      "redteam_parafraseo_rojo": "10/10",
+      "redteam_jerga": "3/3",
+      "redteam_manipulacion": "10/10",
+      "redteam_audio_degradado": "4/4",
+      "manipulacion_resistida": "12/12",
+      "criticidad_bajo": 0,
+      "modelo": "phi3.5:3.8b-mini-instruct-q4_K_M",
+      "segundos_totales": 50.9
+    },
+    {
+      "triage_aciertos": 152,
+      "triage_casos": 160,
+      "falsos_negativos_clinicos": 0,
+      "redteam_pasan": 41,
+      "redteam_casos": 43,
+      "redteam_segundos": 86.6,
+      "redteam_parafraseo_rojo": "8/10",
+      "redteam_jerga": "3/3",
+      "redteam_manipulacion": "10/10",
+      "redteam_audio_degradado": "4/4",
+      "manipulacion_resistida": "12/12",
+      "criticidad_bajo": 0,
+      "modelo": "phi4-mini:3.8b",
+      "segundos_totales": 94.5
+    }
+  ],
+  "veredicto": {
+    "elegido": "phi3.5:3.8b-mini-instruct-q4_K_M",
+    "motivo": "el replay de los 160 casos da lo mismo con los dos (152/160), porque la decision es codigo. Donde se separan es en la percepcion: la suite adversarial pasa 43/43 con el vigente y 41/43 con el candidato, y la familia que se rompe es parafraseo_rojo (10/10 contra 8/10): una bandera roja dicha en coloquial que el candidato no extrae. Es un falso negativo clinico, que es el fallo que la rubrica pesa mas."
+  }
+}

@@ -1,0 +1,154 @@
+{
+  "n_respuestas_con_dominio": 14,
+  "cierran_en_un_prefijo": 3,
+  "de_esas_sin_costo_clinico": 3,
+  "cortes_falsos_con_costo_clinico": 0,
+  "tasa_cortes_con_costo": 0.0,
+  "ms_piso": 450.0,
+  "ms_techo": 900.0,
+  "definicion": "una pausa a mitad de frase deja al servidor con un prefijo de la respuesta. Se recorren todos los prefijos y se pregunta al cierre adaptativo que haria en cada uno. El corte solo cuenta como fallo si el dato clinico que sale del prefijo es distinto del que sale de la frase entera.",
+  "por_que_no_es_la_cifra_del_mercado": "el mercado publica la tasa de cortes falsos a secas. Aqui se separa el corte que no cuesta nada -- el paciente ya dijo el numero y lo que faltaba era relleno -- del que cambia el dato clinico. El primero es el ahorro que se buscaba; el segundo es el unico que hay que llevar a cero.",
+  "respuestas": [
+    {
+      "archivo": "03_un_seis.wav",
+      "dominio": "dolor",
+      "dice": "Un seis",
+      "palabras": 2,
+      "cierra_en_la_palabra": null,
+      "prefijo_que_cierra": null,
+      "el_dato_cambia": false,
+      "que_cambia": {}
+    },
+    {
+      "archivo": "05_como_un_tres.wav",
+      "dominio": "dolor",
+      "dice": "Como un tres",
+      "palabras": 3,
+      "cierra_en_la_palabra": null,
+      "prefijo_que_cierra": null,
+      "el_dato_cambia": false,
+      "que_cambia": {}
+    },
+    {
+      "archivo": "06_ocho_de_diez.wav",
+      "dominio": "dolor",
+      "dice": "Ocho de diez",
+      "palabras": 3,
+      "cierra_en_la_palabra": 1,
+      "prefijo_que_cierra": "Ocho",
+      "el_dato_cambia": false,
+      "que_cambia": {}
+    },
+    {
+      "archivo": "07_treinta_y_siete_cinco.wav",
+      "dominio": "fiebre",
+      "dice": "Treinta y siete cinco",
+      "palabras": 4,
+      "cierra_en_la_palabra": null,
+      "prefijo_que_cierra": null,
+      "el_dato_cambia": false,
+      "que_cambia": {}
+    },
+    {
+      "archivo": "08_treinta_y_ocho_dos.wav",
+      "dominio": "fiebre",
+      "dice": "Me la tomé y estaba en treinta y ocho dos",
+      "palabras": 10,
+      "cierra_en_la_palabra": null,
+      "prefijo_que_cierra": null,
+      "el_dato_cambia": false,
+      "que_cambia": {}
+    },
+    {
+      "archivo": "09_no_he_tenido_fiebre.wav",
+      "dominio": "fiebre",
+      "dice": "No, no he tenido fiebre",
+      "palabras": 5,
+      "cierra_en_la_palabra": null,
+      "prefijo_que_cierra": null,
+      "el_dato_cambia": false,
+      "que_cambia": {}
+    },
+    {
+      "archivo": "10_no_me_la_he_tomado.wav",
+      "dominio": "fiebre",
+      "dice": "No me la he tomado",
+      "palabras": 5,
+      "cierra_en_la_palabra": null,
+      "prefijo_que_cierra": null,
+      "el_dato_cambia": false,
+      "que_cambia": {}
+    },
+    {
+      "archivo": "11_liquido_amarillo.wav",
+      "dominio": "herida",
+      "dice": "La herida tiene un líquido amarillo espeso y huele mal",
+      "palabras": 10,
+      "cierra_en_la_palabra": 6,
+      "prefijo_que_cierra": "La herida tiene un líquido amarillo",
+      "el_dato_cambia": false,
+      "que_cambia": {}
+    },
+    {
+      "archivo": "12_no_puedo_caminar.wav",
+      "dominio": "movilidad",
+      "dice": "De un día para otro no puedo caminar ni apoyar el pie",
+      "palabras": 12,
+      "cierra_en_la_palabra": 6,
+      "prefijo_que_cierra": "De un día para otro no",
+      "el_dato_cambia": false,
+      "que_cambia": {}
+    },
+    {
+      "archivo": "14_maluco.wav",
+      "dominio": "fiebre",
+      "dice": "Me siento maluco y destemplado",
+      "palabras": 5,
+      "cierra_en_la_palabra": null,
+      "prefijo_que_cierra": null,
+      "el_dato_cambia": false,
+      "que_cambia": {}
+    },
+    {
+      "archivo": "15_rojita.wav",
+      "dominio": "herida",
+      "dice": "La herida está un poquito rojita",
+      "palabras": 6,
+      "cierra_en_la_palabra": null,
+      "prefijo_que_cierra": null,
+      "el_dato_cambia": false,
+      "que_cambia": {}
+    },
+    {
+      "archivo": "16_camino_normal.wav",
+      "dominio": "movilidad",
+      "dice": "Camino normal",
+      "palabras": 2,
+      "cierra_en_la_palabra": null,
+      "prefijo_que_cierra": null,
+      "el_dato_cambia": false,
+      "que_cambia": {}
+    },
+    {
+      "archivo": "17_como_normal.wav",
+      "dominio": "apetito",
+      "dice": "Como normal",
+      "palabras": 2,
+      "cierra_en_la_palabra": null,
+      "prefijo_que_cierra": null,
+      "el_dato_cambia": false,
+      "que_cambia": {}
+    },
+    {
+      "archivo": "18_duermo_bien.wav",
+      "dominio": "sueno",
+      "dice": "Duermo bien",
+      "palabras": 2,
+      "cierra_en_la_palabra": null,
+      "prefijo_que_cierra": null,
+      "el_dato_cambia": false,
+      "que_cambia": {}
+    }
+  ],
+  "segundos": 0.0
+}

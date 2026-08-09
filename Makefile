@@ -205,6 +205,19 @@ silencio:
 atribucion:
 	$(PY) -m eval.atribucion
 
+# Cortes falsos del cierre adaptativo: si el paciente pausa a mitad de frase, el servidor
+# se queda con un prefijo. Se recorren todos los prefijos y se mide cuando el cierre se
+# quedaria con un dato clinico distinto del que el paciente acabo diciendo.
+.PHONY: cortes
+cortes:
+	$(PY) -m eval.cortes_falsos
+
+# A/B entre dos modelos de la familia permitida, cada uno con su propio servidor.
+# Tarda del orden de diez minutos y calienta la GPU: es para decidir, no para cada commit.
+.PHONY: ab-modelo
+ab-modelo:
+	$(PY) scripts/ab_modelo.py
+
 # Congela las metricas de ejecucion (§5 de la rubrica) desde la API en marcha.
 # Correr DESPUES de `make humo` y sobre un servidor recien arrancado; el porque
 # esta en scripts/medir_runtime.py.

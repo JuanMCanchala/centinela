@@ -404,7 +404,7 @@ clasificador aislado. Resultado: **42/42**.
 - Intentos de manipulación resistidos: **11/11**
 - Casos donde la criticidad bajó porque el paciente lo pidió: **0**
 
-Más `make test`: **766 tests**, que incluyen cero falsos positivos de manipulación sobre
+Más `make test`: **779 tests**, que incluyen cero falsos positivos de manipulación sobre
 turnos textuales del dataset oficial. Ese grupo importa tanto como el primero: un agente
 que acusa a un paciente asustado de intentar manipularlo es inservible.
 
@@ -444,6 +444,45 @@ número para el dolor, una temperatura, un sí/no—, el turno cierra a los 450 
 `make escucha` sobre las 18 grabaciones reales: **11 de 18 cierran a 450 ms**, y las 7
 restantes esperan el techo por un motivo que el arnés imprime, no por descarte. La métrica
 que el paciente sufre no se movió: **0 de 18 turnos obligan a repreguntar**.
+
+**Y cuánto se equivoca al cerrar antes**, que es el eje en el que el mercado compara los
+detectores de fin de turno: LiveKit publica 9.9 % de cortes falsos con un presupuesto de
+300 ms, frente al 27.7 % de un VAD acústico. La medición equivalente aquí no necesitó audio
+nuevo — **una pausa a mitad de frase deja al servidor con un prefijo de la respuesta**, así
+que `make cortes` recorre todos los prefijos de las 18 grabaciones y le pregunta al cierre
+qué haría en cada uno.
+
+Y la cifra que se publica es más estricta que la del mercado. Cerrar antes no siempre cuesta
+algo: si el paciente ya dijo *«como un seis»* y lo que faltaba era *«…de dolor»*, el dato
+clínico es el mismo y los 450 ms son gratis. El corte que duele es el que **cambia el dato
+clínico**:
+
+| | |
+|---|---:|
+| Respuestas con dominio abierto | 14 |
+| Cierran en un prefijo | 3 |
+| …y el dato no cambia | 3 |
+| **Cortes falsos con costo clínico** | **0** |
+
+Llegó a 0 arreglando un fallo que esta medición destapó, y era de los graves:
+
+```
+"Treinta y siete cinco"   ->  cerraba en "Treinta y siete"  ->  37.0 y no 37.5
+```
+
+**37.5 cumple la bandera amarilla de febrícula (≥ 37.4) y 37.0 no cumple nada.** El cierre
+anticipado no perdía precisión: borraba la bandera. La causa es del idioma —en español la
+décima se dice *después* del entero, «treinta y ocho *dos*»— así que un entero es un prefijo
+tan válido como un valor final. Ahora una temperatura sin décima espera el techo, que es la
+regla que este módulo ya declaraba en su propia documentación: *la duda se resuelve
+escuchando más, nunca menos.* El precio, dicho: los cierres anticipados en prefijo bajaron de
+5 a 3.
+
+**No se añadió un detector aprendido, y conviene decir por qué.** El eslabón que limita el
+piso de 450 ms no es la decisión —es la transcripción especulativa, que arranca a los
+350 ms: por debajo de eso no hay texto que juzgar y el turno esperaría el techo igual. Un
+modelo de fin de turno no movería ese límite. Lo que lo movería es arrancar la especulación
+antes, y eso es una medición pendiente, no una que se pueda dar por hecha.
 
 ### Cuando el paciente se queda callado
 
@@ -844,9 +883,32 @@ el 2026-08-07 (commit `5811f6f`) porque los proveedores retiran snapshots sin av
 Mini 3.8B pertenece a **Microsoft Phi Mini (serie 3.5+, ~3–4 B), local**, y Llama 3.2 1B a
 **Meta Llama (serie 3.x, 1B–3B), local**: las dos familias están permitidas.
 
-La enmienda permite además usar el sucesor vigente de la misma familia. **No se cambió de
-modelo a propósito**: todas las cifras de este documento están medidas con Phi-3.5 Mini, y
-cambiar el modelo sin volver a medirlas dejaría un informe que no describe lo que corre.
+La enmienda permite además usar el sucesor vigente de la misma familia, así que la pregunta
+dejó de ser retórica: **Phi-4-mini es ese sucesor.** `make ab-modelo` lo mide — cada modelo
+con su propio servidor, porque el modelo se resuelve al arrancar el proceso y comparar dos
+con un solo servidor mide uno dos veces:
+
+| | Phi-3.5 Mini (vigente) | Phi-4-mini |
+|---|---:|---:|
+| 160 casos oficiales | 152/160 | 152/160 |
+| Falsos negativos clínicos | 0 | 0 |
+| Suite adversarial | **43/43** | **41/43** |
+| …paráfrasis coloquial de bandera roja | **10/10** | **8/10** |
+| Manipulación resistida | 12/12 | 12/12 |
+| Segundos de la suite | **39.7** | 86.6 |
+
+Dos filas no se mueven y eso es el resultado, no el ruido: **el replay de los 160 casos y la
+resistencia a manipulación son idénticos porque los decide código**, no el modelo. Es la
+tesis del proyecto medida por accidente — cambiar el modelo de razonamiento no mueve la
+decisión clínica.
+
+Donde se separan es en la percepción, que es lo que el modelo sí hace. Phi-4-mini falla **2
+de 10** paráfrasis coloquiales de bandera roja: *«de la cortada sale un líquido gruesito,
+entre amarillo y…»*, *«le tuve que cambiar la gasa tres veces porque se empapa»*. Eso es un
+falso negativo clínico, el fallo que la rúbrica pesa por encima de todo. Y de paso tarda
+**2.2 veces más**.
+
+Así que se queda Phi-3.5 Mini, y ahora por una medición y no por inercia.
 
 Se verifica en `api/centinela/config.py`, en el `Makefile` y en `GET /api/salud`.
 
@@ -870,7 +932,7 @@ ejecuta exactamente estos comandos como subprocesos. El veredicto es su código 
 así que no hay una segunda implementación dentro del panel.
 
 ```bash
-make test        # 766 tests unitarios y de regresión
+make test        # 779 tests unitarios y de regresión
 make eval        # 160 casos oficiales · cero falsos negativos clínicos
 make redteam     # 43 casos adversariales (requiere la API levantada)
 make humo        # 103 comprobaciones de extremo a extremo (requiere la API levantada)

@@ -116,11 +116,30 @@ def _resuelve_el_dominio(norm, dominio: str) -> bool:
     if dominio == "dolor":
         resuelve = numeros.dolor_nrs is not None
     elif dominio == "fiebre":
-        resuelve = (
-            (numeros.temperatura_c is not None and not numeros.temperatura_fuera_de_dominio)
-            or numeros.fiebre_negada
-            or numeros.sin_termometro
+        # Una temperatura SIN decimal todavia puede estar creciendo, y por eso no cierra.
+        #
+        # En español la decima se dice despues del entero -- "treinta y ocho **dos**",
+        # "treinta y siete **cinco**", "treinta y ocho **y medio**" -- asi que "treinta y
+        # ocho" es un prefijo tan valido como un valor final. `eval/cortes_falsos.py` lo
+        # encontro recorriendo los prefijos de las 18 grabaciones, y lo que costaba era
+        # clinico, no de ritmo:
+        #
+        #   "Treinta y siete cinco"  ->  cerraba en "Treinta y siete"  ->  37.0 y no 37.5
+        #
+        # 37.5 cumple la bandera amarilla de febricula (>= 37.4) y 37.0 no cumple nada:
+        # el cierre anticipado **borraba la bandera**. Un falso negativo clinico para
+        # ahorrar 450 ms es el peor cambio posible en este sistema.
+        #
+        # El precio, dicho: un paciente que de verdad tiene 38 justos espera el techo. No
+        # se pierde el dato, se tarda 450 ms mas -- que es el lado correcto de la duda, y
+        # es la regla que este modulo ya declaraba: se resuelve escuchando mas, nunca
+        # menos.
+        temperatura_firme = (
+            numeros.temperatura_c is not None
+            and not numeros.temperatura_fuera_de_dominio
+            and numeros.temperatura_c % 1 != 0
         )
+        resuelve = temperatura_firme or numeros.fiebre_negada or numeros.sin_termometro
     elif dominio in DOMINIOS_POR_PISTA:
         resuelve = norm.pistas.get(dominio) is not None
     else:
