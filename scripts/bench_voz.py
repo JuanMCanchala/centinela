@@ -115,49 +115,73 @@ def bench_stt() -> dict:
     print("STT - faster-whisper")
     print("=" * 78)
     try:
-        from faster_whisper import WhisperModel
+        from centinela.stt.whisper import WhisperSTT
     except ImportError as e:
         print(f"  faster-whisper no disponible: {e}")
         return {"disponible": False}
 
-    import numpy as np
+    sys.path.insert(0, str(RAIZ))
+    from eval.escucha import DIR_AUDIOS, leer_wav
 
-    tamano = "small"
-    print(f"  cargando modelo '{tamano}' (int8, CPU)...")
+    grabaciones = sorted(DIR_AUDIOS.glob("*.wav"))
+    if not grabaciones:
+        print(f"  no hay grabaciones en {DIR_AUDIOS}")
+        return {"disponible": False, "motivo": "sin grabaciones de referencia"}
+
+    # `WhisperSTT` y no `WhisperModel` a proposito: es el selector que usa el
+    # servidor, asi que lo que se publica aqui es el modelo y el dispositivo que
+    # atienden las llamadas de verdad. Fijar "small/cpu" a mano, como estaba,
+    # seguia publicando cifras de CPU en una maquina que ya transcribia en GPU.
+    print("  eligiendo configuracion con la misma escalera que el servidor...")
     t0 = time.perf_counter()
-    modelo = WhisperModel(tamano, device="cpu", compute_type="int8",
-                          download_root=str(RAIZ / "data" / "modelos" / "whisper"))
+    stt = WhisperSTT(dir_modelos=RAIZ / "data" / "modelos" / "whisper")
+    stt.calentar()
     ms_carga = (time.perf_counter() - t0) * 1000
-    print(f"    cargado en {ms_carga/1000:.1f}s")
+    print(f"    {stt.tamano}/{stt.dispositivo}/{stt.tipo_computo} "
+          f"lista en {ms_carga/1000:.1f}s")
 
-    # Audio sintetico: no mide exactitud, mide latencia de proceso por segundo
-    # de audio, que es lo que entra en el presupuesto de la conversacion.
-    resultados = {}
-    for segundos in (2, 4, 8):
-        muestras = np.zeros(16000 * segundos, dtype=np.float32)
-        muestras += np.random.default_rng(0).normal(0, 0.001, muestras.shape).astype(np.float32)
+    por_grabacion = {}
+    rtfs: list[float] = []
+    ms_todas: list[float] = []
+    for ruta in grabaciones:
+        audio = leer_wav(ruta)
+        stt.transcribir(audio)  # calentar el camino, sin contarlo
         tiempos = []
         for _ in range(3):
             t0 = time.perf_counter()
-            segmentos, _info = modelo.transcribe(
-                muestras, language="es", vad_filter=True, beam_size=1
-            )
-            list(segmentos)
+            stt.transcribir(audio)
             tiempos.append((time.perf_counter() - t0) * 1000)
         p50 = statistics.median(tiempos)
-        resultados[f"{segundos}s"] = {
+        dur = len(audio) / 16000
+        rtf = (p50 / 1000) / dur if dur > 0 else 0.0
+        por_grabacion[ruta.name] = {
+            "duracion_audio_s": round(dur, 2),
             "ms_p50": round(p50, 1),
-            "factor_tiempo_real": round((p50 / 1000) / segundos, 3),
+            "factor_tiempo_real": round(rtf, 3),
         }
-        print(f"    audio de {segundos}s -> {p50:7.1f} ms   "
-              f"RTF {(p50/1000)/segundos:.3f}")
+        rtfs.append(rtf)
+        ms_todas.append(p50)
+        print(f"    {ruta.name:<32} {dur:4.2f}s -> {p50:7.1f} ms   RTF {rtf:.3f}")
 
     return {
         "disponible": True,
-        "modelo": tamano,
-        "dispositivo": "cpu/int8",
+        "modelo": stt.tamano,
+        "dispositivo": f"{stt.dispositivo}/{stt.tipo_computo}",
         "ms_carga": round(ms_carga, 1),
-        "por_duracion": resultados,
+        "fuente_audio": "eval/audios (grabaciones humanas, ficheros fijos)",
+        "n_grabaciones": len(grabaciones),
+        "ms_p50_global": round(statistics.median(ms_todas), 1),
+        "rtf_p50_global": round(statistics.median(rtfs), 3),
+        "rtf_peor": round(max(rtfs), 3),
+        "por_grabacion": por_grabacion,
+        "aclaracion": (
+            "latencia sobre voz humana real. La version anterior media audio "
+            "sintetico (np.zeros + ruido 0.001) con vad_filter activo: el VAD lo "
+            "descartaba entero, no se decodificaba nada, y de ahi salian los 5 ms "
+            "por 2 s de audio (RTF 0.003) que se publicaron. Sobre voz de verdad la "
+            "misma configuracion tardaba ~1100 ms. La exactitud no se mide aqui: "
+            "esta en scripts/bench_stt.py y eval/escucha.py."
+        ),
     }
 
 

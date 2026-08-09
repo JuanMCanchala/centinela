@@ -253,13 +253,24 @@ def main() -> int:
         s = bench_voz["stt"]
         L.append("### Transcripción")
         L.append("")
-        L.append(f"`faster-whisper {s['modelo']}` en {s['dispositivo']}.")
+        L.append(f"`faster-whisper {s['modelo']}` en {s['dispositivo']}, medido sobre "
+                 f"{s['n_grabaciones']} grabaciones de voz humana "
+                 f"(`eval/audios`, ficheros fijos).")
         L.append("")
-        L.append("| Duración del audio | Latencia | RTF |")
-        L.append("|---|---:|---:|")
-        for dur, m in s["por_duracion"].items():
-            L.append(f"| {dur} | {m['ms_p50']:.0f} ms | {m['factor_tiempo_real']:.3f} |")
+        L.append("| Métrica | Valor |")
+        L.append("|---|---:|")
+        L.append(f"| Latencia mediana | **{s['ms_p50_global']:.0f} ms** |")
+        L.append(f"| RTF mediano | {s['rtf_p50_global']:.3f} |")
+        L.append(f"| RTF peor caso | {s['rtf_peor']:.3f} |")
+        L.append(f"| Arranque del modelo | {s['ms_carga'] / 1000:.1f} s |")
         L.append("")
+        # La aclaracion se publica porque la version anterior de esta tabla decia
+        # "2s -> 5 ms, RTF 0.003" y esa cifra era imposible: el arnes le daba
+        # silencio digital, el VAD lo descartaba, y no se decodificaba nada.
+        # Publicar la corrección es parte de la corrección.
+        if s.get("aclaracion"):
+            L.append(f"> {s['aclaracion']}")
+            L.append("")
 
     # --------------------------------------------------------------- corpus
     if corpus:

@@ -1,580 +1,1093 @@
 {
   "configuraciones": {
-    "actual (small, greedy, sin prompt)": {
-      "wer_cortas": 0.3541,
-      "wer_largas": 0.0946,
-      "wer_global": 0.233,
-      "perfectas": 9,
-      "total": 15,
-      "ms_mediana": 1090.5,
+    "small cpu greedy (config original)": {
+      "wer_cortas": 0.2778,
+      "wer_largas": 0.1,
+      "wer_global": 0.1889,
+      "perfectas": 10,
+      "total": 18,
+      "ms_mediana": 1059.1,
       "detalle": [
         {
-          "texto": "Si, soy yo",
+          "texto": "Sí, soy yo",
           "grupo": "corta",
-          "oido": "Si soy yo.",
+          "oido": "Si, soy yo.",
           "wer": 0.0,
-          "ms": 1261.2
-        },
-        {
-          "texto": "Si señora",
-          "grupo": "corta",
-          "oido": "Si se enova.",
-          "wer": 1.0,
-          "ms": 1197.1
-        },
-        {
-          "texto": "Claro que si",
-          "grupo": "corta",
-          "oido": "¡Pra' la vacasí!",
-          "wer": 1.0,
-          "ms": 1105.5
+          "ms": 1216.6
         },
         {
           "texto": "No",
           "grupo": "corta",
-          "oido": "no",
+          "oido": "No.",
           "wer": 0.0,
-          "ms": 966.6
+          "ms": 1035.6
         },
         {
           "texto": "Un seis",
           "grupo": "corta",
-          "oido": "1 6",
-          "wer": 0.5,
-          "ms": 1197.4
-        },
-        {
-          "texto": "Como un cuatro",
-          "grupo": "corta",
-          "oido": "Toma un cuatro",
-          "wer": 0.333,
-          "ms": 1015.4
+          "oido": "16",
+          "wer": 1.0,
+          "ms": 1004.2
         },
         {
           "texto": "Normal",
           "grupo": "corta",
           "oido": "normal",
           "wer": 0.0,
-          "ms": 1027.8
+          "ms": 1037.3
         },
         {
-          "texto": "No he tenido",
+          "texto": "Como un tres",
           "grupo": "corta",
-          "oido": "No he tenido.",
+          "oido": "como un 3",
+          "wer": 0.333,
+          "ms": 1141.4
+        },
+        {
+          "texto": "Ocho de diez",
+          "grupo": "corta",
+          "oido": "8 de 10",
+          "wer": 0.667,
+          "ms": 1059.5
+        },
+        {
+          "texto": "Treinta y siete cinco",
+          "grupo": "larga",
+          "oido": "37.5",
+          "wer": 0.25,
+          "ms": 1023.4
+        },
+        {
+          "texto": "Me la tomé y estaba en treinta y ocho dos",
+          "grupo": "larga",
+          "oido": "me la tomé y estaba en 38-2",
+          "wer": 0.4,
+          "ms": 1067.6
+        },
+        {
+          "texto": "No, no he tenido fiebre",
+          "grupo": "larga",
+          "oido": "No, no he tenido fiebre.",
+          "wer": 0.0,
+          "ms": 1039.6
+        },
+        {
+          "texto": "No me la he tomado",
+          "grupo": "larga",
+          "oido": "No me la he tomado.",
+          "wer": 0.0,
+          "ms": 1333.1
+        },
+        {
+          "texto": "La herida tiene un líquido amarillo espeso y huele mal",
+          "grupo": "larga",
+          "oido": "La herida tiene un liquido amarillo, espeso y huele mal.",
+          "wer": 0.0,
+          "ms": 1133.2
+        },
+        {
+          "texto": "De un día para otro no puedo caminar ni apoyar el pie",
+          "grupo": "larga",
+          "oido": "de un día para otro no puedo caminar ni apoyar el pie",
+          "wer": 0.0,
+          "ms": 1069.8
+        },
+        {
+          "texto": "Me duele como aquí abajito de la axila hace como veinte minutos",
+          "grupo": "larga",
+          "oido": "me duele como aquí abajito de la axila hace como 20 minutos",
+          "wer": 0.083,
+          "ms": 1058.7
+        },
+        {
+          "texto": "Me siento maluco y destemplado",
+          "grupo": "larga",
+          "oido": "Me siento maluco y destemplado.",
+          "wer": 0.0,
+          "ms": 1159.6
+        },
+        {
+          "texto": "La herida está un poquito rojita",
+          "grupo": "larga",
+          "oido": "La herida está un poco rojita",
+          "wer": 0.167,
+          "ms": 1031.7
+        },
+        {
+          "texto": "Camino normal",
+          "grupo": "corta",
+          "oido": "camino normal",
+          "wer": 0.0,
+          "ms": 1158.9
+        },
+        {
+          "texto": "Como normal",
+          "grupo": "corta",
+          "oido": "como normal",
+          "wer": 0.0,
+          "ms": 1010.1
+        },
+        {
+          "texto": "Duermo bien",
+          "grupo": "corta",
+          "oido": "dormo bien",
+          "wer": 0.5,
+          "ms": 971.2
+        }
+      ]
+    },
+    "small cpu beam5": {
+      "wer_cortas": 0.2778,
+      "wer_largas": 0.1,
+      "wer_global": 0.1889,
+      "perfectas": 10,
+      "total": 18,
+      "ms_mediana": 1117.1,
+      "detalle": [
+        {
+          "texto": "Sí, soy yo",
+          "grupo": "corta",
+          "oido": "Sí, soy yo.",
           "wer": 0.0,
           "ms": 1077.0
         },
         {
-          "texto": "El dolor esta como en un seis y no se si es normal a estos dias",
-          "grupo": "larga",
-          "oido": "El dolor está como en un seis y no sé si es normal a estos días.",
-          "wer": 0.0,
-          "ms": 1175.2
-        },
-        {
-          "texto": "Me tome la temperatura y estaba en treinta y siete cinco",
-          "grupo": "larga",
-          "oido": "Me tome la temperatura y estaba en 37.5",
-          "wer": 0.091,
-          "ms": 1014.5
-        },
-        {
-          "texto": "La herida la he visto con un liquido amarillo saliendo y huele feo",
-          "grupo": "larga",
-          "oido": "la herida la he visto con un líquido amarillo saliendo y huele feo.",
-          "wer": 0.0,
-          "ms": 1067.2
-        },
-        {
-          "texto": "Camino normal, sin ningun problema, gracias a Dios",
-          "grupo": "larga",
-          "oido": "camino normal sin ningún problema gracias a Dios.",
-          "wer": 0.0,
-          "ms": 1001.5
-        },
-        {
-          "texto": "Casi no me da hambre, como muy poquito y a veces ni eso",
-          "grupo": "larga",
-          "oido": "casi no me da hambre como muy poquito y a veces ni eso",
-          "wer": 0.0,
-          "ms": 1090.5
-        },
-        {
-          "texto": "Duermo muy mal, me despierto varias veces en la noche",
-          "grupo": "larga",
-          "oido": "Duermo muy mal, me despierto varias veces en la noche.",
-          "wer": 0.0,
-          "ms": 1281.0
-        },
-        {
-          "texto": "Uy no parcero, ese dolorcito esta como en un seis, harto molesta la cosa",
-          "grupo": "larga",
-          "oido": "Uy no por cero ese dolor, si todo está como en un 6, auto molestada cosa",
-          "wer": 0.571,
-          "ms": 1167.9
-        }
-      ]
-    },
-    "small + beam 5": {
-      "wer_cortas": 0.2709,
-      "wer_largas": 0.0743,
-      "wer_global": 0.1791,
-      "perfectas": 10,
-      "total": 15,
-      "ms_mediana": 1183.5,
-      "detalle": [
-        {
-          "texto": "Si, soy yo",
-          "grupo": "corta",
-          "oido": "Sí, soy yo.",
-          "wer": 0.0,
-          "ms": 1196.0
-        },
-        {
-          "texto": "Si señora",
-          "grupo": "corta",
-          "oido": "si se enova.",
-          "wer": 1.0,
-          "ms": 1147.0
-        },
-        {
-          "texto": "Claro que si",
-          "grupo": "corta",
-          "oido": "Claro que si",
-          "wer": 0.0,
-          "ms": 1281.7
-        },
-        {
           "texto": "No",
           "grupo": "corta",
-          "oido": "no",
+          "oido": "No.",
           "wer": 0.0,
-          "ms": 1183.5
+          "ms": 1057.4
         },
         {
           "texto": "Un seis",
           "grupo": "corta",
-          "oido": "1, 6",
-          "wer": 0.5,
-          "ms": 1097.1
-        },
-        {
-          "texto": "Como un cuatro",
-          "grupo": "corta",
-          "oido": "Toma un cuarto.",
-          "wer": 0.667,
-          "ms": 1117.2
+          "oido": "16",
+          "wer": 1.0,
+          "ms": 1092.6
         },
         {
           "texto": "Normal",
           "grupo": "corta",
           "oido": "normal",
           "wer": 0.0,
-          "ms": 1200.8
+          "ms": 1053.6
         },
         {
-          "texto": "No he tenido",
+          "texto": "Como un tres",
           "grupo": "corta",
-          "oido": "No he tenido.",
+          "oido": "como un 3",
+          "wer": 0.333,
+          "ms": 1206.1
+        },
+        {
+          "texto": "Ocho de diez",
+          "grupo": "corta",
+          "oido": "8 de 10",
+          "wer": 0.667,
+          "ms": 1078.5
+        },
+        {
+          "texto": "Treinta y siete cinco",
+          "grupo": "larga",
+          "oido": "37.5",
+          "wer": 0.25,
+          "ms": 1145.1
+        },
+        {
+          "texto": "Me la tomé y estaba en treinta y ocho dos",
+          "grupo": "larga",
+          "oido": "me la tomé y estaba en 38-2",
+          "wer": 0.4,
+          "ms": 1173.9
+        },
+        {
+          "texto": "No, no he tenido fiebre",
+          "grupo": "larga",
+          "oido": "No, no he tenido fiebre.",
           "wer": 0.0,
-          "ms": 1749.8
+          "ms": 1119.2
         },
         {
-          "texto": "El dolor esta como en un seis y no se si es normal a estos dias",
+          "texto": "No me la he tomado",
           "grupo": "larga",
-          "oido": "El dolor está como en un seis y no sé si es normal a estos días.",
+          "oido": "No me la he tomado",
           "wer": 0.0,
-          "ms": 1513.1
+          "ms": 1088.1
         },
         {
-          "texto": "Me tome la temperatura y estaba en treinta y siete cinco",
+          "texto": "La herida tiene un líquido amarillo espeso y huele mal",
           "grupo": "larga",
-          "oido": "Me tome la temperatura y estaba en 37.5",
-          "wer": 0.091,
-          "ms": 1182.4
-        },
-        {
-          "texto": "La herida la he visto con un liquido amarillo saliendo y huele feo",
-          "grupo": "larga",
-          "oido": "la herida la he visto con un líquido amarillo saliendo y huele feo.",
+          "oido": "La herida tiene un liquido amarillo espeso y huele mal",
           "wer": 0.0,
-          "ms": 1287.0
+          "ms": 1218.2
         },
         {
-          "texto": "Camino normal, sin ningun problema, gracias a Dios",
+          "texto": "De un día para otro no puedo caminar ni apoyar el pie",
           "grupo": "larga",
-          "oido": "camino normal sin ningún problema gracias a Dios.",
+          "oido": "de un día para otro no puedo caminar ni apoyar el pie",
           "wer": 0.0,
-          "ms": 1099.6
+          "ms": 1201.4
         },
         {
-          "texto": "Casi no me da hambre, como muy poquito y a veces ni eso",
+          "texto": "Me duele como aquí abajito de la axila hace como veinte minutos",
           "grupo": "larga",
-          "oido": "casi no me da hambre como muy poquito y a veces ni eso",
+          "oido": "me duele como aquí abajito de la axila hace como 20 minutos",
+          "wer": 0.083,
+          "ms": 1243.1
+        },
+        {
+          "texto": "Me siento maluco y destemplado",
+          "grupo": "larga",
+          "oido": "Me siento maluco y destemplado.",
           "wer": 0.0,
-          "ms": 1143.3
+          "ms": 1230.0
         },
         {
-          "texto": "Duermo muy mal, me despierto varias veces en la noche",
+          "texto": "La herida está un poquito rojita",
           "grupo": "larga",
-          "oido": "Duermo muy mal, me despierto varias veces en la noche.",
+          "oido": "La herida está un poco rojita.",
+          "wer": 0.167,
+          "ms": 1114.9
+        },
+        {
+          "texto": "Camino normal",
+          "grupo": "corta",
+          "oido": "Camino normal",
           "wer": 0.0,
-          "ms": 1084.1
+          "ms": 1087.9
         },
         {
-          "texto": "Uy no parcero, ese dolorcito esta como en un seis, harto molesta la cosa",
-          "grupo": "larga",
-          "oido": "Uy no por cero, ese dolor, si todo está como en un 6, auto molesta la cosa",
-          "wer": 0.429,
-          "ms": 1433.2
+          "texto": "Como normal",
+          "grupo": "corta",
+          "oido": "como normal",
+          "wer": 0.0,
+          "ms": 1068.1
+        },
+        {
+          "texto": "Duermo bien",
+          "grupo": "corta",
+          "oido": "dormo bien",
+          "wer": 0.5,
+          "ms": 1201.3
         }
       ]
     },
-    "small + beam 5 + prompt clinico": {
-      "wer_cortas": 0.2916,
-      "wer_largas": 0.0816,
-      "wer_global": 0.1936,
-      "perfectas": 11,
-      "total": 15,
-      "ms_mediana": 1483.9,
+    "small cpu beam5 + prompt": {
+      "wer_cortas": 0.0926,
+      "wer_largas": 0.0741,
+      "wer_global": 0.0833,
+      "perfectas": 14,
+      "total": 18,
+      "ms_mediana": 1277.2,
       "detalle": [
         {
-          "texto": "Si, soy yo",
+          "texto": "Sí, soy yo",
           "grupo": "corta",
-          "oido": "Si soy yo.",
+          "oido": "Si, soy yo.",
           "wer": 0.0,
-          "ms": 1177.7
-        },
-        {
-          "texto": "Si señora",
-          "grupo": "corta",
-          "oido": "Si se enrolla.",
-          "wer": 1.0,
-          "ms": 1250.6
-        },
-        {
-          "texto": "Claro que si",
-          "grupo": "corta",
-          "oido": "Claro que si.",
-          "wer": 0.0,
-          "ms": 1217.9
+          "ms": 1553.0
         },
         {
           "texto": "No",
           "grupo": "corta",
-          "oido": "",
-          "wer": 1.0,
-          "ms": 1272.1
+          "oido": "No.",
+          "wer": 0.0,
+          "ms": 1142.3
         },
         {
           "texto": "Un seis",
           "grupo": "corta",
           "oido": "Un seis.",
           "wer": 0.0,
-          "ms": 1266.6
-        },
-        {
-          "texto": "Como un cuatro",
-          "grupo": "corta",
-          "oido": "Toma un cuatro.",
-          "wer": 0.333,
-          "ms": 1243.7
+          "ms": 1212.5
         },
         {
           "texto": "Normal",
           "grupo": "corta",
           "oido": "Normal.",
           "wer": 0.0,
-          "ms": 1146.0
+          "ms": 1293.6
         },
         {
-          "texto": "No he tenido",
+          "texto": "Como un tres",
           "grupo": "corta",
-          "oido": "No he tenido.",
-          "wer": 0.0,
-          "ms": 1503.6
+          "oido": "Como en un tres.",
+          "wer": 0.333,
+          "ms": 1180.0
         },
         {
-          "texto": "El dolor esta como en un seis y no se si es normal a estos dias",
-          "grupo": "larga",
-          "oido": "El dolor esta como en un seis y no se si es normal a estos días.",
+          "texto": "Ocho de diez",
+          "grupo": "corta",
+          "oido": "Ocho de diez.",
           "wer": 0.0,
-          "ms": 1680.0
+          "ms": 1198.5
         },
         {
-          "texto": "Me tome la temperatura y estaba en treinta y siete cinco",
+          "texto": "Treinta y siete cinco",
           "grupo": "larga",
-          "oido": "Me tome la temperatura y estaba en treinta y siete cinco.",
-          "wer": 0.0,
-          "ms": 2379.0
+          "oido": "treinta y siete cinco de temperatura.",
+          "wer": 0.5,
+          "ms": 1288.8
         },
         {
-          "texto": "La herida la he visto con un liquido amarillo saliendo y huele feo",
+          "texto": "Me la tomé y estaba en treinta y ocho dos",
           "grupo": "larga",
-          "oido": "La herida la he visto con un líquido amarillo saliendo y huele feo.",
+          "oido": "Me la tomé y estaba en treinta y ocho dos.",
           "wer": 0.0,
-          "ms": 2015.5
+          "ms": 1414.7
         },
         {
-          "texto": "Camino normal, sin ningun problema, gracias a Dios",
+          "texto": "No, no he tenido fiebre",
           "grupo": "larga",
-          "oido": "Camino normal, sin ningún problema, gracias a Dios.",
+          "oido": "No, no he tenido fiebre.",
           "wer": 0.0,
-          "ms": 1483.9
+          "ms": 1303.4
         },
         {
-          "texto": "Casi no me da hambre, como muy poquito y a veces ni eso",
+          "texto": "No me la he tomado",
           "grupo": "larga",
-          "oido": "Casi no me da hambre, como muy poquito y a veces ni eso.",
+          "oido": "No me la he tomado.",
           "wer": 0.0,
-          "ms": 1862.0
+          "ms": 1226.2
         },
         {
-          "texto": "Duermo muy mal, me despierto varias veces en la noche",
+          "texto": "La herida tiene un líquido amarillo espeso y huele mal",
           "grupo": "larga",
-          "oido": "Duermo muy mal, me despierto varias veces en la noche.",
+          "oido": "La herida tiene un liquido amarillo, espeso y huele mal.",
           "wer": 0.0,
-          "ms": 2315.7
+          "ms": 1488.0
         },
         {
-          "texto": "Uy no parcero, ese dolorcito esta como en un seis, harto molesta la cosa",
+          "texto": "De un día para otro no puedo caminar ni apoyar el pie",
           "grupo": "larga",
-          "oido": "Uy no por cero, ese dolor, si todo esta como en un seis, auto molestada cosa.",
-          "wer": 0.571,
-          "ms": 2056.5
+          "oido": "De un día para otro, no puedo caminar ni apoyar el pie.",
+          "wer": 0.0,
+          "ms": 1541.0
+        },
+        {
+          "texto": "Me duele como aquí abajito de la axila hace como veinte minutos",
+          "grupo": "larga",
+          "oido": "Me duele como aquí abajito de la axila hace como veinte minutos.",
+          "wer": 0.0,
+          "ms": 1442.7
+        },
+        {
+          "texto": "Me siento maluco y destemplado",
+          "grupo": "larga",
+          "oido": "Me siento maluco y destemplado.",
+          "wer": 0.0,
+          "ms": 1309.1
+        },
+        {
+          "texto": "La herida está un poquito rojita",
+          "grupo": "larga",
+          "oido": "La herida esta un poco rojita.",
+          "wer": 0.167,
+          "ms": 1265.5
+        },
+        {
+          "texto": "Camino normal",
+          "grupo": "corta",
+          "oido": "Camino normal.",
+          "wer": 0.0,
+          "ms": 1136.7
+        },
+        {
+          "texto": "Como normal",
+          "grupo": "corta",
+          "oido": "Como normal.",
+          "wer": 0.0,
+          "ms": 1157.2
+        },
+        {
+          "texto": "Duermo bien",
+          "grupo": "corta",
+          "oido": "Dormo bien.",
+          "wer": 0.5,
+          "ms": 1196.5
         }
       ]
     },
-    "small + beam 5 + prompt + fallback temp": {
-      "wer_cortas": 0.2916,
-      "wer_largas": 0.0816,
-      "wer_global": 0.1936,
-      "perfectas": 11,
-      "total": 15,
-      "ms_mediana": 1538.7,
+    "large-v3-turbo gpu beam5 + prompt": {
+      "wer_cortas": 0.0,
+      "wer_largas": 0.0186,
+      "wer_global": 0.0093,
+      "perfectas": 17,
+      "total": 18,
+      "ms_mediana": 286.2,
       "detalle": [
         {
-          "texto": "Si, soy yo",
+          "texto": "Sí, soy yo",
           "grupo": "corta",
-          "oido": "Si soy yo.",
+          "oido": "Sí, soy yo.",
           "wer": 0.0,
-          "ms": 1485.9
-        },
-        {
-          "texto": "Si señora",
-          "grupo": "corta",
-          "oido": "Si se enrolla.",
-          "wer": 1.0,
-          "ms": 1701.8
-        },
-        {
-          "texto": "Claro que si",
-          "grupo": "corta",
-          "oido": "Claro que si.",
-          "wer": 0.0,
-          "ms": 1538.7
+          "ms": 430.6
         },
         {
           "texto": "No",
           "grupo": "corta",
-          "oido": "",
-          "wer": 1.0,
-          "ms": 1323.6
+          "oido": "No.",
+          "wer": 0.0,
+          "ms": 265.9
         },
         {
           "texto": "Un seis",
           "grupo": "corta",
           "oido": "Un seis.",
           "wer": 0.0,
-          "ms": 1231.0
-        },
-        {
-          "texto": "Como un cuatro",
-          "grupo": "corta",
-          "oido": "Toma un cuatro.",
-          "wer": 0.333,
-          "ms": 1454.4
+          "ms": 266.0
         },
         {
           "texto": "Normal",
           "grupo": "corta",
           "oido": "Normal.",
           "wer": 0.0,
-          "ms": 1314.3
+          "ms": 260.6
         },
         {
-          "texto": "No he tenido",
+          "texto": "Como un tres",
           "grupo": "corta",
-          "oido": "No he tenido.",
+          "oido": "Como un tres.",
           "wer": 0.0,
-          "ms": 1403.9
+          "ms": 301.1
         },
         {
-          "texto": "El dolor esta como en un seis y no se si es normal a estos dias",
-          "grupo": "larga",
-          "oido": "El dolor esta como en un seis y no se si es normal a estos días.",
+          "texto": "Ocho de diez",
+          "grupo": "corta",
+          "oido": "Ocho de diez.",
           "wer": 0.0,
-          "ms": 1634.4
+          "ms": 272.6
         },
         {
-          "texto": "Me tome la temperatura y estaba en treinta y siete cinco",
+          "texto": "Treinta y siete cinco",
           "grupo": "larga",
-          "oido": "Me tome la temperatura y estaba en treinta y siete cinco.",
+          "oido": "Treinta y siete cinco.",
           "wer": 0.0,
-          "ms": 1672.5
+          "ms": 284.8
         },
         {
-          "texto": "La herida la he visto con un liquido amarillo saliendo y huele feo",
+          "texto": "Me la tomé y estaba en treinta y ocho dos",
           "grupo": "larga",
-          "oido": "La herida la he visto con un líquido amarillo saliendo y huele feo.",
+          "oido": "Me la tomé y estaba en treinta y ocho dos.",
           "wer": 0.0,
-          "ms": 1844.4
+          "ms": 306.1
         },
         {
-          "texto": "Camino normal, sin ningun problema, gracias a Dios",
+          "texto": "No, no he tenido fiebre",
           "grupo": "larga",
-          "oido": "Camino normal, sin ningún problema, gracias a Dios.",
+          "oido": "No, no he tenido fiebre.",
           "wer": 0.0,
-          "ms": 1574.0
+          "ms": 287.5
         },
         {
-          "texto": "Casi no me da hambre, como muy poquito y a veces ni eso",
+          "texto": "No me la he tomado",
           "grupo": "larga",
-          "oido": "Casi no me da hambre, como muy poquito y a veces ni eso.",
+          "oido": "No me la he tomado.",
           "wer": 0.0,
-          "ms": 1659.0
+          "ms": 279.6
         },
         {
-          "texto": "Duermo muy mal, me despierto varias veces en la noche",
+          "texto": "La herida tiene un líquido amarillo espeso y huele mal",
           "grupo": "larga",
-          "oido": "Duermo muy mal, me despierto varias veces en la noche.",
+          "oido": "La herida tiene un líquido amarillo espeso y huele mal.",
           "wer": 0.0,
-          "ms": 1489.1
+          "ms": 328.1
         },
         {
-          "texto": "Uy no parcero, ese dolorcito esta como en un seis, harto molesta la cosa",
+          "texto": "De un día para otro no puedo caminar ni apoyar el pie",
           "grupo": "larga",
-          "oido": "Uy no por cero, ese dolor, si todo esta como en un seis, auto molestada cosa.",
-          "wer": 0.571,
-          "ms": 1710.9
+          "oido": "De un día para otro no puedo caminar ni apoyar el pie.",
+          "wer": 0.0,
+          "ms": 317.3
+        },
+        {
+          "texto": "Me duele como aquí abajito de la axila hace como veinte minutos",
+          "grupo": "larga",
+          "oido": "Me duele como aquí abajito de la axila hace como veinte minutos.",
+          "wer": 0.0,
+          "ms": 330.4
+        },
+        {
+          "texto": "Me siento maluco y destemplado",
+          "grupo": "larga",
+          "oido": "Me siento maluco y destemplado.",
+          "wer": 0.0,
+          "ms": 286.6
+        },
+        {
+          "texto": "La herida está un poquito rojita",
+          "grupo": "larga",
+          "oido": "La herida esta un poco rojita.",
+          "wer": 0.167,
+          "ms": 301.4
+        },
+        {
+          "texto": "Camino normal",
+          "grupo": "corta",
+          "oido": "Camino normal.",
+          "wer": 0.0,
+          "ms": 269.2
+        },
+        {
+          "texto": "Como normal",
+          "grupo": "corta",
+          "oido": "Como normal.",
+          "wer": 0.0,
+          "ms": 285.5
+        },
+        {
+          "texto": "Duermo bien",
+          "grupo": "corta",
+          "oido": "Duermo bien.",
+          "wer": 0.0,
+          "ms": 285.8
         }
       ]
     },
-    "small + beam 5 + prompt + sin VAD servidor": {
-      "wer_cortas": 0.2916,
-      "wer_largas": 0.0816,
-      "wer_global": 0.1936,
+    "large-v3-turbo gpu beam5 sin prompt": {
+      "wer_cortas": 0.1667,
+      "wer_largas": 0.1,
+      "wer_global": 0.1333,
       "perfectas": 11,
-      "total": 15,
-      "ms_mediana": 1475.9,
+      "total": 18,
+      "ms_mediana": 281.5,
       "detalle": [
         {
-          "texto": "Si, soy yo",
+          "texto": "Sí, soy yo",
           "grupo": "corta",
-          "oido": "Si soy yo.",
+          "oido": "Sí, soy yo.",
           "wer": 0.0,
-          "ms": 1280.4
-        },
-        {
-          "texto": "Si señora",
-          "grupo": "corta",
-          "oido": "Si se enrolla.",
-          "wer": 1.0,
-          "ms": 1338.2
-        },
-        {
-          "texto": "Claro que si",
-          "grupo": "corta",
-          "oido": "Claro que si.",
-          "wer": 0.0,
-          "ms": 1613.2
+          "ms": 281.3
         },
         {
           "texto": "No",
           "grupo": "corta",
-          "oido": "",
-          "wer": 1.0,
-          "ms": 1190.9
+          "oido": "No.",
+          "wer": 0.0,
+          "ms": 266.4
+        },
+        {
+          "texto": "Un seis",
+          "grupo": "corta",
+          "oido": "1.6",
+          "wer": 0.5,
+          "ms": 276.3
+        },
+        {
+          "texto": "Normal",
+          "grupo": "corta",
+          "oido": "Normal.",
+          "wer": 0.0,
+          "ms": 259.2
+        },
+        {
+          "texto": "Como un tres",
+          "grupo": "corta",
+          "oido": "Como un 3.",
+          "wer": 0.333,
+          "ms": 268.9
+        },
+        {
+          "texto": "Ocho de diez",
+          "grupo": "corta",
+          "oido": "8 de 10.",
+          "wer": 0.667,
+          "ms": 266.8
+        },
+        {
+          "texto": "Treinta y siete cinco",
+          "grupo": "larga",
+          "oido": "37.5",
+          "wer": 0.25,
+          "ms": 292.4
+        },
+        {
+          "texto": "Me la tomé y estaba en treinta y ocho dos",
+          "grupo": "larga",
+          "oido": "Me la tomé y estaba en 38.2.",
+          "wer": 0.4,
+          "ms": 293.6
+        },
+        {
+          "texto": "No, no he tenido fiebre",
+          "grupo": "larga",
+          "oido": "No, no he tenido fiebre.",
+          "wer": 0.0,
+          "ms": 283.7
+        },
+        {
+          "texto": "No me la he tomado",
+          "grupo": "larga",
+          "oido": "No me la he tomado.",
+          "wer": 0.0,
+          "ms": 281.7
+        },
+        {
+          "texto": "La herida tiene un líquido amarillo espeso y huele mal",
+          "grupo": "larga",
+          "oido": "¿La herida tiene un líquido amarillo espeso y huele mal?",
+          "wer": 0.0,
+          "ms": 321.1
+        },
+        {
+          "texto": "De un día para otro no puedo caminar ni apoyar el pie",
+          "grupo": "larga",
+          "oido": "De un día para otro no puedo caminar ni apoyar el pie.",
+          "wer": 0.0,
+          "ms": 317.6
+        },
+        {
+          "texto": "Me duele como aquí abajito de la axila hace como veinte minutos",
+          "grupo": "larga",
+          "oido": "Me duele como aquí abajito de la axila hace como 20 minutos.",
+          "wer": 0.083,
+          "ms": 324.5
+        },
+        {
+          "texto": "Me siento maluco y destemplado",
+          "grupo": "larga",
+          "oido": "Me siento maluco y destemplado.",
+          "wer": 0.0,
+          "ms": 294.9
+        },
+        {
+          "texto": "La herida está un poquito rojita",
+          "grupo": "larga",
+          "oido": "La herida está un poco rojita.",
+          "wer": 0.167,
+          "ms": 290.9
+        },
+        {
+          "texto": "Camino normal",
+          "grupo": "corta",
+          "oido": "Camino normal.",
+          "wer": 0.0,
+          "ms": 276.7
+        },
+        {
+          "texto": "Como normal",
+          "grupo": "corta",
+          "oido": "Como normal.",
+          "wer": 0.0,
+          "ms": 259.5
+        },
+        {
+          "texto": "Duermo bien",
+          "grupo": "corta",
+          "oido": "Duermo bien.",
+          "wer": 0.0,
+          "ms": 269.8
+        }
+      ]
+    },
+    "large-v3-turbo gpu greedy + prompt": {
+      "wer_cortas": 0.0741,
+      "wer_largas": 0.0186,
+      "wer_global": 0.0463,
+      "perfectas": 16,
+      "total": 18,
+      "ms_mediana": 262.8,
+      "detalle": [
+        {
+          "texto": "Sí, soy yo",
+          "grupo": "corta",
+          "oido": "Sí, soy yo.",
+          "wer": 0.0,
+          "ms": 260.0
+        },
+        {
+          "texto": "No",
+          "grupo": "corta",
+          "oido": "No.",
+          "wer": 0.0,
+          "ms": 254.8
         },
         {
           "texto": "Un seis",
           "grupo": "corta",
           "oido": "Un seis.",
           "wer": 0.0,
-          "ms": 1247.4
-        },
-        {
-          "texto": "Como un cuatro",
-          "grupo": "corta",
-          "oido": "Toma un cuatro.",
-          "wer": 0.333,
-          "ms": 1243.4
+          "ms": 250.8
         },
         {
           "texto": "Normal",
           "grupo": "corta",
           "oido": "Normal.",
           "wer": 0.0,
-          "ms": 1110.4
+          "ms": 250.5
         },
         {
-          "texto": "No he tenido",
+          "texto": "Como un tres",
           "grupo": "corta",
-          "oido": "No he tenido.",
+          "oido": "Como un tres.",
           "wer": 0.0,
-          "ms": 1208.6
+          "ms": 263.6
         },
         {
-          "texto": "El dolor esta como en un seis y no se si es normal a estos dias",
-          "grupo": "larga",
-          "oido": "El dolor esta como en un seis y no se si es normal a estos días.",
-          "wer": 0.0,
-          "ms": 1475.9
+          "texto": "Ocho de diez",
+          "grupo": "corta",
+          "oido": "8 de 10",
+          "wer": 0.667,
+          "ms": 256.7
         },
         {
-          "texto": "Me tome la temperatura y estaba en treinta y siete cinco",
+          "texto": "Treinta y siete cinco",
           "grupo": "larga",
-          "oido": "Me tome la temperatura y estaba en treinta y siete cinco.",
+          "oido": "Treinta y siete cinco.",
           "wer": 0.0,
-          "ms": 1733.2
+          "ms": 261.9
         },
         {
-          "texto": "La herida la he visto con un liquido amarillo saliendo y huele feo",
+          "texto": "Me la tomé y estaba en treinta y ocho dos",
           "grupo": "larga",
-          "oido": "La herida la he visto con un líquido amarillo saliendo y huele feo.",
+          "oido": "Me la tomé y estaba en treinta y ocho dos.",
           "wer": 0.0,
-          "ms": 2463.4
+          "ms": 284.7
         },
         {
-          "texto": "Camino normal, sin ningun problema, gracias a Dios",
+          "texto": "No, no he tenido fiebre",
           "grupo": "larga",
-          "oido": "Camino normal, sin ningún problema, gracias a Dios.",
+          "oido": "No, no he tenido fiebre.",
           "wer": 0.0,
-          "ms": 1949.5
+          "ms": 273.4
         },
         {
-          "texto": "Casi no me da hambre, como muy poquito y a veces ni eso",
+          "texto": "No me la he tomado",
           "grupo": "larga",
-          "oido": "Casi no me da hambre, como muy poquito y a veces ni eso.",
+          "oido": "No me la he tomado.",
           "wer": 0.0,
-          "ms": 1868.2
+          "ms": 270.9
         },
         {
-          "texto": "Duermo muy mal, me despierto varias veces en la noche",
+          "texto": "La herida tiene un líquido amarillo espeso y huele mal",
           "grupo": "larga",
-          "oido": "Duermo muy mal, me despierto varias veces en la noche.",
+          "oido": "La herida tiene un líquido amarillo espeso y huele mal.",
           "wer": 0.0,
-          "ms": 1640.2
+          "ms": 289.5
         },
         {
-          "texto": "Uy no parcero, ese dolorcito esta como en un seis, harto molesta la cosa",
+          "texto": "De un día para otro no puedo caminar ni apoyar el pie",
           "grupo": "larga",
-          "oido": "Uy no por cero, ese dolor, si todo esta como en un seis, auto molestada cosa.",
-          "wer": 0.571,
-          "ms": 2170.3
+          "oido": "De un día para otro no puedo caminar ni apoyar el pie.",
+          "wer": 0.0,
+          "ms": 287.2
+        },
+        {
+          "texto": "Me duele como aquí abajito de la axila hace como veinte minutos",
+          "grupo": "larga",
+          "oido": "Me duele como aquí abajito de la axila hace como veinte minutos.",
+          "wer": 0.0,
+          "ms": 299.1
+        },
+        {
+          "texto": "Me siento maluco y destemplado",
+          "grupo": "larga",
+          "oido": "Me siento maluco y destemplado.",
+          "wer": 0.0,
+          "ms": 273.0
+        },
+        {
+          "texto": "La herida está un poquito rojita",
+          "grupo": "larga",
+          "oido": "La herida esta un poco rojita.",
+          "wer": 0.167,
+          "ms": 272.4
+        },
+        {
+          "texto": "Camino normal",
+          "grupo": "corta",
+          "oido": "Camino normal.",
+          "wer": 0.0,
+          "ms": 253.7
+        },
+        {
+          "texto": "Como normal",
+          "grupo": "corta",
+          "oido": "Como normal.",
+          "wer": 0.0,
+          "ms": 256.6
+        },
+        {
+          "texto": "Duermo bien",
+          "grupo": "corta",
+          "oido": "Duermo bien.",
+          "wer": 0.0,
+          "ms": 254.1
+        }
+      ]
+    },
+    "medium gpu beam5 + prompt": {
+      "wer_cortas": 0.0,
+      "wer_largas": 0.0186,
+      "wer_global": 0.0093,
+      "perfectas": 17,
+      "total": 18,
+      "ms_mediana": 267.2,
+      "detalle": [
+        {
+          "texto": "Sí, soy yo",
+          "grupo": "corta",
+          "oido": "Si, soy yo.",
+          "wer": 0.0,
+          "ms": 268.6
+        },
+        {
+          "texto": "No",
+          "grupo": "corta",
+          "oido": "No.",
+          "wer": 0.0,
+          "ms": 211.7
+        },
+        {
+          "texto": "Un seis",
+          "grupo": "corta",
+          "oido": "Un seis.",
+          "wer": 0.0,
+          "ms": 209.4
+        },
+        {
+          "texto": "Normal",
+          "grupo": "corta",
+          "oido": "¿Normal?",
+          "wer": 0.0,
+          "ms": 236.1
+        },
+        {
+          "texto": "Como un tres",
+          "grupo": "corta",
+          "oido": "Como un tres.",
+          "wer": 0.0,
+          "ms": 227.1
+        },
+        {
+          "texto": "Ocho de diez",
+          "grupo": "corta",
+          "oido": "Ocho de diez.",
+          "wer": 0.0,
+          "ms": 233.5
+        },
+        {
+          "texto": "Treinta y siete cinco",
+          "grupo": "larga",
+          "oido": "treinta y siete cinco",
+          "wer": 0.0,
+          "ms": 265.9
+        },
+        {
+          "texto": "Me la tomé y estaba en treinta y ocho dos",
+          "grupo": "larga",
+          "oido": "Me la tome y estaba en treinta y ocho dos.",
+          "wer": 0.0,
+          "ms": 346.6
+        },
+        {
+          "texto": "No, no he tenido fiebre",
+          "grupo": "larga",
+          "oido": "No, no he tenido fiebre.",
+          "wer": 0.0,
+          "ms": 294.8
+        },
+        {
+          "texto": "No me la he tomado",
+          "grupo": "larga",
+          "oido": "¿No me la he tomado?",
+          "wer": 0.0,
+          "ms": 270.7
+        },
+        {
+          "texto": "La herida tiene un líquido amarillo espeso y huele mal",
+          "grupo": "larga",
+          "oido": "¿La herida tiene un liquido amarillo espeso y huele mal?",
+          "wer": 0.0,
+          "ms": 379.2
+        },
+        {
+          "texto": "De un día para otro no puedo caminar ni apoyar el pie",
+          "grupo": "larga",
+          "oido": "De un dia para otro no puedo caminar ni apoyar el pie.",
+          "wer": 0.0,
+          "ms": 367.1
+        },
+        {
+          "texto": "Me duele como aquí abajito de la axila hace como veinte minutos",
+          "grupo": "larga",
+          "oido": "Me duele como aquí abajito de la axila, hace como veinte minutos.",
+          "wer": 0.0,
+          "ms": 398.3
+        },
+        {
+          "texto": "Me siento maluco y destemplado",
+          "grupo": "larga",
+          "oido": "Me siento maluco y destemplado.",
+          "wer": 0.0,
+          "ms": 278.0
+        },
+        {
+          "texto": "La herida está un poquito rojita",
+          "grupo": "larga",
+          "oido": "La herida esta un poco rojita.",
+          "wer": 0.167,
+          "ms": 279.1
+        },
+        {
+          "texto": "Camino normal",
+          "grupo": "corta",
+          "oido": "Camino normal.",
+          "wer": 0.0,
+          "ms": 217.6
+        },
+        {
+          "texto": "Como normal",
+          "grupo": "corta",
+          "oido": "Como normal.",
+          "wer": 0.0,
+          "ms": 244.4
+        },
+        {
+          "texto": "Duermo bien",
+          "grupo": "corta",
+          "oido": "Duermo bien.",
+          "wer": 0.0,
+          "ms": 237.2
+        }
+      ]
+    },
+    "medium cpu beam5 + prompt": {
+      "wer_cortas": 0.0,
+      "wer_largas": 0.0186,
+      "wer_global": 0.0093,
+      "perfectas": 17,
+      "total": 18,
+      "ms_mediana": 3530.4,
+      "detalle": [
+        {
+          "texto": "Sí, soy yo",
+          "grupo": "corta",
+          "oido": "Si, soy yo.",
+          "wer": 0.0,
+          "ms": 3163.6
+        },
+        {
+          "texto": "No",
+          "grupo": "corta",
+          "oido": "No.",
+          "wer": 0.0,
+          "ms": 3137.5
+        },
+        {
+          "texto": "Un seis",
+          "grupo": "corta",
+          "oido": "Un seis.",
+          "wer": 0.0,
+          "ms": 3320.7
+        },
+        {
+          "texto": "Normal",
+          "grupo": "corta",
+          "oido": "¿Normal?",
+          "wer": 0.0,
+          "ms": 3394.3
+        },
+        {
+          "texto": "Como un tres",
+          "grupo": "corta",
+          "oido": "Como un tres.",
+          "wer": 0.0,
+          "ms": 3310.2
+        },
+        {
+          "texto": "Ocho de diez",
+          "grupo": "corta",
+          "oido": "Ocho de diez.",
+          "wer": 0.0,
+          "ms": 3556.5
+        },
+        {
+          "texto": "Treinta y siete cinco",
+          "grupo": "larga",
+          "oido": "treinta y siete cinco",
+          "wer": 0.0,
+          "ms": 3519.1
+        },
+        {
+          "texto": "Me la tomé y estaba en treinta y ocho dos",
+          "grupo": "larga",
+          "oido": "Me la tome y estaba en treinta y ocho dos.",
+          "wer": 0.0,
+          "ms": 4101.5
+        },
+        {
+          "texto": "No, no he tenido fiebre",
+          "grupo": "larga",
+          "oido": "No, no he tenido fiebre.",
+          "wer": 0.0,
+          "ms": 3811.6
+        },
+        {
+          "texto": "No me la he tomado",
+          "grupo": "larga",
+          "oido": "No me la he tomado.",
+          "wer": 0.0,
+          "ms": 3755.2
+        },
+        {
+          "texto": "La herida tiene un líquido amarillo espeso y huele mal",
+          "grupo": "larga",
+          "oido": "La herida tiene un liquido amarillo espeso y huele mal.",
+          "wer": 0.0,
+          "ms": 4147.4
+        },
+        {
+          "texto": "De un día para otro no puedo caminar ni apoyar el pie",
+          "grupo": "larga",
+          "oido": "De un día para otro no puedo caminar ni apoyar el pie.",
+          "wer": 0.0,
+          "ms": 4362.3
+        },
+        {
+          "texto": "Me duele como aquí abajito de la axila hace como veinte minutos",
+          "grupo": "larga",
+          "oido": "Me duele como aquí abajito de la axila, hace como veinte minutos.",
+          "wer": 0.0,
+          "ms": 4191.0
+        },
+        {
+          "texto": "Me siento maluco y destemplado",
+          "grupo": "larga",
+          "oido": "Me siento maluco y destemplado.",
+          "wer": 0.0,
+          "ms": 3541.8
+        },
+        {
+          "texto": "La herida está un poquito rojita",
+          "grupo": "larga",
+          "oido": "La herida esta un poco rojita.",
+          "wer": 0.167,
+          "ms": 3751.7
+        },
+        {
+          "texto": "Camino normal",
+          "grupo": "corta",
+          "oido": "Camino normal.",
+          "wer": 0.0,
+          "ms": 3348.7
+        },
+        {
+          "texto": "Como normal",
+          "grupo": "corta",
+          "oido": "Como normal.",
+          "wer": 0.0,
+          "ms": 3184.3
+        },
+        {
+          "texto": "Duermo bien",
+          "grupo": "corta",
+          "oido": "Duermo bien.",
+          "wer": 0.0,
+          "ms": 3421.6
         }
       ]
     }
   },
-  "mejor": "small + beam 5"
+  "mejor": "large-v3-turbo gpu beam5 + prompt"
 }

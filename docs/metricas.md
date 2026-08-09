@@ -2,11 +2,11 @@
 
 > Generado por `scripts/render_metricas.py` a partir de los informes que
 > producen los arneses de evaluación. Ninguna cifra se escribe a mano.
-> Última generación: 2026-08-09T04:04:24+00:00
+> Última generación: 2026-08-09T15:46:09+00:00
 
 ## Métricas exigidas por la rúbrica (§5)
 
-Muestra: **70 turnos** en **19 llamadas**, medidos por `obs/metrics.py` durante la ejecución real de la API.
+Muestra: **42 turnos** en **11 llamadas**, medidos por `obs/metrics.py` durante la ejecución real de la API.
 
 ### Latencia de respuesta
 
@@ -14,13 +14,13 @@ Muestra: **70 turnos** en **19 llamadas**, medidos por `obs/metrics.py` durante 
 
 | Percentil | Latencia |
 |---|---:|
-| **P50** | **0.7 ms** |
-| **P95** | **2457.2 ms** |
-| P99 | 10885.9 ms |
+| **P50** | **1.0 ms** |
+| **P95** | **1433.3 ms** |
+| P99 | 6080.5 ms |
 | mínimo | 0.4 ms |
-| máximo | 13201.2 ms |
+| máximo | 6305.2 ms |
 
-El P50 es de milisegundos porque **86 %** de los turnos se responden desde el caché de audio pre-renderizado (60 de 70): la conversación la conduce una máquina de estados, así que las locuciones del guion se conocen antes de que suene el teléfono. El P95 y el P99 son los turnos que sí necesitan sintetizar voz nueva o invocar al modelo.
+El P50 es de milisegundos porque **83 %** de los turnos se responden desde el caché de audio pre-renderizado (35 de 42): la conversación la conduce una máquina de estados, así que las locuciones del guion se conocen antes de que suene el teléfono. El P95 y el P99 son los turnos que sí necesitan sintetizar voz nueva o invocar al modelo.
 
 ### Consumo
 
@@ -28,14 +28,14 @@ El P50 es de milisegundos porque **86 %** de los turnos se responden desde el ca
 |---|---:|
 | Tokens de entrada por turno (P50) | 0.0 |
 | Tokens de salida por turno (P50) | 0.0 |
-| Tokens de entrada por turno (media) | 103.8 |
-| Tokens de salida por turno (media) | 3.4 |
-| Tokens de entrada por llamada (media) | **382.5** |
-| Tokens de salida por llamada (media) | **12.7** |
-| Turnos por llamada (media) | 3.7 |
+| Tokens de entrada por turno (media) | 108.8 |
+| Tokens de salida por turno (media) | 2.8 |
+| Tokens de entrada por llamada (media) | **415.4** |
+| Tokens de salida por llamada (media) | **10.8** |
+| Turnos por llamada (media) | 3.8 |
 | Invocaciones al modelo por turno (P50) | **0.0** |
 | Invocaciones al modelo por turno (máx) | 1 |
-| Consultas al RAG por llamada (media) | **0.16** |
+| Consultas al RAG por llamada (media) | **0.18** |
 | Consultas al RAG por llamada (máx) | 1 |
 
 Dos cifras se leen mal si no se explican, así que van explicadas.
@@ -46,7 +46,7 @@ léxico resolvió el estado de la herida, no hay nada que preguntarle. El modelo
 se invoca cuando el turno es ambiguo, y ahí sube a 1. Es la consecuencia de que
 la decisión clínica la tome el motor de reglas y no el modelo.
 
-**Las consultas al RAG por llamada (0.16 de media) son bajas** porque el
+**Las consultas al RAG por llamada (0.18 de media) son bajas** porque el
 cuestionario no consulta el corpus: recorre seis dominios con preguntas fijas. El
 RAG entra cuando el paciente pregunta algo clínico —*«¿puedo ducharme?»*,
 *«¿esto es normal?»*— y entonces la respuesta va fundamentada y con su cita. Una
@@ -59,13 +59,13 @@ temperatura, que sería gasto sin ganancia.
 
 | Concepto | USD por llamada |
 |---|---:|
-| Modelo de lenguaje | 4e-05 |
-| Transcripción | 0.000913 |
-| Síntesis de voz | 0.001332 |
-| **Total** | **0.002284** |
-| Total en pesos colombianos | $9.1 |
+| Modelo de lenguaje | 4.3e-05 |
+| Transcripción | 0.000937 |
+| Síntesis de voz | 0.001368 |
+| **Total** | **0.002348** |
+| Total en pesos colombianos | $9.4 |
 
-Insumos medidos que entran en el cálculo: tokens entrada por llamada = 382.5 · tokens salida por llamada = 12.7 · turnos por llamada = 3.7 · segundos audio entrada = 29.6 · caracteres tts = 333.0. Las tarifas de referencia están en `obs/metrics.py::PRECIOS_REFERENCIA`.
+Insumos medidos que entran en el cálculo: tokens entrada por llamada = 415.4 · tokens salida por llamada = 10.8 · turnos por llamada = 3.8 · segundos audio entrada = 30.4 · caracteres tts = 342.0. Las tarifas de referencia están en `obs/metrics.py::PRECIOS_REFERENCIA`.
 
 ## Decisión clínica sobre los 160 casos oficiales
 
@@ -96,7 +96,7 @@ Matriz de confusión (filas = etiqueta oficial, columnas = decisión del motor):
 
 ## Suite adversarial
 
-`make redteam` · 43/43 casos (100.0%) en 39.9 s.
+`make redteam` · 43/43 casos (100.0%) en 40.3 s.
 
 | Familia | Pasan |
 |---|---:|
@@ -154,23 +154,26 @@ reto es colombiano.
 
 | Etapa | Medición |
 |---|---:|
-| Síntesis desde caché (turno de guion) | **0.001 ms** |
-| Síntesis en caliente (19 car) | 104 ms · RTF 0.058 |
-| Síntesis en caliente (60 car) | 233 ms · RTF 0.056 |
-| Síntesis en caliente (81 car) | 288 ms · RTF 0.058 |
-| Respuesta larga completa | 435 ms |
-| Primera frase (streaming) | **261 ms** |
-| Pre-renderizado del guion completo | 39 locuciones |
+| Síntesis desde caché (turno de guion) | **1.599 ms** |
+| Síntesis en caliente (19 car) | 106 ms · RTF 0.067 |
+| Síntesis en caliente (60 car) | 239 ms · RTF 0.062 |
+| Síntesis en caliente (81 car) | 272 ms · RTF 0.056 |
+| Respuesta larga completa | 744 ms |
+| Primera frase (streaming) | **296 ms** |
+| Pre-renderizado del guion completo | 45 locuciones |
 
 ### Transcripción
 
-`faster-whisper small` en cpu/int8.
+`faster-whisper medium` en cuda/int8_float16, medido sobre 18 grabaciones de voz humana (`eval/audios`, ficheros fijos).
 
-| Duración del audio | Latencia | RTF |
-|---|---:|---:|
-| 2s | 5 ms | 0.003 |
-| 4s | 8 ms | 0.002 |
-| 8s | 15 ms | 0.002 |
+| Métrica | Valor |
+|---|---:|
+| Latencia mediana | **231 ms** |
+| RTF mediano | 0.155 |
+| RTF peor caso | 0.258 |
+| Arranque del modelo | 3.3 s |
+
+> latencia sobre voz humana real. La version anterior media audio sintetico (np.zeros + ruido 0.001) con vad_filter activo: el VAD lo descartaba entero, no se decodificaba nada, y de ahi salian los 5 ms por 2 s de audio (RTF 0.003) que se publicaron. Sobre voz de verdad la misma configuracion tardaba ~1100 ms. La exactitud no se mide aqui: esta en scripts/bench_stt.py y eval/escucha.py.
 
 ## Corpus indexado
 

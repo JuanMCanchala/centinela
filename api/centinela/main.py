@@ -1227,6 +1227,41 @@ FRECUENCIA_ESPERADA = 16000
 # responde aqui -- "esto era voz o un portazo?" -- no necesita recorte por VAD, y
 # evitarlo hace la comprobacion mas corta, que es justo lo que descongestiona la cola.
 MUESTRAS_A_COMPROBAR = int(1.8 * FRECUENCIA_ESPERADA)
+
+# Por debajo de esta ventana, un "no era voz" no se toma como respuesta: se sigue
+# escuchando.
+#
+# **Lo que se midio.** Sobre ventanas de barge-in con `medium`, las dos senales de
+# calidad no valen lo mismo. `avg_logprob` no distingue nada: -0.39 a -0.75 en voz
+# humana real y -0.52 a -0.62 en eco del agente, solapadas. La que separa es
+# `no_speech_prob`: como mucho 0.78 en voz real, como poco 0.92 en eco y en silencio.
+# Entre 0.78 y 0.92 hay un hueco donde ninguna de las dos decide, y ahi cayo el caso
+# que descubrio esto -- 0.64 s de audio, no-voz 0.81, logprob -0.74, descartado por
+# 0.04 de margen contra un umbral calibrado con `small`.
+#
+# **Por que se espera en vez de aflojar el umbral.** Aflojarlo compraria esta
+# interrupcion al precio de los cortes falsos, que son el unico numero que este
+# subsistema tiene que mantener en cero. Y la duda no viene del umbral: viene de que
+# `no_speech_prob` se calcula sobre una ventana de 30 s, asi que con 0.64 s de audio la
+# mayor parte es relleno. Con mas audio la misma pregunta se responde sola. Es el mismo
+# principio que ya rige el cierre de turno en `dialog/completitud.py`: la duda se
+# resuelve escuchando mas, nunca menos.
+#
+# **Y esta acotado.** El candidato crece con cada trama, asi que la espera dura como
+# mucho lo que falte para llegar aqui -- unos cientos de milisegundos con la voz baja,
+# no callada. Sin la cota se volveria a la patologia que documenta la guarda de
+# `comprobando`: 55 invocaciones al STT y 172.6 s transcritos sobre 7.7 s de audio.
+MINIMO_FIABLE_PARA_DESCARTAR_S = 1.0
+
+# Cuantas veces se vuelve a mirar antes de dar la sospecha por descartada, y cuanto se
+# espera entre miradas. Tres intentos con 80 ms de espera son como mucho ~160 ms de
+# espera anadida, mas lo que tarde cada transcripcion -- y con la voz baja, no callada.
+#
+# El techo existe porque sin el la sospecha nunca se cerraria cuando el audio deja de
+# llegar (pestana en segundo plano, red parada) y el agente se quedaria con la voz baja
+# indefinidamente. Al agotarse, se descarta: es la conducta de siempre.
+INTENTOS_DE_CONFIRMACION = 3
+MS_ESPERAR_MAS_AUDIO = 80.0
 MAX_SEGUNDOS_TURNO = 60
 
 
@@ -1748,26 +1783,71 @@ async def _resolver_sospecha(canal: CanalLlamada) -> None:
     positivo cuesta un bache de 250 ms en vez de un turno perdido.
     """
 
-    candidato = canal.audio_candidato()
-    # Para decidir "esto era voz" basta una ventana; no hace falta el candidato entero.
-    # La diferencia importa porque el candidato CRECE mientras el paciente habla, asi
-    # que comprobarlo completo cada vez hace el trabajo cuadratico: sobre una llamada
-    # con 7.7 s de audio real se llegaron a transcribir 172.6 s. Y el audio promovido al
-    # turno sigue siendo el candidato completo -- aqui solo se recorta lo que se MIRA,
-    # no lo que se guarda, asi que no se pierde ni una silaba del turno del paciente.
-    audio = candidato[-MUESTRAS_A_COMPROBAR:] if len(candidato) else candidato
-    duracion = len(audio) / FRECUENCIA_ESPERADA
+    # Una ventana corta que sale "no era voz" no cierra la pregunta: puede ser que no
+    # hubiera voz, o que todavia no haya suficiente audio para saberlo. Se reintenta, y
+    # lo que hace que reintentar sirva es que **el candidato crece mientras el STT
+    # corre**: esta funcion fotografia el audio y luego espera ~250 ms a la
+    # transcripcion, y en ese rato han entrado varias tramas mas. Volver a mirar no
+    # necesita que llegue nada nuevo, solo dejar de usar una foto vieja.
+    #
+    # Medido con el audio exacto que descubrio esto (la grabacion "normal" repetida):
+    #
+    #     ventana 0.64 s -> no-voz 0.83, descartada, texto vacio
+    #     ventana 0.80 s -> no-voz 0.20, "Normal."
+    #
+    # 160 ms de audio son la diferencia entre perder la interrupcion y oirla limpia.
+    trans = None
+    duracion = 0.0
+    era_voz = False
+    intentos = 0
 
-    if duracion < 0.2:
-        trans = None
-    else:
-        trans = await asyncio.to_thread(E["stt"].transcribir, audio)
+    while intentos < INTENTOS_DE_CONFIRMACION and not era_voz:
+        candidato = canal.audio_candidato()
+        # Para decidir "esto era voz" basta una ventana; no hace falta el candidato
+        # entero. La diferencia importa porque el candidato CRECE mientras el paciente
+        # habla, asi que comprobarlo completo cada vez hace el trabajo cuadratico: sobre
+        # una llamada con 7.7 s de audio real se llegaron a transcribir 172.6 s. Y el
+        # audio promovido al turno sigue siendo el candidato completo -- aqui solo se
+        # recorta lo que se MIRA, no lo que se guarda, asi que no se pierde ni una
+        # silaba del turno del paciente.
+        audio = candidato[-MUESTRAS_A_COMPROBAR:] if len(candidato) else candidato
+        duracion = len(audio) / FRECUENCIA_ESPERADA
 
-    era_voz = trans is not None and not trans.sin_habla
+        if duracion < 0.2:
+            trans = None
+        else:
+            trans = await asyncio.to_thread(E["stt"].transcribir, audio)
+
+        era_voz = trans is not None and not trans.sin_habla
+        intentos += 1
+
+        # Se reintenta solo mientras la ventana siga siendo demasiado corta para que
+        # `no_speech_prob` valga algo. En cuanto la ventana es fiable, un "no era voz"
+        # es una respuesta y se acata: asi el reintento no puede convertirse en insistir
+        # hasta que salga lo que queremos.
+        reintentable = (
+            not era_voz
+            and duracion < MINIMO_FIABLE_PARA_DESCARTAR_S
+            and canal.detector.sospechando
+            and intentos < INTENTOS_DE_CONFIRMACION
+        )
+        if reintentable:
+            log("interrupcion_sin_resolver", llamada_id=canal.llamada_id,
+                motivo=(trans.motivo_descarte if trans else "audio insuficiente"),
+                duracion_s=round(duracion, 2), intento=intentos,
+                umbral_fiable_s=MINIMO_FIABLE_PARA_DESCARTAR_S)
+            await asyncio.sleep(MS_ESPERAR_MAS_AUDIO / 1000)
+        else:
+            intentos = INTENTOS_DE_CONFIRMACION
 
     if era_voz:
         await _cortar_al_agente(canal, trans)
     else:
+        # Se descarta siempre que no se confirme, incluso si la ventana seguia siendo
+        # corta al agotar los intentos. La alternativa -- dejarlo sin resolver -- deja al
+        # detector en sospecha y al agente con la voz baja para siempre si el audio deja
+        # de llegar (pestana en segundo plano, red parada). Un descarte de mas cuesta un
+        # bache; un canal colgado cuesta la llamada.
         canal.detector.descartado()
         canal.olvidar_candidato()
         await canal.enviar_json({"tipo": "subir_voz"})

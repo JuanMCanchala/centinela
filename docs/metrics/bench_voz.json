@@ -6,68 +6,154 @@
       "disponible": true,
       "binario": "C:\\Programacion\\sourcemeridian\\centinela\\data\\piper\\piper\\piper.exe",
       "voz": "es_MX-ald-medium",
-      "locuciones_en_cache": 53,
+      "locuciones_en_cache": 59,
       "respaldo": "SpeechSynthesis del navegador si el motor no esta disponible"
     },
     "pre_renderizado": {
       "generadas": 0,
-      "reutilizadas": 39,
+      "reutilizadas": 45,
+      "renovadas_por_cambio_de_texto": 0,
+      "con_enfasis": 0,
       "fallidas": [],
-      "segundos": 0.03,
-      "total_en_cache": 53
+      "segundos": 0.02,
+      "total_en_cache": 59
     },
     "sintesis_en_caliente": {
       "Entendido, gracias.": {
-        "ms_p50": 103.9,
-        "duracion_audio_s": 1.79,
-        "factor_tiempo_real": 0.058,
+        "ms_p50": 105.6,
+        "duracion_audio_s": 1.58,
+        "factor_tiempo_real": 0.067,
         "caracteres": 19
       },
       "Ha tenido fiebre o se ha sentido calient": {
-        "ms_p50": 233.0,
-        "duracion_audio_s": 4.17,
-        "factor_tiempo_real": 0.056,
+        "ms_p50": 238.7,
+        "duracion_audio_s": 3.84,
+        "factor_tiempo_real": 0.062,
         "caracteres": 60
       },
       "Voy a detener las preguntas aqui, porque": {
-        "ms_p50": 287.9,
-        "duracion_audio_s": 4.94,
-        "factor_tiempo_real": 0.058,
+        "ms_p50": 271.8,
+        "duracion_audio_s": 4.82,
+        "factor_tiempo_real": 0.056,
         "caracteres": 81
       },
       "Lo que me describe es un signo de alarma": {
-        "ms_p50": 465.5,
-        "duracion_audio_s": 8.19,
+        "ms_p50": 462.6,
+        "duracion_audio_s": 8.08,
         "factor_tiempo_real": 0.057,
         "caracteres": 123
       }
     },
-    "cache_ms_p50": 0.001,
-    "cache_ms_max": 0.0091,
+    "cache_ms_p50": 1.5995,
+    "cache_ms_max": 1.893,
     "streaming": {
-      "ms_respuesta_completa": 434.9,
-      "ms_primera_frase": 260.6,
+      "ms_respuesta_completa": 743.8,
+      "ms_primera_frase": 296.1,
       "n_frases": 2
     }
   },
   "stt": {
     "disponible": true,
-    "modelo": "small",
-    "dispositivo": "cpu/int8",
-    "ms_carga": 1959.3,
-    "por_duracion": {
-      "2s": {
-        "ms_p50": 5.2,
-        "factor_tiempo_real": 0.003
+    "modelo": "medium",
+    "dispositivo": "cuda/int8_float16",
+    "ms_carga": 3288.0,
+    "fuente_audio": "eval/audios (grabaciones humanas, ficheros fijos)",
+    "n_grabaciones": 18,
+    "ms_p50_global": 231.3,
+    "rtf_p50_global": 0.155,
+    "rtf_peor": 0.258,
+    "por_grabacion": {
+      "01_si_soy_yo.wav": {
+        "duracion_audio_s": 1.72,
+        "ms_p50": 230.6,
+        "factor_tiempo_real": 0.134
       },
-      "4s": {
-        "ms_p50": 8.5,
-        "factor_tiempo_real": 0.002
+      "02_no.wav": {
+        "duracion_audio_s": 0.78,
+        "ms_p50": 201.1,
+        "factor_tiempo_real": 0.258
       },
-      "8s": {
-        "ms_p50": 15.0,
-        "factor_tiempo_real": 0.002
+      "03_un_seis.wav": {
+        "duracion_audio_s": 1.0,
+        "ms_p50": 202.9,
+        "factor_tiempo_real": 0.203
+      },
+      "04_normal.wav": {
+        "duracion_audio_s": 1.0,
+        "ms_p50": 221.5,
+        "factor_tiempo_real": 0.221
+      },
+      "05_como_un_tres.wav": {
+        "duracion_audio_s": 1.28,
+        "ms_p50": 225.3,
+        "factor_tiempo_real": 0.176
+      },
+      "06_ocho_de_diez.wav": {
+        "duracion_audio_s": 1.22,
+        "ms_p50": 228.9,
+        "factor_tiempo_real": 0.188
+      },
+      "07_treinta_y_siete_cinco.wav": {
+        "duracion_audio_s": 2.62,
+        "ms_p50": 228.1,
+        "factor_tiempo_real": 0.087
+      },
+      "08_treinta_y_ocho_dos.wav": {
+        "duracion_audio_s": 3.06,
+        "ms_p50": 329.9,
+        "factor_tiempo_real": 0.108
+      },
+      "09_no_he_tenido_fiebre.wav": {
+        "duracion_audio_s": 1.96,
+        "ms_p50": 287.6,
+        "factor_tiempo_real": 0.147
+      },
+      "10_no_me_la_he_tomado.wav": {
+        "duracion_audio_s": 1.5,
+        "ms_p50": 263.7,
+        "factor_tiempo_real": 0.176
+      },
+      "11_liquido_amarillo.wav": {
+        "duracion_audio_s": 3.58,
+        "ms_p50": 377.9,
+        "factor_tiempo_real": 0.106
+      },
+      "12_no_puedo_caminar.wav": {
+        "duracion_audio_s": 3.44,
+        "ms_p50": 347.9,
+        "factor_tiempo_real": 0.101
+      },
+      "13_regional_axila.wav": {
+        "duracion_audio_s": 3.88,
+        "ms_p50": 383.1,
+        "factor_tiempo_real": 0.099
+      },
+      "14_maluco.wav": {
+        "duracion_audio_s": 2.74,
+        "ms_p50": 274.8,
+        "factor_tiempo_real": 0.1
+      },
+      "15_rojita.wav": {
+        "duracion_audio_s": 2.1,
+        "ms_p50": 287.5,
+        "factor_tiempo_real": 0.137
+      },
+      "16_camino_normal.wav": {
+        "duracion_audio_s": 1.32,
+        "ms_p50": 215.3,
+        "factor_tiempo_real": 0.163
+      },
+      "17_como_normal.wav": {
+        "duracion_audio_s": 1.18,
+        "ms_p50": 202.6,
+        "factor_tiempo_real": 0.172
+      },
+      "18_duermo_bien.wav": {
+        "duracion_audio_s": 1.3,
+        "ms_p50": 231.9,
+        "factor_tiempo_real": 0.178
       }
-    }
+    },
+    "aclaracion": "latencia sobre voz humana real. La version anterior media audio sintetico (np.zeros + ruido 0.001) con vad_filter activo: el VAD lo descartaba entero, no se decodificaba nada, y de ahi salian los 5 ms por 2 s de audio (RTF 0.003) que se publicaron. Sobre voz de verdad la misma configuracion tardaba ~1100 ms. La exactitud no se mide aqui: esta en scripts/bench_stt.py y eval/escucha.py."
   }
 }

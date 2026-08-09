@@ -11,6 +11,23 @@ cual funciona en vez de discutirlo.
 Metrica: tasa de error por palabra (WER) contra la transcripcion conocida, y el
 tiempo. Se pesa aparte el grupo de frases cortas, que es donde duele.
 
+**El audio son ficheros, y esto es la correccion de un fallo del propio arnes.** Antes
+cada corrida sintetizaba las frases con Piper. Piper no es determinista, asi que el
+material de prueba cambiaba solo: `small cpu beam5` puntuo WER 0.271 en frases cortas
+una vez y **9.646** la siguiente -- no es ruido, es una alucinacion desbocada sobre un
+audio distinto. Con eso la linea "Mejor en frases cortas" señalaba una configuracion
+diferente cada vez, y el informe se publicaba igual. Un arnes que elige al ganador por
+sorteo es peor que no tenerlo, porque parece que decide.
+
+Ahora el audio son las 18 grabaciones humanas de `eval/audios`, con el texto de
+referencia que ya declara `eval/escucha.py` en su `GUION`. Son ficheros: la misma
+configuracion da el mismo numero. Y la referencia vive en un solo sitio, asi que
+`bench_stt` (que compara configuraciones) y `escucha` (que evalua la de produccion) no
+pueden discrepar sobre lo que el paciente dijo.
+
+Efecto secundario, y no menor: sobre voz humana el orden cambia. `large-v3-turbo` en
+GPU alucinaba en las frases cortas de Piper y es la mejor sobre voz real.
+
     python scripts/bench_stt.py [--con-medium]
 """
 
@@ -31,28 +48,10 @@ sys.path.insert(0, str(RAIZ))
 
 import numpy as np  # noqa: E402
 
-# Frases que un paciente colombiano diria de verdad, con el texto esperado.
-# El primer grupo es el critico: turnos de una o dos palabras.
-CORTAS = (
-    "Si, soy yo",
-    "Si señora",
-    "Claro que si",
-    "No",
-    "Un seis",
-    "Como un cuatro",
-    "Normal",
-    "No he tenido",
-)
-
-LARGAS = (
-    "El dolor esta como en un seis y no se si es normal a estos dias",
-    "Me tome la temperatura y estaba en treinta y siete cinco",
-    "La herida la he visto con un liquido amarillo saliendo y huele feo",
-    "Camino normal, sin ningun problema, gracias a Dios",
-    "Casi no me da hambre, como muy poquito y a veces ni eso",
-    "Duermo muy mal, me despierto varias veces en la noche",
-    "Uy no parcero, ese dolorcito esta como en un seis, harto molesta la cosa",
-)
+# Las frases y su texto de referencia salen del `GUION` de `eval/escucha.py`, que es
+# donde vive la verdad sobre lo que dice cada grabacion. Aqui habia una copia --
+# `CORTAS` y `LARGAS`, sintetizadas con Piper -- y esa copia es la que hacia el arnes
+# irreproducible.
 
 # Contexto que se le da a Whisper para sesgar el vocabulario. Es la palanca mas
 # potente contra el salto al ingles: fija el idioma y el dominio de golpe.
@@ -125,40 +124,6 @@ def wer(referencia: str, hipotesis: str) -> float:
     return d[len(r)][len(h)] / len(r)
 
 
-def audio_de(texto: str) -> np.ndarray | None:
-    """Sintetiza con Piper y devuelve float32 a 16 kHz, como llega del navegador."""
-
-    import asyncio
-    import io
-    import wave
-
-    from centinela.tts.piper import PiperTTS
-
-    tts = PiperTTS()
-    if not tts.disponible:
-        return None
-
-    audio = asyncio.run(tts.sintetizar(texto))
-    if not audio.wav:
-        return None
-
-    with wave.open(io.BytesIO(audio.wav), "rb") as w:
-        origen = w.getframerate()
-        marcos = np.frombuffer(w.readframes(w.getnframes()), dtype="<i2")
-
-    muestras = marcos.astype(np.float32) / 32768.0
-
-    if origen != 16000:
-        razon = origen / 16000
-        n = int(len(muestras) / razon)
-        salida = np.empty(n, dtype=np.float32)
-        for i in range(n):
-            salida[i] = muestras[int(i * razon):max(int(i * razon) + 1, int((i + 1) * razon))].mean()
-        muestras = salida
-
-    return muestras
-
-
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--con-medium", action="store_true",
@@ -169,16 +134,50 @@ def main() -> int:
 
     configs = dict(CONFIGS)
 
-    print("sintetizando audio de prueba con Piper...")
-    frases = [(t, "corta") for t in CORTAS] + [(t, "larga") for t in LARGAS]
+    # `--con-medium` se parseaba y no se usaba: pasarlo no anadia ninguna fila y la
+    # comparativa salia igual, sin decir que la opcion no habia hecho nada. `medium` es
+    # justo el primer peldano de la escalera de `stt/whisper.py`, asi que era la unica
+    # configuracion en produccion que este arnes no sabia medir.
+    if args.con_medium:
+        configs["medium gpu beam5 + prompt"] = {
+            "tamano": "medium", "dispositivo": "cuda", "computo": "int8_float16",
+            "beam_size": 5, "prompt": PROMPT_CLINICO, "temperature": FALLBACK,
+            "vad": True,
+        }
+        configs["medium cpu beam5 + prompt"] = {
+            "tamano": "medium", "dispositivo": "cpu", "computo": "int8",
+            "beam_size": 5, "prompt": PROMPT_CLINICO, "temperature": FALLBACK,
+            "vad": True,
+        }
+
+    # Grabaciones humanas, no sintesis. Ver la nota de cabecera: sintetizar el audio
+    # en cada corrida hacia que la misma configuracion puntuara 0.271 una vez y 9.646
+    # la siguiente, y con eso la comparativa elegia una ganadora distinta cada vez.
+    from eval.escucha import DIR_AUDIOS, GUION, leer_wav
+
+    print(f"leyendo grabaciones humanas de {DIR_AUDIOS.relative_to(RAIZ)}...")
+    frases: list[tuple[str, str]] = []
     audios: dict[str, np.ndarray] = {}
-    for texto, _ in frases:
-        a = audio_de(texto)
-        if a is None:
-            print("Piper no disponible")
-            return 2
-        audios[texto] = a
-    print(f"{len(audios)} frases listas\n")
+    faltan: list[str] = []
+    for ficha in GUION:
+        ruta = DIR_AUDIOS / ficha.archivo
+        if ruta.is_file():
+            # "corta" son los turnos de una a tres palabras, que es donde Whisper es
+            # mas debil y donde el paciente responde mas breve.
+            grupo = "corta" if len(ficha.dice.split()) <= 3 else "larga"
+            frases.append((ficha.dice, grupo))
+            audios[ficha.dice] = leer_wav(ruta)
+        else:
+            faltan.append(ficha.archivo)
+
+    if not audios:
+        print(f"no hay grabaciones en {DIR_AUDIOS}: corra `python -m eval.escucha --guion`")
+        return 2
+    if faltan:
+        print(f"  AVISO: faltan {len(faltan)} grabaciones del guion: {', '.join(faltan)}")
+    n_cortas = sum(1 for _, g in frases if g == "corta")
+    print(f"{len(audios)} grabaciones listas ({n_cortas} cortas, "
+          f"{len(frases) - n_cortas} largas)\n")
 
     modelos: dict[str, WhisperModel] = {}
     informe: dict = {"configuraciones": {}}

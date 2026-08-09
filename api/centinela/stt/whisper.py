@@ -53,6 +53,7 @@ from __future__ import annotations
 import os
 import re
 import sys
+import sysconfig
 import time
 import unicodedata
 from dataclasses import dataclass, field
@@ -123,6 +124,32 @@ ALUCINACIONES = (
     "thanks for watching", "thank you for watching", "please subscribe",
     "subtitles by", "www.", "http", "musica de fondo", "aplausos",
 )
+
+# El prompt clinico, devuelto como si lo hubiera dicho el paciente.
+#
+# Es el tercer modo de alucinacion y el mas incomodo, porque las dos puertas de
+# confianza no lo paran: el decoder esta *seguro* del texto que escribe, y con razon --
+# lo esta copiando de su propio contexto. Medido con `medium` sobre ventanas de 0.64 s
+# de las grabaciones de `eval/audios`, dos de dieciocho salieron asi:
+#
+#     01_si_soy_yo             -> "Llamada de seguimiento postoperatorio en Colombia."
+#     07_treinta_y_siete_cinco -> "El paciente responde sobre dolor, ..."
+#
+# y ninguna se descarto. Tambien es lo que produjo el unico corte falso de
+# `eval/bargein.py` a -6 dB. En el camino del turno, ese texto habria ido a la
+# extraccion clinica; en el del barge-in, confirma una interrupcion que nadie hizo.
+#
+# **Los patrones se derivan del prompt y no se copian**, para que no puedan quedar
+# desincronizados si alguien edita el prompt. Y se toma solo la mitad instructiva: lo
+# que va tras "Ejemplos:" son frases que el paciente si dice de verdad -- "no he tenido
+# fiebre" esta ahi a proposito -- y filtrarlas seria descartar respuestas legitimas.
+_INSTRUCCIONES_DEL_PROMPT = PROMPT_CLINICO.split("Ejemplos:")[0]
+
+# Cuanto texto hace falta para que coincidir con el prompt signifique algo. Por debajo
+# de esto la coincidencia es casualidad: "dolor" es una palabra del prompt y tambien es
+# una respuesta.
+MIN_CARACTERES_ECO_PROMPT = 25
+MIN_PALABRAS_ECO_PROMPT = 4
 
 # Umbrales de confianza. Un segmento que los cruza se descarta.
 MAX_PROB_SIN_VOZ = 0.55      # no_speech_prob por encima de esto: no era voz
@@ -201,7 +228,21 @@ def es_alucinacion(texto: str) -> str | None:
     base = normalizar(texto)
     encontrado: str | None = None
 
-    if len(base) < 3:
+    # Se cuentan letras y digitos, no caracteres.
+    #
+    # Aqui habia `len(base) < 3`, y descartaba **"no"** y **"si"**. Sobrevivian de
+    # milagro: `normalizar` conserva el punto final, asi que "No." son tres caracteres
+    # y pasa, mientras que "No" son dos y se descartaba como texto vacio. Es decir, las
+    # dos respuestas mas consecuentes de un cuestionario clinico dependian de un signo
+    # de puntuacion que el decoder no esta obligado a poner. Lo dice el propio guion de
+    # `eval/escucha.py` sobre `02_no.wav`: "si esta se pierde, se pierde medio
+    # cuestionario".
+    #
+    # La regla queria decir "el decoder no produjo nada con contenido", no "el texto es
+    # corto", asi que ahora mide eso: dos caracteres alfanumericos bastan para "no" y
+    # no los alcanza un turno de pura puntuacion.
+    utiles = [c for c in base if c.isalnum()]
+    if len(utiles) < 2:
         encontrado = "texto vacio"
     else:
         for patron in ALUCINACIONES:
@@ -211,6 +252,9 @@ def es_alucinacion(texto: str) -> str | None:
                 if len(patron) / len(base) > 0.45:
                     encontrado = patron
                     break
+        if encontrado is None and es_eco_del_prompt(base):
+            encontrado = "el prompt clinico devuelto"
+
         if encontrado is None:
             # Repeticion patologica: el mismo token muchas veces seguidas es el
             # otro modo de fallo tipico del decoder.
@@ -221,6 +265,23 @@ def es_alucinacion(texto: str) -> str | None:
                     encontrado = "repeticion patologica"
 
     return encontrado
+
+
+def es_eco_del_prompt(base: str) -> bool:
+    """Si el turno es el prompt clinico devuelto por el decoder, entero o a medias.
+
+    `base` ya viene normalizado. Se comprueba en los dos sentidos porque las dos formas
+    se observaron: el prompt completo dentro de un turno mas largo, y un trozo del
+    prompt como turno entero ("el paciente responde sobre dolor", que es un prefijo de
+    la segunda frase y no una frase completa de nada).
+    """
+
+    instruccion = normalizar(_INSTRUCCIONES_DEL_PROMPT)
+    suficiente = (
+        len(base) >= MIN_CARACTERES_ECO_PROMPT
+        and len(base.split()) >= MIN_PALABRAS_ECO_PROMPT
+    )
+    return suficiente and (base in instruccion or instruccion in base)
 
 
 @dataclass
@@ -245,22 +306,54 @@ class Transcripcion:
 # Escalera de configuraciones, de la preferida a la de ultimo recurso. Se prueba
 # cada una con una inferencia REAL y se baja un peldano si falla.
 #
-# El orden sale de dos mediciones. Primera, `scripts/bench_stt.py`: `small` con
-# prompt clinico y busqueda por haces da 0.083 de error en frases cortas, contra
-# 0.667 de la configuracion original -- el prompt vale mas que el tamano del
-# modelo. Segunda, `nvidia-smi` durante un cuelgue: `large-v3-turbo` en float16
-# ocupaba 7473 MiB de los 8188 de la GPU y la inferencia se colgaba sin lanzar
-# ninguna excepcion.
+# El orden sale de `scripts/bench_stt.py` sobre las 18 grabaciones humanas de
+# `eval/audios`. Las cifras que justificaban este orden antes (0.083 contra 0.667) se
+# midieron sobre audio sintetizado con Piper en cada corrida, y ese arnes no era
+# reproducible: la misma configuracion daba 0.271 y 9.646 en dos pasadas seguidas. Con
+# audio fijo, dos pasadas dan lo mismo a tres decimales, y esto es lo que dicen -- WER
+# en frases cortas, que es donde Whisper es debil y el paciente mas breve:
+#
+#     medium/cuda   beam5 + prompt   0.000   17/18 perfectas    267 ms
+#     turbo/cuda    beam5 + prompt   0.000   17/18              286 ms
+#     medium/cpu    beam5 + prompt   0.000   17/18             3530 ms
+#     small/cpu     beam5 + prompt   0.093   14/18             1277 ms
+#     small/cpu     greedy           0.278   10/18             1059 ms
+#
+# Tres lecturas. La exactitud la dan el tamano del modelo, los haces y el prompt --
+# `medium/cpu` acierta lo mismo que `medium/cuda`. La GPU no compra exactitud, compra
+# 13x de velocidad (267 contra 3530 ms). Y `medium` empata con `large-v3-turbo` siendo
+# mas rapido, asi que turbo no entra: pagaria 1 GB mas de VRAM por nada.
+#
+# **Los 7473 MiB que antes descartaban a turbo se midieron mal**, y conviene decirlo:
+# era la GPU entera, con los 4 GB de phi3.5 de Ollama dentro. Medido con Ollama
+# residente y muestreando durante la inferencia, el pico es 5676 MiB para `medium` y
+# 6637 para turbo, de 8188. Los dos caben; el cuelgue sin excepcion, si vuelve, es en
+# turbo donde volveria.
 #
 # De ahi el criterio: modelos que quepan con holgura. Un modelo que cabe justo no
 # es "mas exacto con riesgo", es un cuelgue esperando el peor momento.
+#
+# **Los 7473 MiB de arriba se midieron mal, y conviene decirlo.** Es la GPU entera, con
+# los 4 GB de phi3.5 de Ollama dentro; no era el consumo de `large-v3-turbo`. Medido
+# ahora, con Ollama residente y muestreando durante la inferencia:
+#
+#     medium/cuda/int8_float16    pico 5676 MiB de 8188   (2.5 GB libres)   314 ms
+#     large-v3-turbo/cuda/float16 pico 6637 MiB de 8188   (1.5 GB libres)   301 ms
+#
+# Asi que `turbo` cabe, y en `eval/escucha.py` da el WER mas bajo (0.037 contra 0.053).
+# Sigue fuera del primer peldano porque el resultado *clinico* de los dos es el mismo --
+# 0 datos mal y 0 repreguntas sobre las 18 grabaciones -- y 13 ms no compran 1 GB de
+# holgura. Si el cuelgue vuelve, es en `turbo` donde volveria.
 ESCALERA = (
     # ~1.5 GB de VRAM. Mejor exactitud que small y sobra memoria.
     ("medium", "cuda", "int8_float16"),
     # ~1 GB. Rapidisimo y, con el prompt clinico, suficientemente exacto.
     ("small", "cuda", "float16"),
-    # Sin GPU. Es la configuracion que `bench_stt.py` midio con 0.083 de error en
-    # frases cortas, asi que degradar no significa degradar la exactitud.
+    # Sin GPU. **Y aqui degradar si cuesta exactitud**, al contrario de lo que decia
+    # esta nota antes: 0.093 de error en frases cortas contra 0.000 de `medium`, y una
+    # respuesta clinica mal de 18 en `eval/escucha.py`. Sigue siendo el ultimo peldano
+    # porque una llamada que se atiende con mas error es mejor que una que no se
+    # atiende, pero no es equivalente y el informe no debe decir que lo sea.
     ("small", "cpu", "int8"),
 )
 
@@ -268,6 +361,63 @@ ESCALERA = (
 # con try/except: el fallo observado en GPU no lanzaba excepcion, se quedaba
 # quieto para siempre, y un `except` no atrapa un cuelgue.
 TIMEOUT_VALIDACION_S = 25.0
+
+# Las bibliotecas de CUDA que ctranslate2 carga tarde, en el orden en que se buscan.
+SUBDIRS_CUDA = ("cublas", "cudnn", "cuda_nvrtc")
+
+_dlls_cuda_listas = False
+
+
+def habilitar_dlls_cuda() -> list[str]:
+    """Pone las DLL de CUDA de los wheels de NVIDIA donde ctranslate2 las busca.
+
+    **El fallo que arregla, y por que era invisible.** La escalera bajaba hasta
+    `small/cpu/int8` en una maquina con una RTX 4060 libre. No por falta de GPU:
+    `ctranslate2.get_cuda_device_count()` devolvia 1 y `WhisperModel(...)` cargaba sin
+    quejarse. Reventaba en la primera inferencia, con
+    `Library cublas64_12.dll is not found or cannot be loaded` -- y la escalera trata
+    cualquier fallo como "esta configuracion no sirve" y baja un peldano. El resultado
+    era exactamente el modo de fallo que este proyecto persigue en todo lo demas: se
+    degradaba sola, en silencio, y publicaba las cifras del peldano de abajo.
+
+    **Y la DLL estaba en el disco.** Viene en los wheels `nvidia-cublas-cu12` y
+    `nvidia-cudnn-cu12`, dentro de `site-packages/nvidia/*/bin`. Lo que falta es que
+    Windows la busque ahi.
+
+    **Por que se muta `PATH` y no basta `os.add_dll_directory`.** Se probaron las dos.
+    `add_dll_directory` solo afecta a lo que carga el propio Python con las banderas
+    `LOAD_LIBRARY_SEARCH_*`; ctranslate2 pide cuBLAS mas tarde, desde dentro de su
+    extension, con un `LoadLibrary` corriente, y ese consulta el orden de busqueda
+    clasico -- donde si entra `PATH`. Con `add_dll_directory` el error se repetia
+    identico; mutando `PATH` la inferencia en GPU pasa a funcionar.
+
+    **Lo que midio el cambio** (`eval/escucha.py`, 18 grabaciones humanas, mismo audio):
+
+        small/cpu/int8      WER 0.126   1 dato clinico mal   1 repregunta   1054 ms
+        medium/cuda/int8_f  WER 0.053   0                    0              314 ms
+
+    Se llama antes de tocar la escalera. Si los wheels no estan, no hace nada y todo
+    sigue igual que hoy: es la razon de que no haya que instalar nada nuevo para que
+    la compuerta G2 siga levantando el sistema en una maquina sin GPU.
+    """
+
+    global _dlls_cuda_listas
+    anadidos: list[str] = []
+    if not _dlls_cuda_listas:
+        # `purelib` es donde el interprete instala los paquetes, con el nombre que le
+        # toque en cada plataforma. Construir "Lib/site-packages" a mano acertaria en
+        # Windows y fallaria callando en cualquier otro sitio.
+        raiz = Path(sysconfig.get_paths()["purelib"]) / "nvidia"
+        for sub in SUBDIRS_CUDA:
+            binario = raiz / sub / "bin"
+            if binario.is_dir():
+                anadidos.append(str(binario))
+        if anadidos:
+            os.environ["PATH"] = os.pathsep.join(
+                anadidos + [os.environ.get("PATH", "")]
+            )
+        _dlls_cuda_listas = True
+    return anadidos
 
 
 class WhisperSTT:
@@ -316,6 +466,11 @@ class WhisperSTT:
     # ------------------------------------------------------------------
 
     def _cargar(self, tamano: str, dispositivo: str, computo: str):
+        # Antes del import: ctranslate2 resuelve cuBLAS en la primera inferencia, pero
+        # dejar el `PATH` listo antes de que el modulo exista evita depender de cuando
+        # lo haga.
+        habilitar_dlls_cuda()
+
         from faster_whisper import WhisperModel
 
         kwargs = {"device": dispositivo, "compute_type": computo}

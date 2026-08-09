@@ -30,6 +30,8 @@ import wave
 from dataclasses import dataclass
 from pathlib import Path
 
+from ..obs.log import log
+
 import numpy as np
 
 from .hablado import para_voz
@@ -255,7 +257,13 @@ class PiperTTS:
         datos = tratar(await self._ejecutar_piper(para_voz(texto)))
         ms = (time.perf_counter() - t0) * 1000
 
-        if clave and datos:
+        # Una sintesis muda NO entra al cache. Si entrara, su firma quedaria correcta
+        # -- el texto no cambio -- y no se re-sintetizaria nunca: la locucion quedaria
+        # muda para siempre. Ver `tiene_voz`.
+        if clave and datos and not tiene_voz(datos):
+            log("sintesis_muda_no_cacheada", nivel="error", clave=clave,
+                bytes_devueltos=len(datos), texto=texto[:60])
+        elif clave and datos:
             (self.dir_cache / f"{clave}.wav").write_bytes(datos)
             self._memoria[clave] = datos
             self._anotar(clave, texto)
@@ -451,7 +459,12 @@ class PiperTTS:
 
                 if enfasis:
                     datos = tratar(await self._sintetizar_con_enfasis(loc.texto))
-                    if datos:
+                    if datos and not tiene_voz(datos):
+                        log("sintesis_muda_no_cacheada", nivel="error",
+                            clave=loc.clave, con_enfasis=True,
+                            bytes_devueltos=len(datos))
+                        datos = b""
+                    elif datos:
                         archivo.write_bytes(datos)
                         self._memoria[loc.clave] = datos
                         self._anotar(loc.clave, loc.texto, enfasis)
@@ -613,6 +626,29 @@ def tratar(wav: bytes) -> bytes:
 
 def silencio(ms: int, frecuencia: int = FRECUENCIA_OBJETIVO) -> np.ndarray:
     return np.zeros(int(frecuencia * ms / 1000), dtype=np.int16)
+
+
+def tiene_voz(wav: bytes) -> bool:
+    """Si la sintesis contiene algo audible. Lo que decide si se puede cachear.
+
+    **El fallo que evita, que es de los peores que puede tener este sistema.** Se
+    encontraron siete locuciones del guion en `data/audio_cache` reducidas a 0.200 s de
+    silencio digital exacto -- entre ellas `saludo`, `cierre_verde` y `cierre_amarillo` --
+    con su firma correcta en el manifiesto. Correcta: el manifiesto guarda de que TEXTO
+    salio el audio, y el texto no habia cambiado. Asi que el cache se consideraba vigente,
+    no se re-sintetizaba nunca, y el sistema habria abierto la llamada con un saludo mudo
+    sin una sola linea de log que lo llamara problema.
+
+    Piper devuelve silencio cuando su proceso persistente queda en mal estado -- pasa al
+    matar el servidor a la fuerza mientras sintetiza. La guarda de antes era
+    `if clave and datos:`, y un WAV de silencio son bytes perfectamente no vacios.
+
+    Se mide contra el mismo umbral con el que `recortar_silencio` decide que es silencio,
+    para que las dos funciones no puedan discrepar sobre la palabra.
+    """
+
+    datos, _frecuencia = _muestras(wav)
+    return bool(datos.size) and bool(np.any(np.abs(datos) > UMBRAL_SILENCIO * 32768))
 
 
 def concatenar_wav(trozos: list[bytes], pausa_ms: int = PAUSA_ENTRE_FRAGMENTOS_MS) -> bytes:

@@ -388,6 +388,7 @@ Una línea JSON por evento, en stderr, con `llamada_id` como campo de primera cl
 | `alerta_atendida` | Alguien acusó recibo | info |
 | `interrupcion_confirmada` | El paciente cortó al agente; con rms, umbral y eco | info |
 | `interrupcion_descartada` | Era una tos: el agente recupera la voz y sigue | info |
+| `interrupcion_sin_resolver` | La ventana era corta para decidir; se vuelve a mirar con más audio | info |
 | `turno_cerrado_por_completitud` | El turno cerró antes del techo, con el motivo | info |
 | `calibracion_recibida` | El cliente midió su sala (piso y umbral de voz) | info |
 | `llamada_cerrada_por_el_sistema` | Cierre forzado, con su motivo | info |
@@ -431,6 +432,46 @@ cubriría el caso del altavoz abierto a todo volumen, y no está.
 
 **Solapamiento real.** La interrupción es excluyente: uno de los dos calla. En una
 conversación humana hay medio segundo en que los dos hablan y ninguno se detiene.
+
+### El STT transcribe en CPU teniendo GPU (y no lo dice)
+
+Es el fallo más caro de detectar que ha tenido este sistema, porque **no produce ningún
+error**. La escalera de configuraciones de `stt/whisper.py` prueba `medium/cuda`,
+`small/cuda` y `small/cpu` en ese orden, con una inferencia real, y baja un peldaño cuando
+uno falla. Si CUDA falla, acaba en CPU y sigue atendiendo llamadas: más lento y con más
+error, sin una línea de log que lo llame problema.
+
+Cómo se comprueba, en un solo sitio:
+
+```bash
+curl -s localhost:8000/api/salud | python -c "import json,sys; s=json.load(sys.stdin)['stt']; print(s['modelo'], s['dispositivo'], 'degradado:', s['degradado_a_cpu'])"
+```
+
+`medium cuda/int8_float16 degradado: False` es lo esperado en una máquina con GPU. Si sale
+`small cpu/int8 degradado: True`, mira `intentos` en el mismo bloque: dice qué peldaño
+falló y con qué error.
+
+**La causa que ya ocurrió** fue `Library cublas64_12.dll is not found or cannot be loaded`
+en la primera inferencia, con la DLL presente en el disco. Viene en los wheels
+`nvidia-cublas-cu12` y `nvidia-cudnn-cu12`, y en Windows Python no la busca ahí:
+`habilitar_dlls_cuda()` pone esos directorios en el `PATH` del proceso antes de cargar el
+modelo. Si el diagnóstico vuelve, comprueba que los wheels estén instalados:
+
+```bash
+python -c "import sysconfig,pathlib; p=pathlib.Path(sysconfig.get_paths()['purelib'])/'nvidia'; print([d.name for d in p.iterdir()] if p.is_dir() else 'sin wheels de NVIDIA')"
+```
+
+**Sin GPU el sistema funciona, y no es equivalente.** Medido sobre las 18 grabaciones de
+`eval/audios`:
+
+| | latencia | WER medio | dato clínico mal | repreguntas |
+|---|---:|---:|---:|---:|
+| `medium` en GPU | 231 ms | 0.053 | 0 | 0 de 18 |
+| `small` en CPU | 1 054 ms | 0.126 | 1 | 1 de 18 |
+
+Se atiende igual: un peldaño más abajo es mejor que no atender. Pero el informe no debe
+publicar las cifras de GPU si la máquina está en CPU, y por eso `scripts/bench_voz.py`
+declara el dispositivo que midió.
 
 ### Un turno tarda segundos y el desglose por etapa no explica por qué
 
