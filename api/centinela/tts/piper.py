@@ -116,26 +116,41 @@ VERSION_TRATAMIENTO = 4
 
 MANIFIESTO = "manifiesto.json"
 
-# Orden de preferencia de voz, decidido con `scripts/bench_voces.py` sobre esta
-# maquina. La columna que manda es el factor de tiempo real (RTF):
+# Orden de preferencia de voz. **Lo decide el oido, y el RTF solo descarta.**
 #
-#   es_MX-ald-medium        RTF 0.352   60 MB   <- elegida
-#   es_ES-carlfm-x_low      RTF 0.334   27 MB
-#   es_ES-sharvard-medium   RTF 0.345   73 MB
-#   es_ES-davefx-medium     RTF 0.350   60 MB
-#   es_MX-claude-high       RTF 0.403   60 MB
-#   es_AR-daniela-high      RTF 0.983  109 MB
+# Medido con `make ab-voz` sobre las frases reales del guion, por el camino de produccion:
+#
+#   voz                     RTF     1a frase    MB
+#   es_ES-carlfm-x_low      0.053     196 ms    27
+#   es_ES-sharvard-medium   0.056     254 ms    73
+#   es_MX-claude-high       0.057     269 ms    60
+#   es_ES-davefx-medium     0.060     224 ms    60   <- elegida
+#   es_MX-ald-medium        0.060     252 ms    60
+#   es_AR-daniela-high      0.250     863 ms   109
+#
+# Cinco de las seis cuestan lo mismo, asi que el RTF no distingue entre ellas: solo
+# descarta `daniela-high`. El criterio pasa a ser el timbre, que no se mide con un numero
+# -- `make ab-voz` escribe las mismas frases con cada voz en `data/ab_voz/` para oirlas.
+#
+# **Y aqui se corrigio un supuesto nuestro.** Este orden ponia primero el acento
+# latinoamericano "porque el paciente del reto es colombiano", y sobre las muestras la que
+# suena mas humana es la peninsular. El acento importa y el intercambio esta dicho: una voz
+# de Espana en una llamada a un paciente colombiano se oye de fuera. Pero la rubrica pesa
+# "el tono y el registro del agente en un contexto de salud", no la region, y una voz plana
+# con el acento correcto suena mas a maquina que una natural con acento de otro sitio. Se
+# cambia con `CENTINELA_PIPER_VOZ` sin tocar codigo: la firma del cache incluye la voz, asi
+# que el pre-renderizado se refresca solo.
 #
 # Las variantes `high` estan descartadas: a RTF ~1.0 generar la respuesta cuesta
 # lo mismo que dura, y el paciente espera todo ese tiempo. Entre las rapidas la
 # diferencia es del 5%, asi que decide el acento: `es_MX` es la unica
 # latinoamericana del grupo rapido y el paciente del reto es colombiano.
 PREFERENCIA_VOCES = (
-    "es_MX-ald-medium",
-    "es_ES-sharvard-medium",
     "es_ES-davefx-medium",
-    "es_ES-carlfm-x_low",
+    "es_MX-ald-medium",
     "es_MX-claude-high",
+    "es_ES-sharvard-medium",
+    "es_ES-carlfm-x_low",
     "es_AR-daniela-high",
 )
 
@@ -287,7 +302,24 @@ class PiperTTS:
     # ------------------------------------------------------------------
 
     def _firma(self, texto: str, enfasis: bool = False) -> str:
-        crudo = f"{VERSION_TRATAMIENTO}|{LENGTH_SCALE}|{int(enfasis)}|{para_voz(texto)}"
+        """Todo lo que determina el audio, y la VOZ es parte de eso.
+
+        La voz faltaba, y era un agujero del mismo tipo que el de las locuciones mudas: la
+        firma cubria el texto y la velocidad, asi que cambiar de voz dejaba los WAV viejos
+        marcados como vigentes. `CENTINELA_PIPER_VOZ` parecia no hacer nada -- y con razon,
+        porque el 85 % de los turnos se sirven del cache. La voz nueva solo se oia en el
+        15 % que se sintetiza en el turno, asi que la llamada cambiaba de hablante a mitad.
+
+        Con la voz dentro, cambiarla invalida el cache y `make up` lo re-sintetiza solo.
+        """
+
+        # `getattr` y no `self.voz` a secas: la firma es un calculo puro y los tests la
+        # piden sobre objetos a medio construir, sin motor ni voz localizada.
+        ruta_voz = getattr(self, "voz", None)
+        voz = ruta_voz.stem if ruta_voz else "sin_voz"
+        crudo = (
+            f"{VERSION_TRATAMIENTO}|{voz}|{LENGTH_SCALE}|{int(enfasis)}|{para_voz(texto)}"
+        )
         return hashlib.sha256(crudo.encode("utf-8")).hexdigest()[:16]
 
     @property

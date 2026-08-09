@@ -1,0 +1,43 @@
+{
+  "por_que": "el catalogo de Piper en espanol tiene nueve voces y solo una es femenina y latinoamericana. Kokoro-82M es otra clase de modelo, trae voz femenina en espanol y corre sobre el onnxruntime que ya esta instalado.",
+  "el_acento_es_del_fonemizador": "espeak `es` es peninsular y dice 'θentinela'; `es-419` dice 'sentinela'. La voz es la misma y lo que cambia es la pronunciacion.",
+  "lo_que_no_mide": "el timbre. Para eso estan los WAV.",
+  "medidas": [
+    {
+      "motor": "piper",
+      "voz": "es_AR-daniela-high",
+      "mb_modelo": 108.9,
+      "ms_arranque": 8825.1,
+      "rtf_medio": 0.275,
+      "ms_primera_locucion": 3227.1,
+      "muestras_en": "data\\ab_voz\\piper_es_AR-daniela-high"
+    },
+    {
+      "motor": "piper",
+      "voz": "es_ES-davefx-medium",
+      "mb_modelo": 60.3,
+      "ms_arranque": 2471.3,
+      "rtf_medio": 0.069,
+      "ms_primera_locucion": 949.5,
+      "muestras_en": "data\\ab_voz\\piper_es_ES-davefx-medium"
+    },
+    {
+      "motor": "kokoro",
+      "voz": "ef_dora (es-419)",
+      "mb_modelo": 88.1,
+      "ms_arranque": 879.2,
+      "rtf_medio": 1.048,
+      "ms_primera_locucion": 14352.6,
+      "muestras_en": "data\\ab_voz\\kokoro_ef_dora_es419"
+    },
+    {
+      "motor": "kokoro",
+      "voz": "ef_dora (es)",
+      "mb_modelo": 88.1,
+      "ms_arranque": 883.4,
+      "rtf_medio": 1.052,
+      "ms_primera_locucion": 13337.8,
+      "muestras_en": "data\\ab_voz\\kokoro_ef_dora_es"
+    }
+  ]
+}

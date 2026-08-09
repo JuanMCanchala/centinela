@@ -11,6 +11,12 @@ data/runtime/
 data/subidas/
 data/muestras_voz/
 data/muestras_prosodia/
+# Las muestras del A/B de voz se regeneran con `make ab-voz` y `ab_voz_kokoro.py`: son
+# para oirlas, no para versionarlas.
+data/ab_voz/
+# El modelo de Kokoro son 88 MB y se descarga con `make kokoro`, igual que las voces de
+# Piper o los modelos de embeddings.
+data/kokoro/
 
 # --- artefactos pesados que se descargan, no se versionan ---
 # Modelos (2.6 GB): embeddings multilingual-e5-large y faster-whisper.
