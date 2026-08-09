@@ -121,6 +121,31 @@ RELLENO_PENSANDO = Locucion(
     "Permítame revisar eso un momento.",
 )
 
+# Lo que dice cuando el paciente se queda callado. La escalera y el porque de cada
+# peldano estan en `dialog/silencio.py`; aqui solo viven los textos.
+#
+# El registro importa: ninguna de las tres apura. Un paciente que tarda en contestar
+# suele estar dolorido, medicado o asustado, y "¿sigue ahi?" a los seis segundos es una
+# prisa que el agente no tiene derecho a tener.
+SILENCIO_ACOMPANAR = Locucion(
+    "silencio_acompanar",
+    "Tómese su tiempo. Sigo aquí.",
+)
+
+SILENCIO_COMPROBAR_LINEA = Locucion(
+    "silencio_comprobar_linea",
+    "No le escucho. ¿Sigue ahí?",
+)
+
+# No promete que llamara el equipo: promete que queda constancia. La llamada de vuelta la
+# decide una persona sobre el ticket, y prometer al paciente algo que decide otro seria
+# la clase de tranquilizacion que la rubrica penaliza.
+SILENCIO_CIERRE = Locucion(
+    "silencio_cierre",
+    "Parece que se cortó la comunicación. Dejo constancia de que su seguimiento quedó "
+    "a medias para que el equipo lo revise. Cuídese.",
+)
+
 ACEPTAR_TERCERO = Locucion(
     "aceptar_tercero",
     "Claro que sí, con mucho gusto. Cuénteme usted entonces.",
@@ -418,6 +443,7 @@ def todas_las_locuciones() -> list[Locucion]:
         SALUDO, CONFIRMACION_IDENTIDAD, TRANSICION_A_PREGUNTAS,
         CIERRE_VERDE, CIERRE_AMARILLO, CIERRE_ROJO,
         PEDIR_REPETIR, RELLENO_PENSANDO, ACEPTAR_TERCERO, FUERA_DE_MISION,
+        SILENCIO_ACOMPANAR, SILENCIO_COMPROBAR_LINEA, SILENCIO_CIERRE,
         INTENTO_MANIPULACION, SIN_INFORMACION, NO_SOY_MEDICO, INTERRUPCION_ROJA,
         RETOMAR_URGENCIA, CONFIRMAR_ENTENDIDO, CONFIRMAR_PREGUNTA,
         CONFIRMACION_ACEPTADA, CONFIRMACION_DESMENTIDA, ACUSE_CORRECCION,

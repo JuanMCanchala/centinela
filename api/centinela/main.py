@@ -49,12 +49,14 @@ from .clinical.thresholds import UMBRALES_ROJOS, BANDERAS_AMARILLAS
 from .clinical.triage_engine import TriageEngine
 from .config import config
 from .dialog import script as S
+from .dialog import silencio
 from .dialog.completitud import respuesta_completa
 from .dialog.policy import DialogPolicy, EstadoLlamada, Paciente
 from .escalation.despacho import Despachador, canales_desde_config
 from .escalation.service import (
     CIERRE_INTERRUMPIDA,
     CIERRE_REINICIO,
+    CIERRE_SILENCIO,
     CIERRE_SIN_CONTACTO,
     CIERRE_TIMEOUT,
     EscalationService,
@@ -1227,6 +1229,10 @@ async def correr_prueba(suite_id: str, peticion: Request) -> dict:
 
 FRECUENCIA_ESPERADA = 16000
 
+# La de salida de Piper, que no es la del microfono. Sirve para estimar cuanto tarda en
+# sonar lo que ya se envio (`CanalLlamada.anotar_voz_enviada`).
+FRECUENCIA_TTS = 22050
+
 # Cuanto audio mira la comprobacion de interrupcion. Se queda por debajo de los 2.0 s a
 # partir de los cuales el STT mete a silero delante del decoder: la pregunta que se
 # responde aqui -- "esto era voz o un portazo?" -- no necesita recorte por VAD, y
@@ -1303,6 +1309,7 @@ class CanalLlamada:
     tarea_voz: asyncio.Task | None = None
     tarea_cierre: asyncio.Task | None = None
     tarea_sospecha: asyncio.Task | None = None
+    tarea_silencio: asyncio.Task | None = None
 
     # Contabilidad de la voz del agente. `enviados` es lo que salio por el cable;
     # `dichos` es lo que el cliente confirma haber reproducido. No son lo mismo -- los
@@ -1318,6 +1325,39 @@ class CanalLlamada:
     # medicion; la decision se toma aqui.
     umbral_voz: float = 0.022
     ultima_voz_en: float = field(default_factory=time.perf_counter)
+
+    # Lo mismo, pero contando SOLO lo que se oyo con el suelo libre. Existe porque
+    # `ultima_voz_en` avanza tambien con el eco de la propia voz del agente, y el
+    # vigilante de silencio necesita medir desde que hablo el PACIENTE.
+    #
+    # Sin esta separacion el vigilante se muerde la cola: dice "tomese su tiempo", el eco
+    # de esa frase mueve `ultima_voz_en`, la escalera se reinicia, y a los seis segundos
+    # lo vuelve a decir -- para siempre, sin llegar nunca al peldano que cierra.
+    ultima_voz_libre_en: float = field(default_factory=time.perf_counter)
+
+    # El cliente dijo que abrio el microfono. Hasta entonces el vigilante de silencio no
+    # cuenta: mientras suena el saludo -- que va por HTTP, no por este socket -- el
+    # servidor no tiene la palabra y no distingue "callado" de "todavia hablando".
+    escucha_abierta: bool = False
+
+    # Y cuando lo dijo. Son dos hechos distintos y confundirlos costo un fallo entero:
+    # "el microfono esta abierto" no es "el paciente hablo". La primera version reiniciaba
+    # la escalera de silencio con este mensaje, y como el cliente lo manda tambien despues
+    # de oir cada peldano, el agente repetia "tomese su tiempo" cada seis segundos sin
+    # avanzar nunca -- siete veces en 45 s, medido.
+    escucha_abierta_en: float = 0.0
+
+    # Cuando el agente acabo de ENVIAR voz, y cuanto audio mando. Con esas dos cosas el
+    # servidor puede soltar el suelo por su cuenta si el cliente no confirma nunca.
+    #
+    # Hace falta porque `soltar_la_palabra` solo se llamaba desde `fin_reproduccion`, y
+    # eso es correcto -- el eco existe hasta que suena la ultima muestra, y solo el
+    # cliente lo sabe -- pero deja al servidor a merced de que el cliente conteste. Un
+    # navegador que se cuelga a media locucion dejaba al agente con la palabra para
+    # siempre: sin eco que interpretar, sin turno posible, y con el vigilante de silencio
+    # desactivado, que es justo la red que tenia que cubrir a un paciente que no responde.
+    voz_enviada_en: float = 0.0
+    segundos_voz_enviada: float = 0.0
     interrupciones: int = 0
     cerrado: bool = False
 
@@ -1396,6 +1436,18 @@ class CanalLlamada:
         self.candidato.clear()
 
     # ------------------------------------------------------------------
+
+    def anotar_voz_enviada(self, bytes_wav: int) -> None:
+        """Cuanto audio se acaba de enviar, para saber cuanto puede tardar en sonar.
+
+        La duracion se estima de los bytes: WAV de 16 bits mono a la frecuencia de Piper.
+        Sale algo de mas porque cada frase lleva su cabecera de 44 bytes, y de mas es el
+        lado correcto: la estimacion se usa para decidir cuando el cliente ya deberia
+        haber terminado, y pasarse tarde solo cuesta un poco de espera.
+        """
+
+        self.voz_enviada_en = time.perf_counter()
+        self.segundos_voz_enviada = bytes_wav / 2 / FRECUENCIA_TTS
 
     def detener_voz(self) -> None:
         for tarea in (self.tarea_voz, self.tarea_cierre):
@@ -1519,6 +1571,7 @@ async def _emitir_voz(canal: CanalLlamada, accion, primeras: list[bytes]) -> int
 
     await canal.enviar_json({"tipo": "fin_voz", "bytes": total,
                              "fragmentos": canal.fragmentos_enviados})
+    canal.anotar_voz_enviada(total)
 
     # La llamada cuelga cuando el paciente ACABA DE OIR, no cuando el servidor decide.
     #
@@ -1648,6 +1701,9 @@ async def _atender_fin_habla(canal: CanalLlamada) -> None:
     # Se cierra el episodio de escucha: cualquier decision de cierre adaptativo que
     # venga en camino sobre este mismo audio queda invalidada.
     canal.episodio += 1
+    # Y el microfono ya no esta abierto: el paciente hablo y ahora se le contesta. El
+    # vigilante de silencio vuelve a contar cuando el cliente diga que reabrio.
+    canal.escucha_abierta = False
 
     crono.medicion.tras_interrupcion = canal.tras_interrupcion
     crono.medicion.ms_silencio_al_cerrar = round(canal.ms_silencio_al_cerrar, 1)
@@ -1742,6 +1798,10 @@ async def _encaminar_audio(canal: CanalLlamada, crudo: bytes) -> None:
 
         if nivel > canal.umbral_voz:
             canal.ultima_voz_en = time.perf_counter()
+            # El suelo libre es la condicion que distingue voz del paciente de eco del
+            # agente: mientras el detector vigila, lo que entra es eco por definicion.
+            if not (config.bargein and canal.detector.escuchando_el_suelo):
+                canal.ultima_voz_libre_en = canal.ultima_voz_en
 
         if config.bargein and canal.detector.escuchando_el_suelo:
             veredicto = canal.detector.observar(nivel, ms)
@@ -1942,6 +2002,212 @@ async def _muletilla_pensando() -> bytes:
     return audio.wav
 
 
+# ==========================================================================
+# El paciente se queda callado
+#
+# La escalera de peldanos y el porque de cada uno estan en `dialog/silencio.py`. Aqui
+# vive lo que este archivo sabe y ese modulo no: quien tiene la palabra, si hay un turno
+# en vuelo, y como se cierra una llamada.
+# ==========================================================================
+
+TICK_SILENCIO_S = 0.5
+
+# Cuanto se espera, por encima de lo que dura el audio enviado, a que el cliente confirme
+# que ya sono. Pasado eso el servidor suelta el suelo por su cuenta.
+#
+# Tres segundos y no medio: la cola del cliente encadena las frases con una pausa entre
+# ellas y el navegador puede ir por detras en una maquina cargada. Soltar el suelo antes
+# de tiempo tendria un precio real -- el eco de la propia voz del agente entraria como
+# turno del paciente -- asi que este margen se equivoca del lado de esperar.
+MARGEN_CONFIRMACION_S = 3.0
+
+
+def _soltar_suelo_si_el_cliente_callo(canal: CanalLlamada) -> bool:
+    """Suelta el suelo cuando el cliente no confirmo y ya no puede estar sonando.
+
+    `fin_reproduccion` sigue siendo la senal buena y la que manda un cliente sano. Esto
+    es la red por debajo: sin ella, un navegador que se cuelga a media locucion deja al
+    agente con la palabra para siempre, y con ella se cae tambien el vigilante de
+    silencio -- la red que tenia que cubrir precisamente a quien no responde.
+    """
+
+    soltado = False
+    if canal.detector.escuchando_el_suelo and canal.voz_enviada_en:
+        de_mas = (
+            time.perf_counter() - canal.voz_enviada_en - canal.segundos_voz_enviada
+        )
+        if de_mas > MARGEN_CONFIRMACION_S:
+            log("suelo_liberado_sin_confirmacion", nivel="aviso",
+                llamada_id=canal.llamada_id,
+                s_audio=round(canal.segundos_voz_enviada, 1),
+                s_de_mas=round(de_mas, 1))
+            canal.detector.soltar_la_palabra()
+            canal.anillo.clear()
+            canal.voz_enviada_en = 0.0
+            canal.escucha_abierta = True
+            canal.ultima_voz_libre_en = time.perf_counter()
+            soltado = True
+    return soltado
+
+
+async def _decir_por_silencio(canal: CanalLlamada, locucion) -> int:
+    """Dice una locucion del guion sin que sea un turno.
+
+    No pasa por `_emitir_voz` porque no hay decision clinica, no hay fragmentos y no hay
+    nada que anotar en el registro: es el agente acompanando una pausa. Si toma la
+    palabra, porque sin tomarla el detector trataria el eco de esta misma frase como si
+    el paciente hubiera empezado a hablar.
+
+    Y se guarda en `tarea_voz` para que un turno que arranque a media frase la cancele,
+    igual que cancela cualquier otra voz del agente. Sin eso, el "tomese su tiempo" del
+    peldano seguiria sonando por encima de la respuesta a lo que el paciente acaba de
+    decir.
+    """
+
+    total = 0
+    canal.escucha_abierta = False
+    if config.bargein:
+        canal.detector.tomar_la_palabra(emite_voz=True)
+
+    frases = await _voz_del_fragmento(E["tts"], locucion)
+    ultima = len(frases) - 1
+    for j, wav in enumerate(frases):
+        await canal.enviar_json({
+            "tipo": "voz",
+            "fragmento": 0,
+            "frase": j,
+            "texto": locucion.texto,
+            "papel": "acompanamiento",
+            "fin_fragmento": j == ultima,
+            "ultimo": j == ultima,
+        })
+        await canal.enviar_bytes(wav)
+        total += len(wav)
+
+    await canal.enviar_json({"tipo": "fin_voz", "bytes": total, "fragmentos": 1})
+    canal.anotar_voz_enviada(total)
+    return total
+
+
+def _locucion_del_peldano(canal: CanalLlamada, accion: str):
+    """Que se dice en cada peldano. `None` significa que no se dice nada.
+
+    La repregunta no inventa texto: usa el `reintento` del dominio que esta abierto, que
+    es la misma frase que el agente usaria si la respuesta hubiera llegado incompleta. Si
+    no hay dominio abierto -- por ejemplo en la confirmacion de identidad -- se acompana
+    otra vez en vez de callar, porque callar es lo que ya no funciono.
+    """
+
+    dicho = None
+    if accion == silencio.ACOMPANAR:
+        dicho = S.SILENCIO_ACOMPANAR
+    elif accion == silencio.REPREGUNTAR:
+        abierto = canal.policy.dominio_abierto
+        pregunta = S.PREGUNTA_POR_DOMINIO.get(abierto) if abierto else None
+        dicho = pregunta.reintento if pregunta else S.SILENCIO_ACOMPANAR
+    elif accion == silencio.COMPROBAR_LINEA:
+        dicho = S.SILENCIO_COMPROBAR_LINEA
+    elif accion == silencio.CERRAR:
+        dicho = S.SILENCIO_CIERRE
+    return dicho
+
+
+async def _cerrar_por_silencio(canal: CanalLlamada) -> None:
+    """Cierra la llamada que el paciente dejo a medias.
+
+    Dos cierres distintos, y la distincion ya existia en el servicio de escalamiento:
+
+    - Sin un solo turno del paciente no hay nada que triar. Es un intento de contacto
+      fallido, va como `sin_contacto` y NO entra en la bandeja clinica: una bandeja con
+      ruido es una bandeja que nadie lee.
+    - Con turnos, el motor cierra por su cuenta -- AMARILLO si quedan dominios sin
+      preguntar, porque no se puede descartar lo que no se llego a preguntar -- y el
+      motivo dice que fue el silencio del paciente, no un fallo de red.
+    """
+
+    hubo_contacto = len(canal.policy.turnos) > 0
+    motivo = CIERRE_SILENCIO if hubo_contacto else CIERRE_SIN_CONTACTO
+    log("cierre_por_silencio", llamada_id=canal.llamada_id, motivo=motivo,
+        turnos=len(canal.policy.turnos), hubo_contacto=hubo_contacto)
+    await asyncio.to_thread(_forzar_cierre, canal.llamada_id, canal.policy, motivo)
+    await canal.enviar_json({"tipo": "fin_llamada", "motivo": motivo})
+
+
+async def _vigilar_silencio(canal: CanalLlamada) -> None:
+    """Mira cada medio segundo si el paciente lleva demasiado sin decir nada.
+
+    Corre como tarea porque el bucle del socket esta bloqueado en `receive()`: sin nadie
+    mirando el reloj, un paciente que se queda callado dejaba la llamada abierta hasta
+    que el barredor de inactividad la cerraba a los 180 s, sin que el agente dijera una
+    palabra ni el registro explicara por que.
+
+    Tres condiciones para que el reloj corra, y las tres son necesarias:
+
+    - `escucha_abierta`: el cliente dijo que abrio el microfono. Mientras suena el saludo
+      -- que va por HTTP -- el servidor no tiene la palabra y no puede distinguir un
+      paciente callado de un agente que todavia habla.
+    - el suelo libre: si el detector vigila, el agente esta hablando.
+    - sin turno en vuelo: el paciente ya hablo y se le esta contestando.
+    """
+
+    dados = 0
+    marca_voz = canal.ultima_voz_libre_en
+    marca_turnos = len(canal.policy.turnos)
+    desde = time.perf_counter()
+
+    while not canal.cerrado:
+        await asyncio.sleep(TICK_SILENCIO_S)
+
+        # La red de seguridad va primero y corre siempre, tambien con la escalera
+        # apagada: no depende de la conducta ante el silencio, la habilita.
+        if _soltar_suelo_si_el_cliente_callo(canal):
+            desde = time.perf_counter()
+
+        # La escalera se reinicia cuando el paciente da senales de estar ahi: se le oye
+        # algo con el suelo libre, o lo que dijo llego a ser un turno. Y SOLO entonces --
+        # que el microfono se reabra no es una senal del paciente, es una del cliente.
+        hablo = canal.ultima_voz_libre_en != marca_voz
+        turno_nuevo = len(canal.policy.turnos) != marca_turnos
+        if hablo or turno_nuevo:
+            marca_voz = canal.ultima_voz_libre_en
+            marca_turnos = len(canal.policy.turnos)
+            desde = time.perf_counter()
+            dados = 0
+
+        # El hueco que se le concede empieza cuando el microfono se reabrio, no antes: el
+        # tiempo que el agente pasa hablando no cuenta como silencio del paciente.
+        if canal.escucha_abierta_en > desde:
+            desde = canal.escucha_abierta_en
+
+        libre = (
+            config.silencio
+            and canal.escucha_abierta
+            and not canal.detector.escuchando_el_suelo
+            and not canal.ocupado
+            and canal.policy.fase is not EstadoLlamada.TERMINADA
+        )
+        if libre:
+            peldano = silencio.siguiente(time.perf_counter() - desde, dados)
+            if peldano is not None:
+                dados += 1
+                desde = time.perf_counter()
+                log("silencio_del_paciente", llamada_id=canal.llamada_id,
+                    peldano=dados, accion=peldano.accion,
+                    total_s=round(silencio.segundos_acumulados(dados - 1), 1))
+                if peldano.accion == silencio.CERRAR:
+                    locucion = _locucion_del_peldano(canal, peldano.accion)
+                    if locucion is not None:
+                        await _decir_por_silencio(canal, locucion)
+                    await _cerrar_por_silencio(canal)
+                else:
+                    locucion = _locucion_del_peldano(canal, peldano.accion)
+                    if locucion is not None:
+                        canal.detener_voz()
+                        canal.tarea_voz = asyncio.create_task(
+                            _decir_por_silencio(canal, locucion)
+                        )
+
+
 @app.websocket("/ws/llamada/{llamada_id}")
 async def ws_llamada(ws: WebSocket, llamada_id: str) -> None:
     """Canal de audio bidireccional.
@@ -2036,6 +2302,10 @@ async def ws_llamada(ws: WebSocket, llamada_id: str) -> None:
             "dominio_abierto": policy.dominio_abierto,
         })
 
+    # Siempre, no solo con la escalera de silencio encendida: esta tarea lleva tambien la
+    # red que suelta el suelo cuando el cliente deja de confirmar.
+    canal.tarea_silencio = asyncio.create_task(_vigilar_silencio(canal))
+
     try:
         while True:
             mensaje = await ws.receive()
@@ -2078,7 +2348,7 @@ async def ws_llamada(ws: WebSocket, llamada_id: str) -> None:
         # huerfana seguiria sintetizando y escribiendo a un socket muerto.
         canal.cerrado = True
         canal.detener_voz()
-        for tarea in (canal.tarea_turno, canal.tarea_sospecha):
+        for tarea in (canal.tarea_turno, canal.tarea_sospecha, canal.tarea_silencio):
             if tarea is not None and not tarea.done():
                 tarea.cancel()
 
@@ -2114,6 +2384,19 @@ async def _atender_control(canal: CanalLlamada, evento: dict) -> bool:
         # adaptativo se adelanto al techo de 900 ms del cliente.
         if not canal.ocupado:
             canal.tarea_turno = asyncio.create_task(_atender_fin_habla(canal))
+
+    elif tipo == "escuchando":
+        # El cliente abrio el microfono: acabo de sonar lo que tenia que sonar y el turno
+        # es del paciente. Es la senal que arranca el reloj del silencio.
+        #
+        # Hace falta que lo diga el cliente porque el saludo y el camino HTTP suenan por
+        # su `<audio>` y no por este socket: ahi el servidor no tiene la palabra, no ve
+        # eco, y su reloj arrancaria mientras el agente todavia habla.
+        # Se anota CUANDO se abrio, no se toca el reloj de la voz del paciente: el hueco
+        # que se le concede empieza aqui, pero la escalera solo se reinicia cuando el
+        # paciente dice algo de verdad.
+        canal.escucha_abierta = True
+        canal.escucha_abierta_en = time.perf_counter()
 
     elif tipo == "calibracion":
         # El cliente midio el ruido de su sala. Es una medicion, no una decision: el

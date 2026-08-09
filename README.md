@@ -273,7 +273,7 @@ responde baja a `small` en CUDA y luego a CPU. Lo que se cargó de hecho lo dice
 Dos decisiones sostienen el presupuesto:
 
 **El guion va en caché.** La conversación la conduce una máquina de estados sobre seis
-dominios, así que las **59 locuciones** que el agente puede decir se conocen antes de que
+dominios, así que las **62 locuciones** que el agente puede decir se conocen antes de que
 suene el teléfono. Se sintetizan al arrancar y se sirven desde disco; la proporción de
 turnos servidos así es la que aparece arriba, medida, no estimada.
 
@@ -365,7 +365,7 @@ clasificador aislado. Resultado: **42/42**.
 - Intentos de manipulación resistidos: **11/11**
 - Casos donde la criticidad bajó porque el paciente lo pidió: **0**
 
-Más `make test`: **716 tests**, que incluyen cero falsos positivos de manipulación sobre
+Más `make test`: **746 tests**, que incluyen cero falsos positivos de manipulación sobre
 turnos textuales del dataset oficial. Ese grupo importa tanto como el primero: un agente
 que acusa a un paciente asustado de intentar manipularlo es inservible.
 
@@ -405,6 +405,58 @@ número para el dolor, una temperatura, un sí/no—, el turno cierra a los 450 
 `make escucha` sobre las 18 grabaciones reales: **11 de 18 cierran a 450 ms**, y las 7
 restantes esperan el techo por un motivo que el arnés imprime, no por descarte. La métrica
 que el paciente sufre no se movió: **0 de 18 turnos obligan a repreguntar**.
+
+### Cuando el paciente se queda callado
+
+La rúbrica lo pide dentro de *Calidad de la conversación*: «la latencia de la conversación
+(...) y **qué hace tu solución durante los silencios**». Lo que hacía era nada. El VAD del
+navegador no cerraba nunca, el turno quedaba abierto, y la llamada duraba hasta que el
+barredor de inactividad la cerraba a los 180 s: tres minutos de nadie diciendo nada y un
+registro clínico que no explicaba por qué.
+
+**Callar es la primera respuesta correcta, no la ausencia de una.** Un paciente en el
+tercer día de un postoperatorio piensa despacio —le duele, está medicado, y muchas veces
+es mayor—, y pisar esa pausa es el error que la literatura de agentes de voz nombra por su
+cuenta. Así que el primer peldaño de la escalera es esperar:
+
+| Silencio | Qué hace | Por qué |
+|---:|---|---|
+| 0–6 s | nada | Es una pausa, no un silencio. |
+| 6 s | *«Tómese su tiempo. Sigo aquí.»* | Quita presión; no la añade. |
+| 14 s | repregunta lo mismo con otras palabras | Puede que la pregunta no se entendiera. |
+| 25 s | *«No le escucho. ¿Sigue ahí?»* | Ya no parece que esté pensando. |
+| 40 s | cierra, y deja constancia | La valoración quedó incompleta. |
+
+Los plazos son **de silencio del paciente**: lo que el agente tarda en decir cada peldaño
+no cuenta contra el siguiente. Medido con `make silencio`, la escalera completa sale en
+**6.0 · 14.5 · 25.5 · 40.6 s** y cierra con motivo `silencio_del_paciente`.
+
+Lo clínicamente importante es el último peldaño, y no es una decisión de conversación: **un
+paciente que deja de responder no es una llamada que salió bien.** El motor ya cerraba en
+AMARILLO cuando quedaban dominios sin preguntar —no se puede descartar lo que no se llegó
+a preguntar— así que el silencio hereda esa conducta sin inventar una alerta nueva. Lo que
+se añade es el motivo, y la hoja de traspaso abre con él:
+
+```
+=== SEGUIMIENTO ===
+
+ATENCION: el paciente dejo de contestar a mitad de la llamada. La valoracion
+quedo incompleta -- lo que aparezca abajo como NO REPORTADO no esta descartado,
+esta sin preguntar.
+```
+
+Y lo que **no** hace: no escala a rojo por callarse. Un silencio no es un síntoma. Sin un
+solo turno del paciente el cierre es el otro —`sin_contacto`, fuera de la bandeja clínica—
+porque a alguien con quien no se habló no se le puede hacer triaje.
+
+Esto destapó un fallo que llevaba tiempo ahí. `soltar_la_palabra()` solo se llamaba desde
+la confirmación del cliente, y eso es correcto —el eco existe hasta que suena la última
+muestra, y solo el cliente lo sabe— pero dejaba al servidor a merced de que el cliente
+contestara. **Un navegador que se cuelga a media locución dejaba al agente con la palabra
+para siempre**: sin eco que interpretar, sin turno posible, y con el vigilante de silencio
+desactivado — la red que tenía que cubrir precisamente a quien no responde. Ahora el
+servidor estima cuánto puede tardar en sonar lo que envió y suelta el suelo por su cuenta
+si nadie confirma.
 
 ### Confirmar lo entendido, y aceptar una corrección
 
@@ -743,7 +795,7 @@ ejecuta exactamente estos comandos como subprocesos. El veredicto es su código 
 así que no hay una segunda implementación dentro del panel.
 
 ```bash
-make test        # 716 tests unitarios y de regresión
+make test        # 746 tests unitarios y de regresión
 make eval        # 160 casos oficiales · cero falsos negativos clínicos
 make redteam     # 43 casos adversariales (requiere la API levantada)
 make humo        # 103 comprobaciones de extremo a extremo (requiere la API levantada)

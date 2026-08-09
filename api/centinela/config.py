@@ -122,6 +122,15 @@ class Config:
         os.environ.get("CENTINELA_GRACIA_RECONEXION_S", "20")
     )
 
+    # Que el agente reaccione cuando el paciente se queda callado, en vez de esperar en
+    # silencio hasta que el barredor de inactividad cierre la llamada a los 180 s. La
+    # escalera de peldanos y el porque de cada uno estan en `dialog/silencio.py`.
+    #
+    # A `0` la conducta es la de antes: nadie dice nada y la llamada dura lo que dure. Se
+    # deja el mando porque los arneses que miden latencia no quieren un agente hablando
+    # solo entre turnos.
+    silencio: bool = os.environ.get("CENTINELA_SILENCIO", "1") == "1"
+
     @property
     def ruta_metricas(self) -> Path:
         return self.dir_runtime / "metricas.jsonl"
@@ -169,6 +178,7 @@ class Config:
                 "cierre_adaptativo": self.cierre_adaptativo,
                 "cierre_min_ms": self.cierre_min_ms,
                 "gracia_reconexion_s": self.gracia_reconexion_s,
+                "silencio": self.silencio,
             },
             "acceso_protegido": bool(self.token_consola),
         }

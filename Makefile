@@ -193,6 +193,12 @@ redteam:
 humo:
 	$(PY) -m eval.humo
 
+# Que hace el agente cuando el paciente se calla. Tarda un minuto largo a proposito: la
+# escalera son 40 s de silencio y hay que verla entera, incluido el cierre.
+.PHONY: silencio
+silencio:
+	$(PY) -m eval.silencio
+
 # Congela las metricas de ejecucion (§5 de la rubrica) desde la API en marcha.
 # Correr DESPUES de `make humo` y sobre un servidor recien arrancado; el porque
 # esta en scripts/medir_runtime.py.

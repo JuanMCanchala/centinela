@@ -392,6 +392,9 @@ Una línea JSON por evento, en stderr, con `llamada_id` como campo de primera cl
 | `interrupcion_descartada` | Era una tos: el agente recupera la voz y sigue | info |
 | `interrupcion_sin_resolver` | La ventana era corta para decidir; se vuelve a mirar con más audio | info |
 | `turno_cerrado_por_completitud` | El turno cerró antes del techo, con el motivo | info |
+| `silencio_del_paciente` | Un peldaño de la escalera de silencio, con cuál y a los cuántos segundos | info |
+| `cierre_por_silencio` | El paciente dejó de contestar y la llamada se cerró, con el motivo que va a la hoja | info |
+| `suelo_liberado_sin_confirmacion` | El cliente no confirmó que la voz sonó y el servidor soltó el suelo por su cuenta | aviso |
 | `calibracion_recibida` | El cliente midió su sala (piso y umbral de voz) | info |
 | `llamada_cerrada_por_el_sistema` | Cierre forzado, con su motivo | info |
 | `llamada_cerrada_por_inactividad` | Expiró el plazo sin turnos | info |

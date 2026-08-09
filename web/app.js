@@ -1089,12 +1089,23 @@ const ETIQUETA_FASE = {
 };
 
 function fase(nueva) {
+  const cambia = voz.fase !== nueva;
   voz.fase = nueva;
   const btn = $("#btn-mic");
   btn.classList.toggle("grabando", nueva === "hablando");
   btn.classList.toggle("escuchando", nueva === "escuchando");
   btn.classList.toggle("agente", nueva === "agente");
   $("#mic-fase").textContent = ETIQUETA_FASE[nueva] || nueva;
+  // El servidor no puede saber por su cuenta cuándo se abre el micrófono. El saludo y el
+  // camino HTTP suenan por el `<audio>`, no por el socket, así que ahí el servidor no
+  // tiene la palabra y su reloj de silencio arrancaría mientras el agente todavía habla:
+  // a los seis segundos le diría al paciente «tómese su tiempo» encima del saludo.
+  //
+  // Es la misma lección que `fin_reproduccion`: quien sabe cuándo el audio ya sonó de
+  // verdad es el cliente, no el que lo envió.
+  if (cambia && nueva === "escuchando" && estado.ws?.readyState === WebSocket.OPEN) {
+    estado.ws.send(JSON.stringify({ tipo: "escuchando" }));
+  }
 }
 
 function infoVoz(texto) {

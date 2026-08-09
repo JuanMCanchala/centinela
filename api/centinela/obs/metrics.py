@@ -89,6 +89,12 @@ class Cronometro:
         self.medicion = MedicionTurno(llamada_id=llamada_id, turno_idx=turno_idx)
         self._t_inicio = time.perf_counter()
         self._marcas: dict[str, float] = {}
+        # Si `primer_audio()` se llamo. NO se deduce de que la cifra sea 0.0, y esa
+        # deduccion era un fallo: `round(0.004, 2)` es 0.0, asi que un turno servido del
+        # cache lo bastante rapido quedaba indistinguible de un turno que nunca marco el
+        # primer audio, y el cierre le escribia encima el total. Justo en la medida que la
+        # rubrica califica, y en el camino que sirve el 83 % de los turnos.
+        self._audio_marcado = False
 
     def inicia(self, etapa: str) -> None:
         self._marcas[etapa] = time.perf_counter()
@@ -109,10 +115,11 @@ class Cronometro:
         self.medicion.ms_hasta_primer_audio = round(
             (time.perf_counter() - self._t_inicio) * 1000, 2
         )
+        self._audio_marcado = True
 
     def cerrar(self) -> MedicionTurno:
         self.medicion.ms_total = round((time.perf_counter() - self._t_inicio) * 1000, 2)
-        if self.medicion.ms_hasta_primer_audio == 0.0:
+        if not self._audio_marcado:
             self.medicion.ms_hasta_primer_audio = self.medicion.ms_total
         return self.medicion
 

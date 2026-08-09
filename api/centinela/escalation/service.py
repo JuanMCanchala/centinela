@@ -145,6 +145,33 @@ CIERRE_REINICIO = "reinicio"
 # volver a llamar, que es una tarea de operacion.
 CIERRE_SIN_CONTACTO = "sin_contacto"
 
+# El paciente hablo y despues dejo de contestar. Es el caso intermedio, y es distinto de
+# los dos vecinos: no es `sin_contacto` --hubo conversacion y hay hallazgos-- y no es
+# `interrumpida` --el canal nunca se cayo, el telefono seguia abierto--.
+#
+# Se separa porque cambia lo que hace quien lo lee. Ante `interrumpida` se asume un
+# problema tecnico; ante esto, que la valoracion quedo a medias con el paciente al otro
+# lado, que es exactamente el motivo por el que conviene volver a llamar. El nivel lo
+# sigue poniendo el motor: con dominios sin preguntar cierra en AMARILLO, porque no se
+# puede descartar lo que no se llego a preguntar.
+CIERRE_SILENCIO = "silencio_del_paciente"
+
+# Lo que la hoja de traspaso dice del cierre, cuando hay algo que decir. Escrito para
+# quien la lee con prisa: la frase tiene que responder "y entonces que hago yo".
+AVISO_DE_CIERRE = {
+    CIERRE_SILENCIO: (
+        "el paciente dejo de contestar a mitad de la llamada. La valoracion quedo "
+        "incompleta -- lo que aparezca abajo como NO REPORTADO no esta descartado, "
+        "esta sin preguntar."
+    ),
+    CIERRE_INTERRUMPIDA: (
+        "la llamada se corto sin cerrarse. Puede haber sido el paciente colgando o un "
+        "fallo de red; en cualquier caso el cuestionario no llego al final."
+    ),
+    CIERRE_TIMEOUT: "la llamada expiro por inactividad y la cerro el sistema.",
+    CIERRE_REINICIO: "el servicio se reinicio con la llamada abierta y la cerro al arrancar.",
+}
+
 PRIORIDAD_FHIR = {"rojo": "urgent", "amarillo": "routine", "verde": "routine"}
 
 DOMINIOS_RESUMEN = ("dolor", "fiebre", "movilidad", "herida", "apetito", "sueno")
@@ -382,7 +409,9 @@ class EscalationService:
 
             ticket = None
             if decision.escala and alertar:
-                ticket = self._crear_ticket(llamada_id, policy, decision, citas, resumen)
+                ticket = self._crear_ticket(
+                    llamada_id, policy, decision, citas, resumen, motivo
+                )
 
             for inc in policy.incidentes:
                 self._conn.execute(
@@ -538,10 +567,11 @@ class EscalationService:
         decision: TriageDecision,
         citas: list[dict],
         resumen: dict,
+        motivo: str = CIERRE_NORMAL,
     ) -> dict:
         ticket_id = f"TK-{llamada_id[:8]}-{decision.nivel.value[:1].upper()}"
         reglas = [r.model_dump() for r in decision.reglas_rojas + decision.banderas_amarillas]
-        hoja = self.hoja_legible(policy, decision, citas, llamada_id)
+        hoja = self.hoja_legible(policy, decision, citas, llamada_id, motivo)
         creado = datetime.now(timezone.utc).isoformat()
 
         # `INSERT OR REPLACE` reescribiria `estado` y `atendido_por`, y eso borraria
@@ -998,6 +1028,7 @@ class EscalationService:
         decision: TriageDecision,
         citas: list[dict],
         llamada_id: str = "",
+        motivo: str = CIERRE_NORMAL,
     ) -> str:
         p = policy.paciente
         e = policy.estado
@@ -1007,6 +1038,13 @@ class EscalationService:
         etiqueta = {"rojo": "ALERTA ROJA", "amarillo": "SEGUIMIENTO", "verde": "SIN HALLAZGOS"}
         L.append(f"=== {etiqueta[decision.nivel.value]} ===")
         L.append("")
+        # Como acabo la llamada, cuando no acabo bien. Va arriba, antes del cuadro,
+        # porque cambia como se lee todo lo de abajo: un "NO REPORTADO" en una llamada
+        # que el paciente dejo a medias no significa lo mismo que en una que termino. El
+        # cierre normal no se anuncia -- decir "termino bien" en cada hoja es ruido.
+        if motivo in AVISO_DE_CIERRE:
+            L.append(f"ATENCION: {AVISO_DE_CIERRE[motivo]}")
+            L.append("")
         L.append(f"Paciente      : {p.nombre}  (id {p.paciente_id})")
         L.append(f"Procedimiento : {p.procedimiento}  -  dia {p.dia_postop} postoperatorio")
         if p.edad is not None:
@@ -1160,8 +1198,12 @@ class EscalationService:
 
     def llamadas(self, limite: int = 50) -> list[dict]:
         filas = self._conn.execute(
+            # `cierre_motivo` va en el listado porque distingue una llamada que termino
+            # de una que se corto, y sin el la consola muestra las dos igual: un nivel
+            # verde de una llamada que el paciente abandono en el segundo turno se lee
+            # como "todo bien" cuando significa "no se llego a preguntar".
             "SELECT llamada_id, paciente_id, nombre, procedimiento, dia_postop,"
-            " iniciada_en, terminada_en, nivel_final, n_turnos"
+            " iniciada_en, terminada_en, nivel_final, n_turnos, cierre_motivo"
             " FROM llamadas ORDER BY iniciada_en DESC LIMIT ?",
             (limite,),
         ).fetchall()

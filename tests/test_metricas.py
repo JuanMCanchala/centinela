@@ -101,6 +101,37 @@ def test_marcar_el_primer_audio_congela_la_medida_de_la_rubrica() -> None:
     assert m.ms_total >= hasta_el_audio
 
 
+def test_un_turno_tan_rapido_que_mide_cero_sigue_valiendo_cero() -> None:
+    """El fallo que destapo una corrida en una maquina cargada, y que no era del test.
+
+    `cerrar()` decidia "nadie marco el primer audio" comprobando si la cifra era 0.0.
+    Pero `round(0.004, 2)` ES 0.0: un turno servido del cache lo bastante rapido quedaba
+    indistinguible de uno que nunca marco, y el cierre le escribia encima el total del
+    turno. En la medida que la rubrica califica, y en el camino que sirve el 83 % de los
+    turnos -- donde el P50 medido son 0.6 ms y el minimo 0.4 ms.
+
+    Se fuerza el caso extremo en vez de esperar a que la maquina lo produzca: un test que
+    solo falla cuando el equipo va rapido es un test que no protege nada.
+    """
+
+    marcado = Cronometro("ll1", 1)
+    marcado.medicion.ms_hasta_primer_audio = 0.0
+    marcado._audio_marcado = True
+
+    assert marcado.cerrar().ms_hasta_primer_audio == 0.0, (
+        "el cierre confundio 'marco cero' con 'no marco' y publico el total del turno"
+    )
+
+    # Y el caso complementario sigue funcionando: sin marca, el cierre rellena. Es lo que
+    # sostiene la medida de los turnos de texto, que no pasan por `primer_audio()`.
+    sin_marcar = Cronometro("ll2", 1)
+    with sin_marcar.etapa("extraccion"):
+        pass
+    cerrado = sin_marcar.cerrar()
+
+    assert cerrado.ms_hasta_primer_audio == cerrado.ms_total
+
+
 # ---------------------------------------------------------------- el resumen
 
 def test_sin_muestras_lo_dice_en_vez_de_inventar_ceros() -> None:
