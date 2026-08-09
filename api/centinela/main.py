@@ -1168,6 +1168,12 @@ async def correr_prueba(suite_id: str, peticion: Request) -> dict:
 # ==========================================================================
 
 FRECUENCIA_ESPERADA = 16000
+
+# Cuanto audio mira la comprobacion de interrupcion. Se queda por debajo de los 2.0 s a
+# partir de los cuales el STT mete a silero delante del decoder: la pregunta que se
+# responde aqui -- "esto era voz o un portazo?" -- no necesita recorte por VAD, y
+# evitarlo hace la comprobacion mas corta, que es justo lo que descongestiona la cola.
+MUESTRAS_A_COMPROBAR = int(1.8 * FRECUENCIA_ESPERADA)
 MAX_SEGUNDOS_TURNO = 60
 
 
@@ -1656,7 +1662,22 @@ async def _encaminar_audio(canal: CanalLlamada, crudo: bytes) -> None:
             if veredicto is Veredicto.SOSPECHA:
                 await canal.enviar_json({"tipo": "bajar_voz"})
             elif veredicto is Veredicto.COMPROBAR:
-                canal.tarea_sospecha = asyncio.create_task(_resolver_sospecha(canal))
+                # Una comprobacion a la vez. Sin esta guarda cada veredicto lanzaba su
+                # propia tarea y perdia la referencia a la anterior, que seguia
+                # transcribiendo el candidato -- que crece mientras el paciente habla.
+                #
+                # Medido sobre una llamada con 7.7 s de audio real: 55 invocaciones al
+                # STT y 172.6 s transcritos, 22 veces el audio que existia. El turno
+                # posterior a la interrupcion tardaba 7.9 s cuando transcribir ese mismo
+                # audio aislado cuesta 480 ms: el turno no era lento, competia por la GPU
+                # con veinte veces mas trabajo del necesario.
+                #
+                # Con la guarda: 3 invocaciones, 9.4 s transcritos, 531 ms el turno.
+                comprobando = (
+                    canal.tarea_sospecha is not None and not canal.tarea_sospecha.done()
+                )
+                if not comprobando:
+                    canal.tarea_sospecha = asyncio.create_task(_resolver_sospecha(canal))
         else:
             canal.sesion.agregar(muestras)
 
@@ -1674,7 +1695,14 @@ async def _resolver_sospecha(canal: CanalLlamada) -> None:
     positivo cuesta un bache de 250 ms en vez de un turno perdido.
     """
 
-    audio = canal.audio_candidato()
+    candidato = canal.audio_candidato()
+    # Para decidir "esto era voz" basta una ventana; no hace falta el candidato entero.
+    # La diferencia importa porque el candidato CRECE mientras el paciente habla, asi
+    # que comprobarlo completo cada vez hace el trabajo cuadratico: sobre una llamada
+    # con 7.7 s de audio real se llegaron a transcribir 172.6 s. Y el audio promovido al
+    # turno sigue siendo el candidato completo -- aqui solo se recorta lo que se MIRA,
+    # no lo que se guarda, asi que no se pierde ni una silaba del turno del paciente.
+    audio = candidato[-MUESTRAS_A_COMPROBAR:] if len(candidato) else candidato
     duracion = len(audio) / FRECUENCIA_ESPERADA
 
     if duracion < 0.2:

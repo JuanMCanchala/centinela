@@ -285,6 +285,8 @@ class WhisperSTT:
         self._vad = None
         self.validado = False
         self.intentos: list[dict] = []
+        self.invocaciones = 0
+        self.segundos_transcritos = 0.0
 
     @staticmethod
     def _leer_forzado(
@@ -446,6 +448,8 @@ class WhisperSTT:
             "dispositivo": f"{self.dispositivo}/{self.tipo_computo}",
             "cargado": self._modelo is not None,
             "validado_con_inferencia_real": self.validado,
+            "invocaciones": self.invocaciones,
+            "segundos_transcritos": round(self.segundos_transcritos, 1),
             "degradado_a_cpu": self.degradado_a_cpu,
             "configuracion_forzada": self._forzado is not None,
             # El historial de la escalera se publica: si la GPU no sirvio, el
@@ -510,6 +514,12 @@ class WhisperSTT:
 
         t0 = time.perf_counter()
         duracion = len(muestras) / frecuencia
+        # Contadores de invocacion. Existen porque sin ellos un turno lento no se puede
+        # diagnosticar: el modelo atiende de uno en uno, asi que la latencia de UN turno
+        # puede ser la cola de transcripciones que otro dejo encoladas. Con el desglose
+        # por etapa no se distingue "transcribir es lento" de "habia cola".
+        self.invocaciones += 1
+        self.segundos_transcritos += duracion
 
         if duracion < MIN_DURACION_S:
             return Transcripcion(

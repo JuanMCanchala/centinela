@@ -96,8 +96,8 @@ estos números son los mismos en cada corrida.
 
 Medidas por `obs/metrics.py` durante la ejecución real, congeladas con `make runtime` y
 escritas por `make metricas`. **Ninguna se escribe a mano**, porque la rúbrica advierte que
-lo reportado se contrasta con los logs de la sesión. Muestra: **70 turnos en 19 llamadas
-completas**, de las cuales **12 turnos entran por voz de verdad** —`make humo` sobre un
+lo reportado se contrasta con los logs de la sesión. Muestra: **42 turnos en 11 llamadas
+completas**, de las cuales **13 turnos entran por voz de verdad** —`make humo` sobre un
 servidor recién arrancado, más tres llamadas completas de `eval/conversacion_voz.py` con
 las grabaciones de voz humana de `eval/audios/`.
 
@@ -109,44 +109,58 @@ hasta que el primer byte de audio del agente sale hacia el navegador.*
 
 | Percentil | Latencia |
 |---|---:|
-| **P50** | **0.7 ms** |
-| **P95** | **2 457.2 ms** |
-| P99 | 10 885.9 ms |
+| **P50** | **1.0 ms** |
+| **P95** | **1 433.3 ms** |
+| P99 | 6 080.5 ms |
 
-El P50 es de milisegundos porque **86 % de los turnos se sirven desde el caché de audio
-pre-renderizado** (60 de 70): la conversación la conduce una máquina de estados, así que
-las locuciones del guion se conocen antes de que suene el teléfono.
+El P50 es de milisegundos porque **83 % de los turnos se sirven desde el caché de audio
+pre-renderizado**: la conversación la conduce una máquina de estados, así que las
+locuciones del guion se conocen antes de que suene el teléfono.
 
 Desglose por etapa, sobre la misma muestra:
 
 | Etapa | P50 | P95 | n |
 |---|---:|---:|---:|
-| Transcripción (Whisper) | **287.3 ms** | 9 909.9 ms | 12 |
-| Extracción clínica | **0.2 ms** | 6.4 ms | 70 |
-| Síntesis de voz (Piper) | **0.4 ms** | 772.1 ms | 70 |
+| Transcripción (Whisper) | **72.9 ms** | 730.2 ms | 13 |
+| Extracción clínica | **0.2 ms** | 0.5 ms | 42 |
+| Síntesis de voz (Piper) | **0.5 ms** | 1 085.7 ms | 42 |
 
-**De qué está hecha la cola, dicho con precisión.** El P95 del STT no es el coste de
-transcribir: es el **arranque en frío**. La primera inferencia de un servidor recién
-levantado carga los kernels de CUDA y tarda ~4 s de más; sobre esta muestra de 12 turnos
-con audio, esa primera contamina el percentil alto mientras la mediana —287 ms— es lo que
-el paciente vive en el resto de la llamada. Medido aparte sobre las 18 grabaciones de voz
-humana: **216–361 ms, RTF 0.16** con `medium` en `cuda/int8_float16`.
+**Estas tres cifras costaron dos correcciones, y las dos merecen contarse.**
 
-Esa distinción no es un matiz: hasta esta medición, el README decía *"el STT tarda 5.6 s
-en P50 sobre este equipo sin GPU"*. Las dos mitades eran falsas —hay CUDA, y son 287 ms—
-y la cifra venía de una muestra de **n = 2** en la que las dos únicas transcripciones eran
-arranques en frío. La muestra pasó de 31 turnos con 2 de audio a **70 turnos con 12 de
-audio**, corriendo `eval/conversacion_voz.py` con las grabaciones humanas además de
-`make humo`.
+La primera fue de medición. El README decía *"el STT tarda 5.6 s en P50 sobre este equipo
+sin GPU"*, y las dos mitades eran falsas: hay CUDA (`medium` en `cuda/int8_float16`,
+validada con inferencia real) y la mediana son decenas de milisegundos. Aquel 5.6 s venía
+de una muestra de **n = 2** cuyas dos únicas transcripciones eran arranques en frío. La
+muestra ahora trae 13 turnos con audio real.
+
+La segunda fue un defecto de verdad, y lo destapó justamente medir bien. Con la muestra
+arreglada, el P95 del STT seguía en **9 909 ms**, y los tres picos eran todos turnos
+posteriores a una interrupción. Contando invocaciones se vio por qué: **una llamada con
+7.7 s de audio real transcribía 172.6 s en 55 invocaciones** —22 veces el audio que
+existía—. Cada veredicto del detector de barge-in lanzaba su propia comprobación y perdía
+la referencia a la anterior, que seguía transcribiendo el candidato —y el candidato crece
+mientras el paciente habla, así que el trabajo total crecía con el cuadrado del número de
+veredictos. El turno no era lento: **competía por la GPU con veinte veces más trabajo del
+necesario**.
+
+Con una comprobación en vuelo a la vez, y mirando una ventana en vez del candidato
+completo, la misma llamada hace **3 invocaciones y transcribe 9.4 s**, y el turno tras la
+interrupción pasa de 7 852 ms a **531 ms**.
+
+El intercambio, dicho: los baches a −12 dB pasan de 0.00 a **0.23 por minuto** —uno cada
+cuatro minutos— porque mientras una comprobación está en vuelo el detector no puede lanzar
+otra y la voz se queda baja un poco más. Un bache baja el volumen 250 ms y el agente
+sigue; lo que nunca pasa es perder el turno, y eso sigue en **0 cortes falsos con 100 % de
+detección hasta −12 dB** (`make bargein`, tres corridas).
 
 **2. Consumo por turno y por llamada**
 
 | Métrica | Valor |
 |---|---:|
 | Tokens de entrada / salida por turno (P50) | **0 / 0** |
-| Tokens de entrada / salida por turno (media) | 103.8 / 3.4 |
-| Tokens de entrada / salida **por llamada** (media) | **382.5 / 12.7** |
-| Turnos por llamada (media) | 3.7 |
+| Tokens de entrada / salida por turno (media) | 109.3 / 2.8 |
+| Tokens de entrada / salida **por llamada** (media) | **415.4 / 10.8** |
+| Turnos por llamada (media) | 3.8 |
 
 **3. Invocaciones al modelo por turno** — **P50 = 0**, media 0.04, máximo 1. La mayoría de
 los turnos no llegan al modelo: si la regex ya extrajo el dolor y el léxico resolvió la
@@ -280,7 +294,7 @@ juzgarlo por oído.
 herida, no se invoca — de ahí que el P50 de invocaciones sea 0. La optimización quedó
 registrada en `eval/probar_tokens.py`, sobre un escenario fijo de seis turnos: **1359 → 672
 tokens de entrada por llamada**. Es un escenario fijo, distinto de la muestra de §5, así que
-su cifra no tiene por qué coincidir con los 382.5 tokens/llamada de arriba: son dos
+su cifra no tiene por qué coincidir con los 415.4 tokens/llamada de arriba: son dos
 mediciones de dos cosas distintas y las dos son reales.
 
 ### Suite adversarial
@@ -303,7 +317,7 @@ clasificador aislado. Resultado: **42/42**.
 - Intentos de manipulación resistidos: **11/11**
 - Casos donde la criticidad bajó porque el paciente lo pidió: **0**
 
-Más `make test`: **563 tests**, que incluyen cero falsos positivos de manipulación sobre
+Más `make test`: **565 tests**, que incluyen cero falsos positivos de manipulación sobre
 turnos textuales del dataset oficial. Ese grupo importa tanto como el primero: un agente
 que acusa a un paciente asustado de intentar manipularlo es inservible.
 
@@ -681,7 +695,7 @@ ejecuta exactamente estos comandos como subprocesos. El veredicto es su código 
 así que no hay una segunda implementación dentro del panel.
 
 ```bash
-make test        # 563 tests unitarios y de regresión
+make test        # 565 tests unitarios y de regresión
 make eval        # 160 casos oficiales · cero falsos negativos clínicos
 make redteam     # 43 casos adversariales (requiere la API levantada)
 make humo        # 103 comprobaciones de extremo a extremo (requiere la API levantada)

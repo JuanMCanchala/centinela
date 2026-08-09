@@ -224,3 +224,74 @@ async def test_finalizar_sin_audio_no_revienta() -> None:
     res = await s.finalizar()
 
     assert res.transcripcion is not None
+
+
+# ==========================================================================
+# La guarda de "una comprobación de interrupción a la vez"
+#
+# El modelo atiende de uno en uno, así que dos transcripciones concurrentes no van en
+# paralelo: la segunda espera. Medido sobre una llamada con 7.7 s de audio real, el
+# detector de barge-in lanzaba una comprobación por veredicto sin mirar si ya había otra
+# en vuelo: 55 invocaciones y 172.6 s transcritos — 22 veces el audio que existía — y el
+# turno posterior a la interrupción tardaba 7 852 ms cuando transcribir ese mismo audio
+# aislado cuesta 480 ms. El turno no era lento: esperaba la cola.
+#
+# La guarda vive en `main._atender_audio`, que necesita un WebSocket para probarse. Lo
+# que se prueba aquí es la propiedad que la hace necesaria y el patrón que la implementa,
+# porque es el que ya usaba `especular()` y el que no tenía la comprobación.
+# ==========================================================================
+
+def test_comprobar_un_candidato_que_crece_hace_el_trabajo_cuadratico() -> None:
+    """La causa medida, reproducida en pequeño.
+
+    El candidato de una interrupción crece mientras el paciente habla. Comprobarlo
+    completo en cada veredicto transcribe una y otra vez el mismo audio inicial: la suma
+    es cuadrática en el número de comprobaciones, no lineal.
+
+    Un primer intento de test afirmaba que dos `asyncio.to_thread` no van en paralelo, y
+    era falso: el executor tiene varios hilos y medido dan 0.121 s para dos de 0.12 s. La
+    latencia del turno no venía de un hilo bloqueado sino de **trabajo total**: 172.6 s
+    de audio transcrito para 7.7 s reales. Eso es lo que se prueba aquí.
+    """
+
+    stt_completo = STTFalso()
+    stt_ventana = STTFalso()
+    ventana = int(1.8 * FRECUENCIA)
+    candidato = np.array([], dtype=np.float32)
+
+    # Veinte veredictos, con el candidato creciendo 0.4 s cada vez: una interrupcion
+    # larga, que es donde el crecimiento se nota.
+    for _ in range(20):
+        candidato = np.concatenate([candidato, pcm(0.4)])
+        stt_completo.transcribir(candidato)
+        stt_ventana.transcribir(candidato[-ventana:])
+
+    audio_real = len(candidato) / FRECUENCIA
+    total_completo = sum(stt_completo.llamadas) / FRECUENCIA
+    total_ventana = sum(stt_ventana.llamadas) / FRECUENCIA
+
+    # Sin ventana, la ultima comprobacion mira el candidato entero y el total crece con
+    # el cuadrado del numero de veredictos.
+    assert max(stt_completo.llamadas) == len(candidato)
+    assert total_completo > 5 * audio_real
+
+    # Con ventana, ninguna comprobacion pasa de la ventana y el total crece lineal.
+    assert max(stt_ventana.llamadas) == ventana
+    assert total_ventana < total_completo
+
+
+def test_el_patron_de_la_guarda_es_el_mismo_que_ya_usaba_especular() -> None:
+    """Una tarea en vuelo se detecta con `is not None and not done()`.
+
+    Se comprueba sobre la guarda real de la sesión —`especular()` la tiene desde el
+    principio— para dejar constancia de cuál era el patrón que la comprobación de
+    interrupción no seguía.
+    """
+
+    import inspect
+
+    from centinela.stt import sesion as mod
+
+    fuente = inspect.getsource(mod.SesionTranscripcion.especular)
+
+    assert "done()" in fuente and "is not None" in fuente

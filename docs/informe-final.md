@@ -456,7 +456,7 @@ lo que **tiene que hacer** para lograrlo.
 Intentos de manipulación resistidos: **11/11**. Casos donde la criticidad bajó porque el
 paciente lo pidió: **0**.
 
-### Tests (`make test`) — 563/563
+### Tests (`make test`) — 565/565
 
 Incluye cero falsos positivos de manipulación sobre turnos textuales del dataset, la
 regresión del extractor malicioso, la verificación de que el resumen de cierre contiene los
@@ -654,7 +654,22 @@ de latencia.** Se listan aquí porque el hallazgo importa tanto como el arreglo.
 | Cronometrar el turno de G4 | `"hola sí soy yo"` costaba **2 385 ms y 301 tokens** invocando al modelo | Era el turno más lento del sistema y el primero que oye el jurado —G4 se verifica con *«saludo y una pregunta trivial»* | El turno de identidad no llega al modelo: por construcción no hay nada clínico que extraer. **6 ms** |
 | Apuntar el sistema a un Ollama muerto | La extracción llamaba al modelo sin `try/except`; una `ConnectError` rompía la llamada | El 94 % de los turnos no necesitan el modelo, y las reglas detectan una bandera roja sin él: caerse ahí era perder una llamada que podía atenderse | Degradación a las dos capas de reglas, anotada en la traza. Timeout de 60 s → 12 s y `keep_alive` para que Ollama no descargue el modelo |
 
-Dos de esos cuatro son del mismo tipo y conviene nombrarlo: **los 160 casos oficiales no
+**Y un quinto, que solo apareció por haber arreglado la medición.** Con la muestra de §5 ya
+honesta, el P95 del STT seguía en 9 909 ms y los tres picos eran todos turnos posteriores a
+una interrupción. Contando invocaciones —un contador que no existía— se vio la causa: una
+llamada con **7.7 s de audio real transcribía 172.6 s en 55 invocaciones**, 22 veces el
+audio que había. Cada veredicto del detector de barge-in lanzaba su comprobación y perdía la
+referencia a la anterior, que seguía transcribiendo un candidato que crece mientras el
+paciente habla: trabajo cuadrático. Con una comprobación en vuelo a la vez y una ventana en
+vez del candidato completo, la misma llamada hace **3 invocaciones y 9.4 s**, y ese turno
+pasa de **7 852 ms a 531 ms**.
+
+El intercambio se declara: los baches a −12 dB pasan de 0.00 a 0.23 por minuto, porque
+mientras una comprobación está en vuelo el detector no puede lanzar otra. Un bache baja la
+voz 250 ms y el agente sigue; los cortes falsos, que son los que pierden el turno, siguen
+en **0 con 100 % de detección hasta −12 dB**.
+
+Dos de esos cinco son del mismo tipo y conviene nombrarlo: **los 160 casos oficiales no
 podían encontrarlos**. Vienen con la cifra ya escrita (`"38.5"`), así que ejercitan el camino
 del decimal en dígitos. El error vivía en el camino de las palabras, que es el único que
 existe cuando alguien **habla**. Un dataset de texto no cubre un agente de voz.
@@ -750,7 +765,7 @@ make instalar && make ollama && make piper && make modelos
 make up                    # http://localhost:8000
 
 # en otra terminal
-make test                  # 563 tests
+make test                  # 565 tests
 make eval                  # 160 casos, cero falsos negativos
 make humo                  # 79 comprobaciones de extremo a extremo
 make redteam               # 43 casos adversariales

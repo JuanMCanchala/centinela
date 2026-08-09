@@ -407,3 +407,25 @@ cubriría el caso del altavoz abierto a todo volumen, y no está.
 
 **Solapamiento real.** La interrupción es excluyente: uno de los dos calla. En una
 conversación humana hay medio segundo en que los dos hablan y ninguno se detiene.
+
+### Un turno tarda segundos y el desglose por etapa no explica por qué
+
+Mira los contadores de invocación del STT en `GET /api/salud`:
+
+```
+"stt": { "invocaciones": 3, "segundos_transcritos": 9.4 }
+```
+
+Compáralos con el audio que de verdad hubo en la llamada. Si los segundos transcritos son
+mucho más que el audio real, el turno no es lento: **compite por la GPU con trabajo que no
+hacía falta**. El desglose por etapa no lo distingue, porque a la etapa `stt` de un turno le
+aparece el tiempo que otro dejó encolado.
+
+Es exactamente el defecto que estos contadores destaparon. Una llamada con **7.7 s de audio
+real transcribía 172.6 s en 55 invocaciones** —22 veces— porque cada veredicto del detector
+de barge-in lanzaba su propia comprobación sin mirar si ya había otra en vuelo, y cada una
+transcribía el candidato completo, que crece mientras el paciente habla. El turno posterior a
+la interrupción tardaba 7 852 ms cuando ese mismo audio, transcrito aislado, cuesta 480 ms.
+Con la guarda de una comprobación a la vez: 3 invocaciones, 9.4 s, y el turno en 531 ms.
+
+Los contadores existen por esto. Sin ellos el síntoma apunta al STT, que era inocente.
