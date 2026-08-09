@@ -456,7 +456,7 @@ lo que **tiene que hacer** para lograrlo.
 Intentos de manipulación resistidos: **11/11**. Casos donde la criticidad bajó porque el
 paciente lo pidió: **0**.
 
-### Tests (`make test`) — 759/759
+### Tests (`make test`) — 766/766
 
 Incluye cero falsos positivos de manipulación sobre turnos textuales del dataset, la
 regresión del extractor malicioso, la verificación de que el resumen de cierre contiene los
@@ -795,7 +795,7 @@ make instalar && make ollama && make piper && make modelos
 make up                    # http://localhost:8000
 
 # en otra terminal
-make test                  # 759 tests
+make test                  # 766 tests
 make eval                  # 160 casos, cero falsos negativos
 make humo                  # 79 comprobaciones de extremo a extremo
 make redteam               # 43 casos adversariales

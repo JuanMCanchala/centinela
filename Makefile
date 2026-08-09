@@ -199,6 +199,12 @@ humo:
 silencio:
 	$(PY) -m eval.silencio
 
+# Atribucion cruzada: preguntas que nombran la anatomia de OTRO procedimiento, hechas a
+# quien no lo tiene. El corpus tiene la respuesta buena y esta prohibido usarla.
+.PHONY: atribucion
+atribucion:
+	$(PY) -m eval.atribucion
+
 # Congela las metricas de ejecucion (§5 de la rubrica) desde la API en marcha.
 # Correr DESPUES de `make humo` y sobre un servidor recien arrancado; el porque
 # esta en scripts/medir_runtime.py.

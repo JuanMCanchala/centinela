@@ -345,6 +345,45 @@ tokens de entrada por llamada**. Es un escenario fijo, distinto de la muestra de
 su cifra no tiene por qué coincidir con los 463.1 tokens/llamada de arriba: son dos
 mediciones de dos cosas distintas y las dos son reales.
 
+### Atribución cruzada: la cita es del paciente, no de la pregunta
+
+En 2026 este modo de fallo tiene nombre: **deceptive grounding**. Una respuesta clínica
+puede pasar todas las comprobaciones automáticas —cero alucinaciones, fidelidad al pasaje,
+citas reales— y hablar de **la entidad equivocada**. Es invisible a las métricas de
+fidelidad, porque cada afirmación viene de un documento real; lo que está mal es de quién
+habla ese documento. Las tasas publicadas llegan al 87 % en condiciones adversas, y hasta
+el 86.7 % en modelos afinados en biomedicina.
+
+Aquí la entidad es el **procedimiento**, y el corpus entregado trae la trampa puesta:
+`breast_cancer/` contiene 19 PDFs y todos son de cáncer de cuello uterino. Una ingesta que
+se crea el nombre de la carpeta responde una pregunta de mastectomía citando
+`002-GUIA-DE-CANCER-DE-CUELLO-UTERINO.pdf` — archivo real, carpeta correcta, enfermedad
+equivocada, y ninguna métrica de fidelidad se queja.
+
+`make atribucion` lo mide con **preguntas trampa**: cada una nombra la anatomía de otro
+procedimiento y se le hace a quien no lo tiene. Un paciente de colecistectomía preguntando
+cuándo puede doblar la rodilla operada. El recuperador tiene el material perfecto para esa
+pregunta —las guías de artroplastia— y está prohibido usarlo.
+
+| | |
+|---|---:|
+| Trampas | 10 |
+| **Citas de otro procedimiento** | **0** |
+| Se abstuvo | 2 |
+| Respondió con su propio corpus | 8 |
+| …y en ellas declaró que no tenía el dato y redirigió | 7 |
+
+Las dos últimas filas van juntas a propósito. «Respondió 8 de 10» leído solo se toma por un
+fallo, y lo que pasa es otra cosa: **la compuerta de fundamentación es generosa** —pasa con
+pasajes genéricos de postoperatorio— **y la capa de respuesta es honesta**. En 7 de las 8 el
+modelo dijo que el dato específico no estaba en su material y redirigió al equipo; en la
+octava dio consejo genérico prudente sin citar nada ajeno. La cita, en las diez, es del
+procedimiento del paciente.
+
+Y las dos trampas de mastectomía —control del cuello uterino, seguimiento por papiloma— se
+abstienen con **cero citas**: el sistema no responde por los 19 PDFs cervicales que tiene
+indexados, porque su tema lo decide el contenido y no la carpeta.
+
 ### Suite adversarial
 
 `make redteam` corre 43 casos adversariales **contra el sistema completo**, no contra el
@@ -365,7 +404,7 @@ clasificador aislado. Resultado: **42/42**.
 - Intentos de manipulación resistidos: **11/11**
 - Casos donde la criticidad bajó porque el paciente lo pidió: **0**
 
-Más `make test`: **759 tests**, que incluyen cero falsos positivos de manipulación sobre
+Más `make test`: **766 tests**, que incluyen cero falsos positivos de manipulación sobre
 turnos textuales del dataset oficial. Ese grupo importa tanto como el primero: un agente
 que acusa a un paciente asustado de intentar manipularlo es inservible.
 
@@ -831,7 +870,7 @@ ejecuta exactamente estos comandos como subprocesos. El veredicto es su código 
 así que no hay una segunda implementación dentro del panel.
 
 ```bash
-make test        # 759 tests unitarios y de regresión
+make test        # 766 tests unitarios y de regresión
 make eval        # 160 casos oficiales · cero falsos negativos clínicos
 make redteam     # 43 casos adversariales (requiere la API levantada)
 make humo        # 103 comprobaciones de extremo a extremo (requiere la API levantada)

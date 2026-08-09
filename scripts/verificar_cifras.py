@@ -227,10 +227,31 @@ def aplanar(datos: dict) -> dict:
     return plano
 
 
-def cifras_afirmadas(texto: str, patron: str) -> list[str]:
-    """Todas las cifras que el documento AFIRMA para un concepto dado."""
+def comprobar(
+    nombre: str,
+    patron: str,
+    esperado: object,
+    textos: tuple[tuple[str, str], ...],
+    grupos: int = 1,
+) -> list[Comprobacion]:
+    """Cada cifra que los documentos afirman para un concepto, contra su medición.
 
-    return re.findall(patron, RE_CITA.sub(" ", texto))
+    Devuelve las posiciones, así que `--corregir` también arregla estas. La primera
+    versión no las traía y había que sincronizar el número de tests a mano después de cada
+    corrida — un trámite que se repite es un trámite que se acaba salteando, y así es como
+    llegó a haber diez cifras falsas a la vez.
+    """
+
+    fuera: list[Comprobacion] = []
+    for doc, texto in textos:
+        for hallado in re.finditer(patron, enmascarar(texto)):
+            for orden in range(1, grupos + 1):
+                fuera.append(
+                    Comprobacion(
+                        nombre, esperado, hallado.group(orden), doc, hallado.span(orden)
+                    )
+                )
+    return fuera
 
 
 # ==========================================================================
@@ -377,6 +398,7 @@ def main() -> int:
     redteam = leer(METRICAS / "redteam.json")
     rag = leer(METRICAS / "rag_cobertura.json")
     runtime = leer(METRICAS / "runtime.json")
+    atribucion = leer(METRICAS / "atribucion.json")
 
     comprobaciones: list[Comprobacion] = []
 
@@ -388,16 +410,19 @@ def main() -> int:
             )
         )
 
+    docs = (("README.md", readme), ("informe-final.md", informe))
+
     # --- tests -------------------------------------------------------------
     n_tests = contar_tests()
     if n_tests is not None:
-        for doc, texto in (("README.md", readme), ("informe-final.md", informe)):
-            for afirmado in cifras_afirmadas(texto, r"(\d+)\s+tests"):
-                comprobaciones.append(
-                    Comprobacion("tests", n_tests, afirmado, doc)
-                )
-            for afirmado in cifras_afirmadas(texto, r"make test.*?(\d+)\s*/\s*\1"):
-                comprobaciones.append(Comprobacion("tests", n_tests, afirmado, doc))
+        comprobaciones.extend(comprobar("tests", r"(\d+)\s+tests", n_tests, docs))
+        # Los dos lados del "746/746". Antes el patron era `(\d+)/\1` --una
+        # retrorreferencia-- y solo capturaba el primero: corregirlo habria dejado
+        # "766/746", que es peor que la cifra rancia. Se capturan los dos y se comprueban
+        # los dos contra la misma medicion.
+        comprobaciones.extend(
+            comprobar("tests", r"make test.*?(\d+)\s*/\s*(\d+)", n_tests, docs, grupos=2)
+        )
 
     # --- casos oficiales ---------------------------------------------------
     if triage:
@@ -407,11 +432,9 @@ def main() -> int:
         exactitud = triage.get("exactitud_global")
         aciertos = round(exactitud * n_casos) if (n_casos and exactitud) else None
         if aciertos:
-            for doc, texto in (("README.md", readme), ("informe-final.md", informe)):
-                for afirmado in cifras_afirmadas(texto, r"(\d+)/160"):
-                    comprobaciones.append(
-                        Comprobacion("aciertos sobre 160", aciertos, afirmado, doc)
-                    )
+            comprobaciones.extend(
+                comprobar("aciertos sobre 160", r"(\d+)/160", aciertos, docs)
+            )
         fn = triage.get("falsos_negativos_clinicos")
         if fn is not None and fn != 0:
             comprobaciones.append(
@@ -423,11 +446,9 @@ def main() -> int:
         total = redteam.get("n_casos")
         pasan = redteam.get("pasan")
         if total:
-            for doc, texto in (("README.md", readme), ("informe-final.md", informe)):
-                for afirmado in cifras_afirmadas(texto, r"(\d+)\s+casos adversariales"):
-                    comprobaciones.append(
-                        Comprobacion("casos adversariales", total, afirmado, doc)
-                    )
+            comprobaciones.extend(
+                comprobar("casos adversariales", r"(\d+)\s+casos adversariales", total, docs)
+            )
         if pasan is not None and total and pasan != total:
             comprobaciones.append(
                 Comprobacion("adversarial que pasan", total, pasan, "medición")
@@ -445,10 +466,30 @@ def main() -> int:
                 comprobaciones.append(Comprobacion(nombre, 0, valor, "medición"))
 
     # --- locuciones pre-renderizadas ---------------------------------------
-    n_loc = contar_locuciones()
-    for doc, texto in (("README.md", readme), ("informe-final.md", informe)):
-        for afirmado in cifras_afirmadas(texto, r"\*\*(\d+)\s+locuciones\*\*"):
-            comprobaciones.append(Comprobacion("locuciones", n_loc, afirmado, doc))
+    comprobaciones.extend(
+        comprobar(
+            "locuciones", r"\*\*(\d+)\s+locuciones\*\*", contar_locuciones(), docs
+        )
+    )
+
+    # --- atribucion cruzada (deceptive grounding) --------------------------
+    if atribucion:
+        cruzadas = atribucion.get("citas_de_otro_procedimiento")
+        if cruzadas:
+            comprobaciones.append(
+                Comprobacion("citas ajenas en las trampas", 0, cruzadas, "medición")
+            )
+        for nombre, clave, patron in (
+            ("trampas de atribución", "n_trampas", r"\| Trampas \| (\d+) \|"),
+            ("trampas: se abstuvo", "se_abstuvo", r"\| Se abstuvo \| (\d+) \|"),
+            ("trampas: respondió", "respondio_a_la_trampa",
+             r"\| Respondió con su propio corpus \| (\d+) \|"),
+            ("trampas: declinó el dato", "de_esas_declino_el_dato",
+             r"y redirigió \| (\d+) \|"),
+        ):
+            comprobaciones.extend(
+                comprobar(nombre, patron, atribucion.get(clave), docs)
+            )
 
     # ----------------------------------------------------------------------
     print("=" * 78)
