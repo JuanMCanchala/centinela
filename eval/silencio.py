@@ -51,7 +51,12 @@ MS_TRAMA = 20
 # Cuanto se aguanta callado. Bastante mas que los 40 s del ultimo peldano, porque esos 40
 # son de SILENCIO: lo que el agente tarda en decir cada peldano no cuenta contra el
 # siguiente, asi que la escalera completa ocupa mas tiempo de reloj que de silencio.
-SEGUNDOS = 62.0
+#
+# El margen es amplio a proposito. Con 62 s la prueba fallaba cuando el servidor venia de
+# atender otra suite: la sintesis de cada peldano tarda mas con la maquina ocupada y la
+# escalera se estira. En una llamada real eso solo significa que los peldanos llegan un poco
+# mas tarde, asi que lo que estaba mal medido era la ventana del arnes, no la conducta.
+SEGUNDOS = 78.0
 
 # Silencio digital, que es lo que manda un microfono en una habitacion quieta cuando el
 # cliente ya calibro su piso de ruido. No es un tono: un tono lo tomaria el detector de

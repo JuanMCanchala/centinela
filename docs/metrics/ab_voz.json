@@ -1,0 +1,258 @@
+{
+  "por_que": "la voz se eligio por latencia en CPU, cuando no se sabia que el 83 % de los turnos se sirven del cache pre-renderizado. Para esos el factor de tiempo real no cuesta nada: se paga una vez al arrancar. La pregunta pasa a ser cuanto cuesta la voz mas natural y donde.",
+  "lo_que_no_mide": "el timbre. No se puede poner en un numero, asi que se escriben los WAV de las mismas frases con cada voz para escucharlos al lado.",
+  "frases": [
+    "saludo",
+    "cierre_rojo",
+    "pregunta_dolor",
+    "silencio_acompanar"
+  ],
+  "medidas": [
+    {
+      "voz": "es_AR-daniela-high",
+      "mb_modelo": 108.9,
+      "ms_arranque": 3023.6,
+      "rtf_medio": 0.25,
+      "rtf_peor": 0.303,
+      "ms_primera_frase_cierre_rojo": 862.6,
+      "segundos_audio_de_las_frases": 32.5,
+      "por_frase": [
+        {
+          "frase": "saludo",
+          "caracteres": 209,
+          "segundos_audio": 11.07,
+          "ms_sintesis": 2721.2,
+          "rtf": 0.246
+        },
+        {
+          "frase": "cierre_rojo",
+          "caracteres": 269,
+          "segundos_audio": 13.14,
+          "ms_sintesis": 3270.7,
+          "rtf": 0.249
+        },
+        {
+          "frase": "pregunta_dolor",
+          "caracteres": 135,
+          "segundos_audio": 6.6,
+          "ms_sintesis": 1611.1,
+          "rtf": 0.244
+        },
+        {
+          "frase": "silencio_acompanar",
+          "caracteres": 28,
+          "segundos_audio": 1.69,
+          "ms_sintesis": 510.4,
+          "rtf": 0.303
+        }
+      ],
+      "muestras_en": "data\\ab_voz\\es_AR-daniela-high",
+      "_primera_ok": true
+    },
+    {
+      "voz": "es_ES-carlfm-x_low",
+      "mb_modelo": 26.8,
+      "ms_arranque": 784.5,
+      "rtf_medio": 0.053,
+      "rtf_peor": 0.062,
+      "ms_primera_frase_cierre_rojo": 195.5,
+      "segundos_audio_de_las_frases": 27.55,
+      "por_frase": [
+        {
+          "frase": "saludo",
+          "caracteres": 209,
+          "segundos_audio": 9.04,
+          "ms_sintesis": 460.2,
+          "rtf": 0.051
+        },
+        {
+          "frase": "cierre_rojo",
+          "caracteres": 269,
+          "segundos_audio": 12.0,
+          "ms_sintesis": 622.2,
+          "rtf": 0.052
+        },
+        {
+          "frase": "pregunta_dolor",
+          "caracteres": 135,
+          "segundos_audio": 5.12,
+          "ms_sintesis": 285.7,
+          "rtf": 0.056
+        },
+        {
+          "frase": "silencio_acompanar",
+          "caracteres": 28,
+          "segundos_audio": 1.39,
+          "ms_sintesis": 86.8,
+          "rtf": 0.062
+        }
+      ],
+      "muestras_en": "data\\ab_voz\\es_ES-carlfm-x_low",
+      "_primera_ok": true
+    },
+    {
+      "voz": "es_ES-davefx-medium",
+      "mb_modelo": 60.3,
+      "ms_arranque": 884.7,
+      "rtf_medio": 0.06,
+      "rtf_peor": 0.092,
+      "ms_primera_frase_cierre_rojo": 224.3,
+      "segundos_audio_de_las_frases": 35.0,
+      "por_frase": [
+        {
+          "frase": "saludo",
+          "caracteres": 209,
+          "segundos_audio": 11.06,
+          "ms_sintesis": 636.6,
+          "rtf": 0.058
+        },
+        {
+          "frase": "cierre_rojo",
+          "caracteres": 269,
+          "segundos_audio": 15.38,
+          "ms_sintesis": 895.0,
+          "rtf": 0.058
+        },
+        {
+          "frase": "pregunta_dolor",
+          "caracteres": 135,
+          "segundos_audio": 6.66,
+          "ms_sintesis": 376.4,
+          "rtf": 0.057
+        },
+        {
+          "frase": "silencio_acompanar",
+          "caracteres": 28,
+          "segundos_audio": 1.9,
+          "ms_sintesis": 174.7,
+          "rtf": 0.092
+        }
+      ],
+      "muestras_en": "data\\ab_voz\\es_ES-davefx-medium",
+      "_primera_ok": true
+    },
+    {
+      "voz": "es_ES-sharvard-medium",
+      "mb_modelo": 73.2,
+      "ms_arranque": 998.5,
+      "rtf_medio": 0.056,
+      "rtf_peor": 0.063,
+      "ms_primera_frase_cierre_rojo": 254.4,
+      "segundos_audio_de_las_frases": 39.19,
+      "por_frase": [
+        {
+          "frase": "saludo",
+          "caracteres": 209,
+          "segundos_audio": 13.44,
+          "ms_sintesis": 762.8,
+          "rtf": 0.057
+        },
+        {
+          "frase": "cierre_rojo",
+          "caracteres": 269,
+          "segundos_audio": 15.99,
+          "ms_sintesis": 879.5,
+          "rtf": 0.055
+        },
+        {
+          "frase": "pregunta_dolor",
+          "caracteres": 135,
+          "segundos_audio": 7.83,
+          "ms_sintesis": 418.3,
+          "rtf": 0.053
+        },
+        {
+          "frase": "silencio_acompanar",
+          "caracteres": 28,
+          "segundos_audio": 1.93,
+          "ms_sintesis": 120.9,
+          "rtf": 0.063
+        }
+      ],
+      "muestras_en": "data\\ab_voz\\es_ES-sharvard-medium",
+      "_primera_ok": true
+    },
+    {
+      "voz": "es_MX-ald-medium",
+      "mb_modelo": 60.3,
+      "ms_arranque": 1328.0,
+      "rtf_medio": 0.06,
+      "rtf_peor": 0.068,
+      "ms_primera_frase_cierre_rojo": 251.9,
+      "segundos_audio_de_las_frases": 42.84,
+      "por_frase": [
+        {
+          "frase": "saludo",
+          "caracteres": 209,
+          "segundos_audio": 14.68,
+          "ms_sintesis": 949.3,
+          "rtf": 0.065
+        },
+        {
+          "frase": "cierre_rojo",
+          "caracteres": 269,
+          "segundos_audio": 17.51,
+          "ms_sintesis": 966.9,
+          "rtf": 0.055
+        },
+        {
+          "frase": "pregunta_dolor",
+          "caracteres": 135,
+          "segundos_audio": 8.12,
+          "ms_sintesis": 461.5,
+          "rtf": 0.057
+        },
+        {
+          "frase": "silencio_acompanar",
+          "caracteres": 28,
+          "segundos_audio": 2.53,
+          "ms_sintesis": 172.8,
+          "rtf": 0.068
+        }
+      ],
+      "muestras_en": "data\\ab_voz\\es_MX-ald-medium",
+      "_primera_ok": true
+    },
+    {
+      "voz": "es_MX-claude-high",
+      "mb_modelo": 60.2,
+      "ms_arranque": 1224.1,
+      "rtf_medio": 0.057,
+      "rtf_peor": 0.07,
+      "ms_primera_frase_cierre_rojo": 269.0,
+      "segundos_audio_de_las_frases": 43.11,
+      "por_frase": [
+        {
+          "frase": "saludo",
+          "caracteres": 209,
+          "segundos_audio": 14.37,
+          "ms_sintesis": 809.9,
+          "rtf": 0.056
+        },
+        {
+          "frase": "cierre_rojo",
+          "caracteres": 269,
+          "segundos_audio": 17.48,
+          "ms_sintesis": 964.1,
+          "rtf": 0.055
+        },
+        {
+          "frase": "pregunta_dolor",
+          "caracteres": 135,
+          "segundos_audio": 8.82,
+          "ms_sintesis": 508.0,
+          "rtf": 0.058
+        },
+        {
+          "frase": "silencio_acompanar",
+          "caracteres": 28,
+          "segundos_audio": 2.44,
+          "ms_sintesis": 171.0,
+          "rtf": 0.07
+        }
+      ],
+      "muestras_en": "data\\ab_voz\\es_MX-claude-high",
+      "_primera_ok": true
+    }
+  ]
+}

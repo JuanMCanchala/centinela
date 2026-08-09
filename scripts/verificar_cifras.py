@@ -479,17 +479,21 @@ def main() -> int:
             comprobaciones.append(
                 Comprobacion("citas ajenas en las trampas", 0, cruzadas, "medición")
             )
-        for nombre, clave, patron in (
-            ("trampas de atribución", "n_trampas", r"\| Trampas \| (\d+) \|"),
-            ("trampas: se abstuvo", "se_abstuvo", r"\| Se abstuvo \| (\d+) \|"),
-            ("trampas: respondió", "respondio_a_la_trampa",
-             r"\| Respondió con su propio corpus \| (\d+) \|"),
-            ("trampas: declinó el dato", "de_esas_declino_el_dato",
-             r"y redirigió \| (\d+) \|"),
-        ):
-            comprobaciones.extend(
-                comprobar(nombre, patron, atribucion.get(clave), docs)
+        # Solo lo determinista. `se_abstuvo`, `respondio_a_la_trampa` y
+        # `de_esas_declino_el_dato` salen de texto que GENERA el modelo, y se mueven entre
+        # corridas -- la cuenta de "declino el dato" dio 7 y despues 4 sin que cambiara
+        # nada del sistema, porque es una lectura lexica de una respuesta generativa.
+        #
+        # Meterlas aqui convertia `make cifras` en una puerta intermitente, que es lo
+        # contrario de lo que este script existe para hacer: una comprobacion que falla
+        # sola ensena a ignorarla. Viven en `docs/metrics/atribucion.json` con su texto al
+        # lado, y el README las cita como lo que son.
+        comprobaciones.extend(
+            comprobar(
+                "trampas de atribución", r"\| Trampas \| (\d+) \|",
+                atribucion.get("n_trampas"), docs,
             )
+        )
 
     # ----------------------------------------------------------------------
     print("=" * 78)

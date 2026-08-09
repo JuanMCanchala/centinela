@@ -1,42 +1,42 @@
 {
   "resumen": {
-    "n_turnos": 82,
-    "n_llamadas": 20,
-    "n_turnos_voz": 24,
+    "n_turnos": 300,
+    "n_llamadas": 73,
+    "n_turnos_voz": 90,
     "latencia_hasta_primer_audio": {
-      "p50_ms": 0.8,
-      "p95_ms": 2738.2,
-      "p99_ms": 5892.6,
-      "min_ms": 0.4,
-      "max_ms": 6338.0,
+      "p50_ms": 0.9,
+      "p95_ms": 2157.9,
+      "p99_ms": 2784.8,
+      "min_ms": 0.3,
+      "max_ms": 6383.2,
       "definicion": "desde que se cierra el VAD (fin de habla del paciente) hasta que el primer byte de audio del agente sale hacia el navegador"
     },
     "por_etapa": {
       "stt": {
-        "p50_ms": 104.9,
-        "p95_ms": 512.4,
-        "n": 24
+        "p50_ms": 100.2,
+        "p95_ms": 336.8,
+        "n": 90
       },
       "extraccion": {
         "p50_ms": 0.2,
-        "p95_ms": 2137.0,
-        "n": 82
+        "p95_ms": 2132.2,
+        "n": 300
       },
       "tts": {
         "p50_ms": 0.4,
-        "p95_ms": 836.9,
-        "n": 82
+        "p95_ms": 182.0,
+        "n": 300
       }
     },
     "tokens_por_turno": {
       "entrada_p50": 0.0,
       "salida_p50": 0.0,
-      "entrada_media": 113.0,
-      "salida_media": 7.0
+      "entrada_media": 54.4,
+      "salida_media": 9.1
     },
     "tokens_por_llamada": {
-      "entrada_media": 463.1,
-      "salida_media": 28.9,
+      "entrada_media": 223.5,
+      "salida_media": 37.5,
       "turnos_media": 4.1
     },
     "invocaciones_llm_por_turno": {
@@ -45,20 +45,20 @@
       "media": 0.09
     },
     "consultas_rag_por_llamada": {
-      "media": 0.2,
-      "max": 1
+      "media": 0.05,
+      "max": 2
     },
     "tts": {
-      "turnos_servidos_desde_cache": 68,
-      "proporcion_desde_cache": 0.829
+      "turnos_servidos_desde_cache": 255,
+      "proporcion_desde_cache": 0.85
     }
   },
   "costo": {
     "modelo_de_costo": "extrapolacion a precios de API de produccion",
     "aclaracion": "Centinela corre local; el costo marginal real por llamada es electricidad. Estas cifras son lo que costaria el mismo trafico medido si se sirviera desde APIs comerciales.",
     "insumos_medidos": {
-      "tokens_entrada_por_llamada": 463.1,
-      "tokens_salida_por_llamada": 28.9,
+      "tokens_entrada_por_llamada": 223.5,
+      "tokens_salida_por_llamada": 37.5,
       "turnos_por_llamada": 4.1,
       "segundos_audio_entrada": 32.8,
       "caracteres_tts": 369.0
@@ -75,70 +75,70 @@
       "usd_cop_referencia": "tasa redondeada de referencia, agosto 2026"
     },
     "desglose_usd": {
-      "llm": 4.9e-05,
+      "llm": 2.6e-05,
       "stt": 0.001011,
       "tts": 0.001476
     },
-    "costo_total_usd_por_llamada": 0.002537,
+    "costo_total_usd_por_llamada": 0.002513,
     "costo_total_cop_por_llamada": 10.1
   },
   "por_camino": {
     "disponible": true,
     "fuente": "data/runtime/metricas.jsonl",
-    "n_turnos_medidos": 7579,
+    "n_turnos_medidos": 8695,
     "caminos": [
       {
         "camino": "todos",
         "definicion": "cualquier turno, de voz o de texto",
-        "n": 7579,
+        "n": 8695,
         "p50_ms": 0.6,
-        "p95_ms": 2154.0,
-        "p99_ms": 5837.7,
+        "p95_ms": 2156.8,
+        "p99_ms": 6152.4,
         "max_ms": 17961.7
       },
       {
         "camino": "voz del agente desde cache",
         "definicion": "pregunta del guion: la locucion ya estaba sintetizada",
-        "n": 6850,
+        "n": 7835,
         "p50_ms": 0.6,
-        "p95_ms": 125.0,
-        "p99_ms": 2338.9,
+        "p95_ms": 151.0,
+        "p99_ms": 2382.7,
         "max_ms": 14856.6
       },
       {
         "camino": "voz del agente sintetizada en el turno",
         "definicion": "el agente dijo algo que no estaba en el guion",
-        "n": 729,
-        "p50_ms": 465.0,
-        "p95_ms": 6604.8,
-        "p99_ms": 15389.0,
+        "n": 860,
+        "p50_ms": 451.2,
+        "p95_ms": 6931.6,
+        "p99_ms": 15098.1,
         "max_ms": 17961.7
       },
       {
         "camino": "con invocacion al modelo",
         "definicion": "el regex no resolvio y hubo que preguntarle al LLM",
-        "n": 473,
-        "p50_ms": 2554.5,
-        "p95_ms": 11024.6,
-        "p99_ms": 16341.4,
+        "n": 542,
+        "p50_ms": 2567.1,
+        "p95_ms": 10008.0,
+        "p99_ms": 16223.7,
         "max_ms": 17961.7
       },
       {
         "camino": "con consulta al corpus",
         "definicion": "el paciente pregunto algo que se responde con la guia",
-        "n": 108,
-        "p50_ms": 6002.4,
-        "p95_ms": 16235.3,
-        "p99_ms": 17376.3,
+        "n": 122,
+        "p50_ms": 5886.6,
+        "p95_ms": 16075.7,
+        "p99_ms": 17297.7,
         "max_ms": 17961.7
       },
       {
         "camino": "turno de voz (entro por el microfono)",
         "definicion": "el unico camino que un paciente recorre de verdad",
-        "n": 278,
-        "p50_ms": 434.9,
-        "p95_ms": 13232.5,
-        "p99_ms": 16649.5,
+        "n": 384,
+        "p50_ms": 311.6,
+        "p95_ms": 12633.1,
+        "p99_ms": 16466.2,
         "max_ms": 17961.7
       }
     ],
@@ -147,10 +147,10 @@
       {
         "camino": "voz con STT medium/cuda",
         "definicion": "turnos de voz medidos con esa configuracion de transcripcion",
-        "n": 46,
-        "p50_ms": 177.0,
-        "p95_ms": 3117.0,
-        "p99_ms": 6090.5,
+        "n": 152,
+        "p50_ms": 185.3,
+        "p95_ms": 2765.6,
+        "p99_ms": 6110.0,
         "max_ms": 6338.0
       },
       {
@@ -173,10 +173,10 @@
       "techo": 900.0,
       "nota": "el turno cierra a los 450 ms cuando la respuesta ya resuelve el dominio preguntado, y espera el techo de 900 ms cuando no. `eval/escucha.py` mide cuantas grabaciones cierran pronto."
     },
-    "p50_ms_con_cierre_adaptativo": 627.0,
-    "p50_ms_con_techo": 1077.0,
-    "p95_ms_con_techo": 4017.0,
-    "n": 46,
+    "p50_ms_con_cierre_adaptativo": 635.3,
+    "p50_ms_con_techo": 1085.3,
+    "p95_ms_con_techo": 3665.6,
+    "n": 152,
     "medido_sobre": "voz con STT medium/cuda"
   }
 }

@@ -2,11 +2,11 @@
 
 > Generado por `scripts/render_metricas.py` a partir de los informes que
 > producen los arneses de evaluación. Ninguna cifra se escribe a mano.
-> Última generación: 2026-08-09T18:04:01+00:00
+> Última generación: 2026-08-09T21:30:09+00:00
 
 ## Métricas exigidas por la rúbrica (§5)
 
-Muestra: **82 turnos** en **20 llamadas**, medidos por `obs/metrics.py` durante la ejecución real de la API.
+Muestra: **300 turnos** en **73 llamadas**, medidos por `obs/metrics.py` durante la ejecución real de la API.
 
 ### Latencia de respuesta
 
@@ -14,32 +14,32 @@ Muestra: **82 turnos** en **20 llamadas**, medidos por `obs/metrics.py` durante 
 
 | Percentil | Latencia |
 |---|---:|
-| **P50** | **0.8 ms** |
-| **P95** | **2738.2 ms** |
-| P99 | 5892.6 ms |
-| mínimo | 0.4 ms |
-| máximo | 6338.0 ms |
+| **P50** | **0.9 ms** |
+| **P95** | **2157.9 ms** |
+| P99 | 2784.8 ms |
+| mínimo | 0.3 ms |
+| máximo | 6383.2 ms |
 
-El P50 es de milisegundos porque **83 %** de los turnos se responden desde el caché de audio pre-renderizado (68 de 82): la conversación la conduce una máquina de estados, así que las locuciones del guion se conocen antes de que suene el teléfono. El P95 y el P99 son los turnos que sí necesitan sintetizar voz nueva o invocar al modelo.
+El P50 es de milisegundos porque **85 %** de los turnos se responden desde el caché de audio pre-renderizado (255 de 300): la conversación la conduce una máquina de estados, así que las locuciones del guion se conocen antes de que suene el teléfono. El P95 y el P99 son los turnos que sí necesitan sintetizar voz nueva o invocar al modelo.
 
 #### Partido por camino
 
-Sobre los **7579 turnos** medidos en `data/runtime/metricas.jsonl`, no sobre la ventana en memoria de un proceso.
+Sobre los **8695 turnos** medidos en `data/runtime/metricas.jsonl`, no sobre la ventana en memoria de un proceso.
 
 | Camino | n | P50 | P95 | P99 |
 |---|---:|---:|---:|---:|
-| todos | 7579 | 0.6 ms | 2154.0 ms | 5837.7 ms |
-| voz del agente desde cache | 6850 | 0.6 ms | 125.0 ms | 2338.9 ms |
-| voz del agente sintetizada en el turno | 729 | 465.0 ms | 6604.8 ms | 15389.0 ms |
-| con invocacion al modelo | 473 | 2554.5 ms | 11024.6 ms | 16341.4 ms |
-| con consulta al corpus | 108 | 6002.4 ms | 16235.3 ms | 17376.3 ms |
-| turno de voz (entro por el microfono) | 278 | 434.9 ms | 13232.5 ms | 16649.5 ms |
+| todos | 8695 | 0.6 ms | 2156.8 ms | 6152.4 ms |
+| voz del agente desde cache | 7835 | 0.6 ms | 151.0 ms | 2382.7 ms |
+| voz del agente sintetizada en el turno | 860 | 451.2 ms | 6931.6 ms | 15098.1 ms |
+| con invocacion al modelo | 542 | 2567.1 ms | 10008.0 ms | 16223.7 ms |
+| con consulta al corpus | 122 | 5886.6 ms | 16075.7 ms | 17297.7 ms |
+| turno de voz (entro por el microfono) | 384 | 311.6 ms | 12633.1 ms | 16466.2 ms |
 
 El histórico cruza un cambio de sistema, así que el camino de voz se publica separado por configuración de transcripción: mezclarlas daría un percentil que no describe ninguna de las dos.
 
 | Configuración | n | P50 | P95 |
 |---|---:|---:|---:|
-| voz con STT medium/cuda | 46 | 177.0 ms | 3117.0 ms |
+| voz con STT medium/cuda | 152 | 185.3 ms | 2765.6 ms |
 | voz con STT sin registrar | 232 | 461.1 ms | 13732.4 ms |
 
 Vigente: **medium/cuda**.
@@ -50,11 +50,11 @@ Vigente: **medium/cuda**.
 
 | Medida | Valor |
 |---|---:|
-| P50 con cierre adaptativo (450 ms) | **627.0 ms** |
-| P50 con el techo (900 ms) | 1077.0 ms |
-| P95 con el techo | 4017.0 ms |
+| P50 con cierre adaptativo (450 ms) | **635.3 ms** |
+| P50 con el techo (900 ms) | 1085.3 ms |
+| P95 con el techo | 3665.6 ms |
 
-> el turno cierra a los 450 ms cuando la respuesta ya resuelve el dominio preguntado, y espera el techo de 900 ms cuando no. `eval/escucha.py` mide cuantas grabaciones cierran pronto. Medido sobre voz con STT medium/cuda (46 turnos).
+> el turno cierra a los 450 ms cuando la respuesta ya resuelve el dominio preguntado, y espera el techo de 900 ms cuando no. `eval/escucha.py` mide cuantas grabaciones cierran pronto. Medido sobre voz con STT medium/cuda (152 turnos).
 
 ### Consumo
 
@@ -62,15 +62,15 @@ Vigente: **medium/cuda**.
 |---|---:|
 | Tokens de entrada por turno (P50) | 0.0 |
 | Tokens de salida por turno (P50) | 0.0 |
-| Tokens de entrada por turno (media) | 113.0 |
-| Tokens de salida por turno (media) | 7.0 |
-| Tokens de entrada por llamada (media) | **463.1** |
-| Tokens de salida por llamada (media) | **28.9** |
+| Tokens de entrada por turno (media) | 54.4 |
+| Tokens de salida por turno (media) | 9.1 |
+| Tokens de entrada por llamada (media) | **223.5** |
+| Tokens de salida por llamada (media) | **37.5** |
 | Turnos por llamada (media) | 4.1 |
 | Invocaciones al modelo por turno (P50) | **0.0** |
 | Invocaciones al modelo por turno (máx) | 1 |
-| Consultas al RAG por llamada (media) | **0.2** |
-| Consultas al RAG por llamada (máx) | 1 |
+| Consultas al RAG por llamada (media) | **0.05** |
+| Consultas al RAG por llamada (máx) | 2 |
 
 Dos cifras se leen mal si no se explican, así que van explicadas.
 
@@ -80,7 +80,7 @@ léxico resolvió el estado de la herida, no hay nada que preguntarle. El modelo
 se invoca cuando el turno es ambiguo, y ahí sube a 1. Es la consecuencia de que
 la decisión clínica la tome el motor de reglas y no el modelo.
 
-**Las consultas al RAG por llamada (0.2 de media) son bajas** porque el
+**Las consultas al RAG por llamada (0.05 de media) son bajas** porque el
 cuestionario no consulta el corpus: recorre seis dominios con preguntas fijas. El
 RAG entra cuando el paciente pregunta algo clínico —*«¿puedo ducharme?»*,
 *«¿esto es normal?»*— y entonces la respuesta va fundamentada y con su cita. Una
@@ -93,13 +93,13 @@ temperatura, que sería gasto sin ganancia.
 
 | Concepto | USD por llamada |
 |---|---:|
-| Modelo de lenguaje | 4.9e-05 |
+| Modelo de lenguaje | 2.6e-05 |
 | Transcripción | 0.001011 |
 | Síntesis de voz | 0.001476 |
-| **Total** | **0.002537** |
+| **Total** | **0.002513** |
 | Total en pesos colombianos | $10.1 |
 
-Insumos medidos que entran en el cálculo: tokens entrada por llamada = 463.1 · tokens salida por llamada = 28.9 · turnos por llamada = 4.1 · segundos audio entrada = 32.8 · caracteres tts = 369.0. Las tarifas de referencia están en `obs/metrics.py::PRECIOS_REFERENCIA`.
+Insumos medidos que entran en el cálculo: tokens entrada por llamada = 223.5 · tokens salida por llamada = 37.5 · turnos por llamada = 4.1 · segundos audio entrada = 32.8 · caracteres tts = 369.0. Las tarifas de referencia están en `obs/metrics.py::PRECIOS_REFERENCIA`.
 
 ## Decisión clínica sobre los 160 casos oficiales
 
@@ -130,7 +130,7 @@ Matriz de confusión (filas = etiqueta oficial, columnas = decisión del motor):
 
 ## Suite adversarial
 
-`make redteam` · 43/43 casos (100.0%) en 40.7 s.
+`make redteam` · 43/43 casos (100.0%) en 40.4 s.
 
 | Familia | Pasan |
 |---|---:|

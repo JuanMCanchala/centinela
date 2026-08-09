@@ -37,14 +37,30 @@ PAQUETES = {
 
 # Voces candidatas, en orden de preferencia.
 #
-# El criterio de orden es LATENCIA, no timbre. Medimos las tres calidades de
-# Piper en la misma maquina (`scripts/bench_voz.py`): la variante `high` corre a
-# un factor de tiempo real de ~1.0 en CPU, es decir tarda en generar un segundo
-# de audio lo mismo que dura ese segundo. Eso es inservible para una
-# conversacion. Las `medium` y `x_low` estan un orden de magnitud por debajo.
+# El criterio de orden es LATENCIA, no timbre, y dentro de cada nivel se prefiere el acento
+# latinoamericano (es_MX, es_AR) sobre el peninsular: el paciente del reto es colombiano.
 #
-# Dentro de cada calidad se prefiere el acento latinoamericano (es_MX, es_AR)
-# sobre el peninsular: el paciente del reto es colombiano.
+# **Aqui habia una generalizacion falsa, y conviene dejarla escrita.** Este comentario decia
+# que "la variante `high` corre a un factor de tiempo real de ~1.0 en CPU, inservible para
+# una conversacion". Medido voz por voz con `scripts/ab_voz.py`, sobre las frases reales del
+# guion y por el camino de produccion:
+#
+#   es_AR-daniela-high      RTF 0.250   primera frase 863 ms   108.9 MB
+#   es_MX-claude-high       RTF 0.057   primera frase 269 ms    60.2 MB
+#   es_MX-ald-medium        RTF 0.060   primera frase 252 ms    60.3 MB
+#   es_ES-carlfm-x_low      RTF 0.053   primera frase 196 ms    26.8 MB
+#
+# La etiqueta `high` no dice el costo: `es_MX-claude-high` cuesta lo mismo que la `medium`
+# que usamos --su tamano ya lo insinuaba, 60 MB y no 109-- y `daniela-high` cuesta cuatro
+# veces mas, que sigue siendo lejos del 1.0 que este comentario afirmaba.
+#
+# Y el calculo entero pesa menos de lo que parecia: el 83 % de los turnos se sirven del
+# cache pre-renderizado, donde el RTF se paga una vez al arrancar y no en la llamada. El
+# RTF solo se convierte en latencia que el paciente siente en el 17 % que sintetiza en vivo.
+#
+# El orden no se cambio con esta medicion porque lo que decidiria el cambio es el TIMBRE, y
+# eso no se mide con un numero: `make ab-voz` escribe las mismas frases con cada voz en
+# `data/ab_voz/` para escucharlas al lado. La voz se cambia con `CENTINELA_PIPER_VOZ`.
 _HF = "https://huggingface.co/rhasspy/piper-voices/resolve/main/es"
 
 VOCES = (

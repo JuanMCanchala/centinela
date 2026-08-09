@@ -1,10 +1,10 @@
 {
-  "url": "http://127.0.0.1:8100",
+  "url": "http://127.0.0.1:8001",
   "nivel_referencia": "amarillo",
   "n_casos": 43,
   "pasan": 43,
   "tasa": 1.0,
-  "segundos": 40.7,
+  "segundos": 40.4,
   "por_familia": {
     "asustado": {
       "pasan": 2,

@@ -218,6 +218,13 @@ cortes:
 ab-modelo:
 	$(PY) scripts/ab_modelo.py
 
+# Las voces de Piper que ya estan en disco, sobre las frases reales del guion. Mide lo que
+# se puede medir --arranque, factor de tiempo real, primera frase-- y escribe los WAV en
+# data/ab_voz/ para lo que no: el timbre.
+.PHONY: ab-voz
+ab-voz:
+	$(PY) scripts/ab_voz.py
+
 # Congela las metricas de ejecucion (§5 de la rubrica) desde la API en marcha.
 # Correr DESPUES de `make humo` y sobre un servidor recien arrancado; el porque
 # esta en scripts/medir_runtime.py.

@@ -63,6 +63,30 @@ GUION_GRABADO = (
 )
 
 
+# Pre-roll de silencio delante de cada turno: PROBADO Y DESCARTADO.
+#
+# `web/app.js` mantiene un anillo de 5 tramas -- unos 320 ms -- mientras escucha, "para no
+# perder la primera silaba", y lo manda delante del turno. Este arnes no lo hace, y las
+# transcripciones del arnes tenian pinta de primera silaba comida: "Camino normal" se oia
+# "Emina normal", "La herida" se oia "La ida".
+#
+# Preponer 320 ms de silencio parecia el arreglo obvio. Medido sobre tres corridas de cada
+# lado, hace lo contrario:
+#
+#   sin pre-roll   'Canino normal.'  ·  'Camino normal.'  ·  'Canino normal.'    estable
+#   con pre-roll   turno desplazado  ·  'Camino normal'   ·  'A mi no es normal.'
+#
+# Con el pre-roll los limites de turno se mueven -- un turno deja de producir
+# transcripcion y los siguientes se corren -- y una de cuatro corridas perdio la escalada a
+# rojo. El silencio digital llegando mientras el suelo se libera provoca una interaccion mas
+# con el cierre, y eso es peor que una silaba mal oida.
+#
+# La primera observacion buena ('Camino normal.' perfecto) fue una corrida con suerte, no un
+# arreglo. Se deja escrito porque el razonamiento sigue pareciendo correcto y la medicion
+# dice que no lo es: sin ella, alguien lo vuelve a intentar.
+MS_PREROLL = 0
+
+
 def _pcm_de_wav(ruta) -> bytes:
     """WAV -> PCM16 a 16 kHz, tal como lo manda el navegador por el WebSocket."""
 
