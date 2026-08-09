@@ -190,6 +190,38 @@ async function api(ruta, opciones = {}) {
   return cuerpo;
 }
 
+/* Un panel que no se puede cargar lo dice en su sitio.
+ *
+ * `api()` lanza en cuanto la respuesta no es 200, y los seis cargadores de panel la
+ * llamaban sin capturar nada. El resultado de un fallo -- el modelo caído, el token
+ * vencido, un reinicio a mitad de demo -- era un panel en blanco y una excepción sin
+ * dueño en la consola del navegador. Quien mira la pantalla no puede distinguir «no hay
+ * datos» de «no se pudieron pedir», y son cosas muy distintas: la primera es información
+ * y la segunda es una avería.
+ *
+ * El aviso va DENTRO del contenedor del panel, no en una barra global: un fallo al
+ * cargar las métricas no debe teñir el resto de la consola. Y trae su propio botón de
+ * reintentar, porque el camino alternativo -- recargar la página -- cuesta la llamada en
+ * curso.
+ */
+async function cargarEn(selector, cargar) {
+  try {
+    await cargar();
+  } catch (e) {
+    console.warn(`[centinela] no se pudo cargar ${selector}`, e);
+    const cont = $(selector);
+    cont.innerHTML = "";
+    const aviso = crear("div", "aviso mal");
+    aviso.append(crear("strong", null, "No se pudo cargar este panel"));
+    aviso.append(crear("div", null, e.message));
+    const btn = crear("button", "boton chico", "Reintentar");
+    btn.type = "button";
+    btn.addEventListener("click", () => cargarEn(selector, cargar));
+    aviso.append(btn);
+    cont.append(aviso);
+  }
+}
+
 function crear(etiqueta, clase, texto) {
   const el = document.createElement(etiqueta);
   if (clase) el.className = clase;
@@ -208,8 +240,16 @@ $("#pestanas").addEventListener("click", (e) => {
   if (!btn) return;
   $$(".pestana").forEach((b) => b.classList.toggle("activa", b === btn));
   $$(".vista").forEach((v) => v.classList.toggle("activa", v.id === `vista-${btn.dataset.vista}`));
-  if (btn.dataset.vista === "consola") { cargarDocumentos(); cargarAuditoria(); cargarTickets(); }
-  if (btn.dataset.vista === "observabilidad") { cargarReglas(); cargarMetricas(); cargarSaludDetalle(); }
+  if (btn.dataset.vista === "consola") {
+    cargarEn("#lista-docs", cargarDocumentos);
+    cargarEn("#auditoria", cargarAuditoria);
+    cargarEn("#tickets", cargarTickets);
+  }
+  if (btn.dataset.vista === "observabilidad") {
+    cargarEn("#reglas-motor", cargarReglas);
+    cargarEn("#metricas", cargarMetricas);
+    cargarEn("#salud-detalle", cargarSaludDetalle);
+  }
 });
 
 /* ================================== salud =================================== */
@@ -445,9 +485,10 @@ function mostrarFicha() {
     crear("div", null, `${p.eps} · ${p.ciudad}`),
     crear("div", null, p.comorbilidades.length ? `Comorbilidades: ${p.comorbilidades.join(", ")}` : "Sin comorbilidades"),
   );
-  const nota = crear("div");
-  nota.innerHTML = `<b>${p.nota}</b>`;
-  f.append(nota);
+  // `b` y no `innerHTML`: la nota es una constante de este archivo, pero dejar aquí el
+  // único ejemplo de plantilla con `innerHTML` invita a copiarlo donde el texto sí venga
+  // de fuera. Es lo que pasó en el panel de consulta.
+  f.append(crear("b", null, p.nota));
 }
 
 function agregarTurno(quien, texto, clases = "") {
@@ -547,7 +588,19 @@ function finalizar() {
 function reproducir(url) {
   const a = $("#reproductor");
   a.src = `${url}?t=${Date.now()}`;
-  a.play().catch(() => {});
+  a.play().catch((e) => {
+    // El navegador bloquea la reproducción automática si no hubo un gesto del usuario.
+    // Antes se tragaba en silencio, y el síntoma -- la llamada se queda callada y el
+    // guardián la cierra sola -- no apunta a su causa por ningún lado. Una vez basta.
+    console.warn("[centinela] el navegador no dejó sonar el audio", e);
+    if (!estado.avisoAudioBloqueado) {
+      estado.avisoAudioBloqueado = true;
+      agregarTurno("sistema",
+        `El navegador no dejó sonar el audio (${e.name}). Suele ser la política de `
+        + "reproducción automática: pulse en cualquier parte de la página y siga.",
+        "alerta");
+    }
+  });
 }
 
 /* --------------------------- turno por texto -------------------------------- */
@@ -636,18 +689,47 @@ function procesarRespuestaTurno(r) {
  * `#reproductor`. El guardián existe porque un mensaje perdido no puede dejar la consola
  * esperando para siempre: se cuelga igual y se dice por qué.
  */
-const MS_GUARDIAN_COLGADO = 20000;
+
+/* El guardián mide SILENCIO, no duración total. Y es la corrección de que reintrodujo el
+ * fallo que venía a proteger.
+ *
+ * Era un plazo fijo de 20 s desde que el servidor decía `terminada`, elegido a ojo. El
+ * cierre de una llamada roja son **29,5 s de audio** — medido sobre el WAV real, no
+ * estimado —, así que el guardián no era una red de seguridad: saltaba SIEMPRE, y colgaba
+ * en el segundo 20 de 29,5. Lo que quedaba sin oír, palabra por palabra:
+ *
+ *     «…diríjase al servicio de urgencias más cercano o llame al 123 si no tiene cómo
+ *      desplazarse.»
+ *
+ * Es decir: exactamente la frase por la que existe este sistema, cortada por el temporizador
+ * que se añadió para que no se cortara. Se veía en el registro como «el audio final no llegó
+ * completo en 20 s», que se lee como un aviso técnico y era el fallo entero.
+ *
+ * Un plazo fijo no puede estar bien nunca, porque tendría que conocer de antemano la
+ * locución más larga del guion y volver a medirse cada vez que se reescriba una frase. Lo
+ * que sí es una avería, y no depende de ninguna duración, es que la voz DEJE DE AVANZAR:
+ * cada trozo que se programa, cada trozo que termina y cada segundo que reproduce el
+ * `<audio>` renuevan el plazo. Así el guardián sigue cerrando una consola atascada — más
+ * rápido que antes, de hecho — y no puede cortar una locución que está sonando.
+ */
+const MS_SIN_AVANCE_DE_VOZ = 8000;
 
 function colgarCuandoAcabeDeHablar() {
   estado.colgarTrasVoz = true;
+  renovarGuardianColgado();
+}
+
+/** La voz avanzó: el plazo del guardián empieza de nuevo. */
+function renovarGuardianColgado() {
+  if (!estado.colgarTrasVoz) return;
   clearTimeout(estado.guardianColgado);
   estado.guardianColgado = setTimeout(() => {
     if (!estado.colgarTrasVoz) return;
     agregarTurno("sistema",
-      `La llamada terminó pero el audio final no llegó completo en ` +
-      `${MS_GUARDIAN_COLGADO / 1000} s. Se cierra igual.`, "alerta");
+      `La llamada terminó y la voz dejó de avanzar durante `
+      + `${MS_SIN_AVANCE_DE_VOZ / 1000} s. Se cierra igual.`, "alerta");
     quizasColgar();
-  }, MS_GUARDIAN_COLGADO);
+  }, MS_SIN_AVANCE_DE_VOZ);
 }
 
 function quizasColgar() {
@@ -803,12 +885,42 @@ function estadoWs() {
   return ["conectando", "abierto", "cerrando", "cerrado"][ws.readyState] || "?";
 }
 
+/* El canal de voz también pasa por el token, y no puede llevarlo en una cabecera.
+ *
+ * `new WebSocket(url)` no admite cabeceras. La salida evidente sería `?token=...` y no se
+ * hace: un token en la URL queda escrito en el log de acceso de cualquier proxy que haya
+ * en medio. El segundo argumento del constructor es la lista de subprotocolos, que sí
+ * viaja como cabecera de verdad (`Sec-WebSocket-Protocol`), y es donde va.
+ *
+ * Sin token configurado no se ofrece ninguno y el servidor acepta como siempre.
+ */
+const PREFIJO_TOKEN_WS = "centinela.token.";
+
 function conectarWS() {
   const proto = location.protocol === "https:" ? "wss" : "ws";
-  estado.ws = new WebSocket(`${proto}://${location.host}/ws/llamada/${estado.llamadaId}`);
-  estado.ws.binaryType = "arraybuffer";
+  const url = `${proto}://${location.host}/ws/llamada/${estado.llamadaId}`;
+  const token = sessionStorage.getItem(CLAVE_TOKEN);
+  const ws = token ? new WebSocket(url, [PREFIJO_TOKEN_WS + token]) : new WebSocket(url);
 
-  estado.ws.onmessage = (ev) => {
+  // La llamada a la que pertenece ESTE socket. Todo lo que llegue por él se comprueba
+  // contra ella antes de tocar la pantalla; ver `vigente`.
+  const suLlamada = estado.llamadaId;
+  estado.ws = ws;
+  ws.binaryType = "arraybuffer";
+
+  /* Un socket viejo no habla por la llamada nueva.
+   *
+   * `conectarWS` puede correr otra vez -- por reconexión, o porque se inició otra llamada
+   * -- y el socket anterior sigue vivo hasta que su `close` llegue. Sus manejadores
+   * seguían apuntando al `estado` global, así que un `turno` en camino podía pintar la
+   * decisión de la llamada A en la tira de la llamada B, y su `onclose` tardío podía
+   * abrir una segunda conexión a la llamada en curso. Es el mismo fallo que el servidor
+   * ya corrigió en su `audio_por_llamada`: estado compartido entre dos llamadas.
+   */
+  const vigente = () => estado.ws === ws && estado.llamadaId === suLlamada;
+
+  ws.onmessage = (ev) => {
+    if (!vigente()) return;
     if (typeof ev.data !== "string") {
       // Los bytes siempre vienen precedidos de su cabecera JSON, que dejo dicho a
       // que trozo pertenecen. Sin cabecera no se sabe si es la muletilla o la
@@ -873,19 +985,32 @@ function conectarWS() {
     }
   };
 
-  estado.ws.onopen = () => {
-    console.log("[centinela] WebSocket abierto:", estado.ws.url);
-    estado.intentosWs = 0;
-    if (voz.activa) infoVoz("canal de voz conectado");
+  ws.onopen = () => {
+    console.log("[centinela] WebSocket abierto:", ws.url);
+    if (vigente()) {
+      estado.intentosWs = 0;
+      if (voz.activa) infoVoz("canal de voz conectado");
+    }
   };
 
-  estado.ws.onclose = (ev) => {
+  ws.onclose = (ev) => {
     console.warn("[centinela] WebSocket cerrado", ev.code, ev.reason);
+    if (!vigente()) return;
+    // 1008 es la puerta, no la red: reintentar con el mismo token daría el mismo
+    // rechazo cuatro veces y dejaría el diagnóstico enterrado bajo "reconectando".
+    if (ev.code === 1008) {
+      sessionStorage.removeItem(CLAVE_TOKEN);
+      agregarTurno("sistema",
+        "El canal de voz rechazó el token de acceso. La llamada sigue por HTTP; "
+        + "recargue la consola para volver a introducirlo.", "alerta");
+      avisarSinWebSocket("rechazado por el token");
+      return;
+    }
     reintentarWs(`cerrado con código ${ev.code}`);
   };
 
-  estado.ws.onerror = () => {
-    console.error("[centinela] error en el WebSocket:", estado.ws.url);
+  ws.onerror = () => {
+    console.error("[centinela] error en el WebSocket:", ws.url);
     // No se avisa aquí: a un `error` le sigue siempre un `close`, y avisar en los dos
     // duplicaba el mensaje en el registro.
   };
@@ -1277,6 +1402,12 @@ async function enviarTurnoPorHttp() {
       body: pcm.buffer,
     });
     const d = await r.json();
+    // El código HTTP se comprueba, y esto es la corrección de un atasco real: sin
+    // comprobarlo, un 404 -- el servidor se reinició a mitad de llamada -- o un 401
+    // devolvían `{"detail": ...}`, que no es ninguno de los tipos que se manejan
+    // abajo. La consola cancelaba su temporizador de espera y se quedaba en
+    // "Procesando…" para siempre, sin más camino que recargar la página.
+    if (!r.ok) throw new Error(d.detail || `el servidor respondió ${r.status}`);
     manejarResultadoVoz(d);
   } catch (e) {
     agregarTurno("sistema", `No se pudo enviar el audio: ${e.message}`, "alerta");
@@ -1310,6 +1441,18 @@ function manejarResultadoVoz(d) {
   } else if (d.tipo === "error") {
     agregarTurno("sistema", `Error del servidor: ${d.mensaje}`, "alerta");
     infoVoz("error del servidor, vuelvo a escuchar");
+    fase("escuchando");
+  } else {
+    // Ninguno de los tipos conocidos. Antes se salía sin hacer nada y con el
+    // temporizador de espera ya cancelado, así que la interfaz se quedaba en
+    // "Procesando…" sin salida. Cualquier respuesta que no se entienda devuelve el
+    // micrófono a escuchar: el paciente puede repetir, que es infinitamente mejor
+    // que una consola muda.
+    console.warn("[centinela] respuesta de turno no reconocida", d);
+    agregarTurno("sistema",
+      `El servidor respondió algo que no se supo interpretar (${d.tipo || "sin tipo"}). `
+      + "Vuelvo a escuchar.", "alerta");
+    infoVoz("respuesta no reconocida, vuelvo a escuchar");
     fase("escuchando");
   }
 }
@@ -1495,6 +1638,8 @@ async function programarTrozo(meta, datos) {
   salida.siguienteEn = inicio + buffer.duration;
   salida.nodos.push(fuente);
   salida.pendientes++;
+  // Hay más voz en camino: el guardián del colgado no debe contar este tiempo.
+  renovarGuardianColgado();
 
   // La muletilla no cambia de fase: el agente todavia esta pensando y se le puede
   // hablar encima sin que eso sea una interrupcion.
@@ -1505,6 +1650,8 @@ async function programarTrozo(meta, datos) {
     if (i >= 0) salida.nodos.splice(i, 1);
     if (generacion !== salida.generacion) return;
     salida.pendientes = Math.max(0, salida.pendientes - 1);
+    // El paciente acaba de oír un trozo: la voz avanza, el guardián espera.
+    renovarGuardianColgado();
     // Se reporta al terminar el ultimo trozo de un fragmento, no al empezarlo: lo
     // que cuenta como dicho es lo que el paciente ya oyo entero.
     if (meta.fin_fragmento) reportarHablado((meta.fragmento || 0) + 1);
@@ -1576,6 +1723,11 @@ function pararSalida() {
   // Se restaura el volumen para el turno siguiente, no para este.
   subirVoz();
 }
+
+/* El camino por HTTP y el turno por texto suenan por el `<audio>`, no por la cola de Web
+ * Audio, así que su señal de avance es su propio reloj de reproducción. Sin esto el
+ * guardián cortaba el cierre rojo por texto igual que por voz: son los mismos 29,5 s. */
+$("#reproductor").addEventListener("timeupdate", renovarGuardianColgado);
 
 $("#reproductor").addEventListener("ended", () => {
   // El turno del agente termino: se vuelve a escuchar sin que nadie pulse nada.
@@ -1816,29 +1968,59 @@ function pintarLatencia(m) {
   cont.append(crear("div", "ms", m.tts_desde_cache ? "sí" : "no"));
 }
 
-/* ================================= consola ================================== */
+/* ================================= consola ==================================
+ *
+ * Estos dos paneles construían su HTML con plantillas de texto y `innerHTML`, y eran los
+ * dos únicos sitios de la consola que lo hacían: `panel.js` y el resto de `app.js` pintan
+ * con `crear()`, que escribe por `textContent` y no interpreta nada.
+ *
+ * Era el sitio equivocado para hacer una excepción, porque lo que se interpolaba era
+ * justo lo que no se controla: `r.respuesta` es lo que ESCRIBIÓ EL MODELO, y
+ * `c.cita_textual` y `c.documento` son texto de un PDF que cualquiera puede subir por el
+ * botón que está tres líneas más arriba. Un `<img src=x onerror=…>` dentro de un PDF, o
+ * un modelo al que una inyección le hace escribir una etiqueta, se ejecutaba en la
+ * consola de enfermería. El corpus de hoy no tiene marcado -- comprobado, cero pasajes
+ * con etiquetas -- así que no era un fallo visible: era una puerta abierta.
+ *
+ * Que un proyecto cuya tesis es no fiarse de la salida del modelo la metiera en el DOM
+ * sin filtrar es exactamente la incoherencia que hay que quitar. Ahora estos dos paneles
+ * se pintan como todos los demás.
+ */
+
+/** Cartel de resultado, con su título y sus líneas. Nada se interpreta como HTML. */
+function cartel(clase, titulo) {
+  const div = crear("div", `aviso ${clase}`);
+  div.append(crear("strong", null, titulo));
+  return div;
+}
 
 $("#btn-subir").addEventListener("click", async () => {
   const f = $("#archivo").files[0];
   const salida = $("#resultado-subida");
-  if (!f) { salida.innerHTML = '<div class="aviso mal">Seleccione un PDF.</div>'; return; }
-  salida.innerHTML = '<div class="aviso neutro">Extrayendo texto, aplicando OCR si hace falta e indexando…</div>';
+  const poner = (nodo) => { salida.innerHTML = ""; salida.append(nodo); };
+  if (!f) { poner(cartel("mal", "Seleccione un PDF.")); return; }
+  poner(cartel("neutro", "Extrayendo texto, aplicando OCR si hace falta e indexando…"));
   const fd = new FormData();
   fd.append("archivo", f);
   try {
     const r = await api("/api/documentos", { method: "POST", body: fd });
     if (r.ingerido) {
-      salida.innerHTML = `<div class="aviso ok"><strong>${r.estado}</strong><br>${r.mensaje}
-        <pre>doc_id: ${r.doc_id}
-tema detectado: ${r.tema_detectado || "sin clasificar"}
-páginas: ${r.n_paginas}   fragmentos: ${r.n_chunks}   por OCR: ${r.paginas_ocr}
-generación del corpus: ${r.generacion}</pre></div>`;
+      const c = cartel("ok", r.estado);
+      c.append(crear("div", null, r.mensaje));
+      c.append(crear("pre", null,
+        `doc_id: ${r.doc_id}\n`
+        + `tema detectado: ${r.tema_detectado || "sin clasificar"}\n`
+        + `páginas: ${r.n_paginas}   fragmentos: ${r.n_chunks}   por OCR: ${r.paginas_ocr}\n`
+        + `generación del corpus: ${r.generacion}`));
+      poner(c);
     } else {
-      salida.innerHTML = `<div class="aviso neutro"><strong>No se indexó: ${r.razon}</strong><br>${r.mensaje}</div>`;
+      const c = cartel("neutro", `No se indexó: ${r.razon}`);
+      c.append(crear("div", null, r.mensaje));
+      poner(c);
     }
-    cargarDocumentos(); cargarAuditoria();
+    cargarEn("#lista-docs", cargarDocumentos); cargarEn("#auditoria", cargarAuditoria);
   } catch (e) {
-    salida.innerHTML = `<div class="aviso mal">${e.message}</div>`;
+    poner(cartel("mal", e.message));
   }
 });
 
@@ -1848,27 +2030,37 @@ $("#consulta-rag").addEventListener("keydown", (e) => { if (e.key === "Enter") c
 async function consultarRag() {
   const q = $("#consulta-rag").value.trim();
   const salida = $("#resultado-consulta");
+  const poner = (nodo) => { salida.innerHTML = ""; salida.append(nodo); };
   if (!q) return;
-  salida.innerHTML = '<div class="aviso neutro">Consultando…</div>';
+  poner(cartel("neutro", "Consultando…"));
   try {
     const r = await api(`/api/preguntar?q=${encodeURIComponent(q)}`);
-    const clase = r.fundamentado ? "ok" : "neutro";
-    let html = `<div class="aviso ${clase}"><strong>${r.fundamentado ? "Respuesta fundamentada" : "Sin fundamento suficiente — el agente se abstiene"}</strong>
-      <br>${r.respuesta}<pre>${r.razon}`;
+    const c = cartel(r.fundamentado ? "ok" : "neutro", r.fundamentado
+      ? "Respuesta fundamentada"
+      : "Sin fundamento suficiente — el agente se abstiene");
+    c.append(crear("div", null, r.respuesta));
+
+    let detalle = r.razon;
     if (r.verificaciones_falladas?.length) {
-      html += `\n\nVerificaciones falladas tras generar:\n - ${r.verificaciones_falladas.join("\n - ")}`;
+      detalle += `\n\nVerificaciones falladas tras generar:\n - `
+        + r.verificaciones_falladas.join("\n - ");
     }
-    html += `\n\ntokens: ${r.tokens.entrada} entrada / ${r.tokens.salida} salida · ${r.ms.toFixed(0)} ms`;
-    html += `\ngeneración del corpus: ${r.generacion_corpus}</pre>`;
-    (r.citas || []).forEach((c) => {
-      html += `<div class="cita-doc"><div class="doc-nombre">${c.documento}</div>
-        <div class="doc-pagina">pág. ${c.pagina} · similitud ${c.similitud}</div>
-        <blockquote>"${c.cita_textual}"</blockquote></div>`;
+    detalle += `\n\ntokens: ${r.tokens.entrada} entrada / ${r.tokens.salida} salida`
+      + ` · ${r.ms.toFixed(0)} ms`;
+    detalle += `\ngeneración del corpus: ${r.generacion_corpus}`;
+    c.append(crear("pre", null, detalle));
+
+    (r.citas || []).forEach((cita) => {
+      const doc = crear("div", "cita-doc");
+      doc.append(crear("div", "doc-nombre", cita.documento));
+      doc.append(crear("div", "doc-pagina",
+        `pág. ${cita.pagina} · similitud ${cita.similitud}`));
+      doc.append(crear("blockquote", null, `"${cita.cita_textual}"`));
+      c.append(doc);
     });
-    html += "</div>";
-    salida.innerHTML = html;
+    poner(c);
   } catch (e) {
-    salida.innerHTML = `<div class="aviso mal">${e.message}</div>`;
+    poner(cartel("mal", e.message));
   }
 }
 
@@ -1978,11 +2170,14 @@ async function borrarDocumento(d) {
       if (r.recibo_de_olvido) {
         msg += ` Recibo: la cita ${r.recibo_de_olvido.olvido_probado ? "desapareció" : "SIGUE PRESENTE"}.`;
       }
-      $("#resultado-subida").innerHTML =
-        `<div class="aviso ${r.olvido_verificado ? "ok" : "mal"}">${msg}</div>`;
-      cargarDocumentos(); cargarAuditoria();
+      const salida = $("#resultado-subida");
+      salida.innerHTML = "";
+      salida.append(cartel(r.olvido_verificado ? "ok" : "mal", msg));
+      cargarEn("#lista-docs", cargarDocumentos); cargarEn("#auditoria", cargarAuditoria);
     } catch (e) {
-      $("#resultado-subida").innerHTML = `<div class="aviso mal">${e.message}</div>`;
+      const salida = $("#resultado-subida");
+      salida.innerHTML = "";
+      salida.append(cartel("mal", e.message));
     }
   }
 }
@@ -2068,7 +2263,8 @@ async function cargarReglas() {
   });
 }
 
-$("#btn-refrescar-metricas").addEventListener("click", cargarMetricas);
+$("#btn-refrescar-metricas").addEventListener(
+  "click", () => cargarEn("#metricas", cargarMetricas));
 
 async function cargarMetricas() {
   const r = await api("/api/metricas");

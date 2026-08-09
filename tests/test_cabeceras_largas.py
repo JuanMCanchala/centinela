@@ -122,7 +122,7 @@ def _servidor_de_prueba(puerto_listo: threading.Event, puerto: list[int]) -> Non
     puerto_listo.set()
 
 
-def _handshake(puerto: int, bytes_de_cookie: int) -> str:
+def _handshake(puerto: int, bytes_de_cookie: int, subprotocolo: str = "") -> str:
     """Manda un handshake de WebSocket como el de un navegador y devuelve la respuesta."""
 
     clave = base64.b64encode(os.urandom(16)).decode()
@@ -137,9 +137,10 @@ def _handshake(puerto: int, bytes_de_cookie: int) -> str:
         f"Origin: http://127.0.0.1:{puerto}",
         "Sec-WebSocket-Extensions: permessage-deflate; client_max_window_bits",
         f"Cookie: {cookie}",
-        "",
-        "",
     ]
+    if subprotocolo:
+        lineas.append(f"Sec-WebSocket-Protocol: {subprotocolo}")
+    lineas.extend(["", ""])
     with socket.create_connection(("127.0.0.1", puerto), timeout=10) as s:
         s.sendall("\r\n".join(lineas).encode())
         respuesta = s.recv(8192).decode("latin1")
@@ -172,3 +173,61 @@ def test_sin_cookies_tambien_funciona(puerto_del_servidor: int) -> None:
 
     respuesta = _handshake(puerto_del_servidor, 0)
     assert "101 Switching Protocols" in respuesta, respuesta[:400]
+
+
+# ==========================================================================
+# El token del canal de voz, en un handshake de verdad
+#
+# `tests/test_acceso.py` ya prueba la puerta, pero con el TestClient de Starlette, que
+# tiene su propio transporte. Lo que decide si el NAVEGADOR conecta es esta respuesta, y
+# hay una regla del protocolo que no perdona: si el servidor devuelve un subprotocolo que
+# el cliente no ofrecio, el cliente MUST Fail the WebSocket Connection (RFC 6455 §4.1).
+# Un `accept()` sin echo, o con echo de mas, se ve igual en el servidor y rompe la voz.
+# ==========================================================================
+
+def _con_token(token: str):
+    """Pone el token en la config que el servidor ya arrancado lee en cada peticion."""
+
+    from centinela.main import config
+
+    anterior = config.token_consola
+    config.token_consola = token
+    return anterior
+
+
+def test_el_subprotocolo_del_token_se_devuelve_tal_cual(puerto_del_servidor: int) -> None:
+    anterior = _con_token("secreto-de-prueba")
+    try:
+        respuesta = _handshake(
+            puerto_del_servidor, 0, "centinela.token.secreto-de-prueba"
+        )
+    finally:
+        _con_token(anterior)
+
+    assert "101 Switching Protocols" in respuesta, respuesta[:400]
+    assert "sec-websocket-protocol: centinela.token.secreto-de-prueba" in (
+        respuesta.lower()
+    ), respuesta[:400]
+
+
+def test_el_token_equivocado_no_llega_a_101(puerto_del_servidor: int) -> None:
+    """Se rechaza en el handshake: el canal no se abre ni un instante."""
+
+    anterior = _con_token("secreto-de-prueba")
+    try:
+        respuesta = _handshake(puerto_del_servidor, 0, "centinela.token.otra-cosa")
+    finally:
+        _con_token(anterior)
+
+    assert "101 Switching Protocols" not in respuesta, respuesta[:400]
+
+
+def test_sin_token_configurado_el_navegador_conecta_sin_ofrecer_nada(
+    puerto_del_servidor: int,
+) -> None:
+    """El caso del jurado. Y el servidor no debe inventarse un subprotocolo."""
+
+    respuesta = _handshake(puerto_del_servidor, 0)
+
+    assert "101 Switching Protocols" in respuesta, respuesta[:400]
+    assert "sec-websocket-protocol" not in respuesta.lower(), respuesta[:400]

@@ -272,3 +272,88 @@ def test_los_proximos_pasos_cambian_si_no_se_oyo() -> None:
     assert oida == sin_dato, "sin dato se asume el camino normal, como antes"
     assert "NO se alcanzo a decir completa" in no_oida
     assert "interrumpio" in no_oida
+
+
+# ==========================================================================
+# 5 · La mitad de CLIENTE, que es donde el fallo volvio
+#
+# El resto de este archivo prueba el servidor. La consola tenia su propia mitad sin
+# probar, y ahi el fallo volvio a entrar por la puerta de atras: el temporizador que se
+# anadio como red de seguridad -- "si `fin_voz` no llega, cuelga igual y di por que" --
+# era un plazo FIJO de 20 s desde que el servidor decia `terminada`.
+#
+# El cierre de una llamada roja son 29.5 s de audio, medidos sobre el WAV que sirve la
+# API. Asi que el guardian no era una red: saltaba SIEMPRE y colgaba en el segundo 20,
+# justo antes de "dirijase al servicio de urgencias mas cercano o llame al 123". El
+# registro lo mostraba como "el audio final no llego completo en 20 s", que se lee como
+# un aviso tecnico y era el fallo entero.
+#
+# Y no se podia ver mirando la cache de audio: `cierre_rojo.wav` son 17.8 s, con 2.2 s
+# de margen aparente sobre los 20. Lo que se sirve NO es esa locucion, es una
+# concatenacion que le suma los hallazgos del paciente, generados en el turno. Por eso
+# ningun plazo fijo puede ser correcto: la duracion de lo que se va a decir no se conoce
+# al armar el temporizador.
+#
+# Lo que se comprueba aqui es la propiedad, no la constante: el guardian del cliente se
+# renueva cuando la voz AVANZA. Es una prueba de codigo fuente porque la consola no
+# tiene arnes de JavaScript, y vale la pena de todas formas: lo que fallo fue una
+# decision de diseno que se puede leer.
+# ==========================================================================
+
+RUTA_APP_JS = Path(__file__).resolve().parents[1] / "web" / "app.js"
+
+
+def test_el_guardian_del_cliente_no_es_un_plazo_por_duracion_total() -> None:
+    fuente = RUTA_APP_JS.read_text(encoding="utf-8")
+
+    assert "MS_GUARDIAN_COLGADO" not in fuente, (
+        "volvio el plazo fijo desde `terminada`: corta el cierre rojo a mitad"
+    )
+    assert "MS_SIN_AVANCE_DE_VOZ" in fuente
+
+
+def test_el_guardian_se_renueva_cuando_la_voz_avanza() -> None:
+    """Los tres avances: se programa un trozo, termina un trozo, y el `<audio>` corre.
+
+    Los dos primeros son la cola de Web Audio (la voz por WebSocket) y el tercero es el
+    camino por HTTP y el turno por texto, que suenan por el elemento `<audio>`. Si
+    faltara el tercero, el cierre rojo por texto se seguiria cortando.
+    """
+
+    fuente = RUTA_APP_JS.read_text(encoding="utf-8")
+
+    # Una es la definicion; el resto son las renovaciones.
+    assert fuente.count("renovarGuardianColgado") >= 5, (
+        "falta alguna senal de avance: con menos de tres, hay un camino que se corta"
+    )
+    assert 'addEventListener("timeupdate", renovarGuardianColgado)' in fuente, (
+        "sin `timeupdate` el camino por HTTP y el turno por texto se cortan igual"
+    )
+
+
+def test_el_plazo_sin_avance_es_mas_corto_que_la_locucion_mas_larga() -> None:
+    """La comprobacion que ata el numero a la realidad medida.
+
+    Si el plazo fuera mayor que una locucion, seria un plazo por duracion disfrazado. Y
+    si alguien lo convierte otra vez en un plazo total, este numero -- por debajo de la
+    locucion mas corta del guion -- deja de tener sentido y hay que volver aqui.
+    """
+
+    import re
+    import wave
+
+    fuente = RUTA_APP_JS.read_text(encoding="utf-8")
+    ms = int(re.search(r"MS_SIN_AVANCE_DE_VOZ = (\d+)", fuente).group(1))
+
+    cache = Path(__file__).resolve().parents[1] / "data" / "audio_cache"
+    duraciones = []
+    for archivo in cache.glob("*.wav"):
+        with wave.open(str(archivo)) as w:
+            duraciones.append(w.getnframes() / w.getframerate())
+
+    if duraciones:
+        mas_larga = max(duraciones)
+        assert ms / 1000 < mas_larga, (
+            f"el plazo sin avance ({ms/1000:.0f} s) supera la locucion mas larga "
+            f"({mas_larga:.1f} s): vuelve a ser un plazo por duracion"
+        )

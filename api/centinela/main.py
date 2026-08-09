@@ -173,6 +173,14 @@ async def lifespan(app: FastAPI):
     E["motor"] = TriageEngine(citas_umbrales=_cargar_citas_umbrales())
     E["arrancado_en"] = datetime.now(timezone.utc).isoformat()
 
+    # Un token con un espacio no cabe en el subprotocolo del WebSocket, y el sintoma
+    # seria un canal de voz que no conecta sin decir por que. Se dice aqui.
+    if config.token_consola and not config.token_transportable():
+        log("token_no_transportable", nivel="aviso",
+            detalle="CENTINELA_TOKEN tiene espacios o separadores: el canal de voz no "
+                    "lo puede llevar y el barge-in quedara sin conectar. Use una sola "
+                    "palabra.")
+
     # Entrega de alertas. Se monta antes de recuperar las llamadas colgadas para que
     # los tickets que salgan de esa recuperacion ya encuentren la cola armada.
     E["despachador"] = Despachador(E["escalation"], canales_desde_config(config))
@@ -429,26 +437,71 @@ app.add_middleware(
 # el README, sin pedirle al jurado que configure nada.
 #
 # Definido, protege los endpoints que MODIFICAN algo -- subir y borrar documentos,
-# abrir una llamada, atender una alerta, correr las suites. Lo que solo lee queda
-# abierto a proposito: la auditabilidad es parte de la entrega y un `/api/reglas`
-# detras de un secreto no la sirve.
+# atender una alerta, correr las suites, y **la llamada entera**: abrirla, cada turno,
+# el audio, el cierre y el canal de voz. Lo que solo lee queda abierto a proposito: la
+# auditabilidad es parte de la entrega y un `/api/reglas` detras de un secreto no la
+# sirve.
+#
+# Que la llamada este protegida ENTERA y no solo al abrirla es la correccion de un
+# hueco real. Antes, con el token puesto, `POST /api/llamadas` pedia credencial y
+# `/turno`, `/audio`, `/cerrar` y el WebSocket no: el `llamada_id` hacia de credencial
+# de facto. Y no lo era, porque `GET /api/llamadas` -- de lectura, abierto a proposito
+# -- lo entrega. Medido contra el servidor en marcha: sin presentar nada se leyo el id
+# de una llamada EN CURSO del listado, se la condujo a ROJO y se creo su ticket. Quien
+# conduce una llamada escribe en el registro clinico de un paciente; eso es modificar.
+#
+# El listado sigue abierto y el id sigue ahi. La diferencia es que ya no es una llave.
 #
 # Es el minimo honesto y no es identidad. Un despliegue clinico real necesita saber
 # QUE PERSONA atendio cada alerta, y un secreto compartido no lo puede saber; esta
 # declarado asi en docs/operacion.md.
 # ==========================================================================
 
+# Prefijo del subprotocolo con el que viaja el token en el canal de voz. Ver
+# `token_del_socket`.
+PREFIJO_TOKEN_WS = "centinela.token."
+
+
+def _token_valido(presentado: str) -> bool:
+    # Comparacion en tiempo constante: con `==` el tiempo de respuesta filtra
+    # cuantos caracteres del token acerto quien lo intenta.
+    return secrets.compare_digest(presentado, config.token_consola)
+
+
 async def exigir_token(authorization: str | None = Header(default=None)) -> None:
     if config.token_consola:
         presentado = (authorization or "").removeprefix("Bearer ").strip()
-        # Comparacion en tiempo constante: con `==` el tiempo de respuesta filtra
-        # cuantos caracteres del token acerto quien lo intenta.
-        if not secrets.compare_digest(presentado, config.token_consola):
+        if not _token_valido(presentado):
             log("acceso_rechazado", nivel="aviso", presento_algo=bool(presentado))
             raise HTTPException(401, "falta el token o no es valido")
 
 
 PROTEGIDO = [Depends(exigir_token)]
+
+
+def token_del_socket(ofrecidos: list[str]) -> str | None:
+    """El token del canal de voz viaja en el subprotocolo, no en la URL.
+
+    `new WebSocket(url)` del navegador no admite cabeceras, asi que la salida
+    evidente seria `?token=...`. No se hace: un token en una URL queda escrito en el
+    log de acceso de cualquier proxy que haya en medio y en el historial del
+    navegador. `Sec-WebSocket-Protocol` es una cabecera de verdad y es lo unico que
+    el navegador si deja poner -- para eso existe el segundo argumento del
+    constructor.
+
+    Cuesta una restriccion, dicha en docs/operacion.md: el token tiene que ser una
+    sola palabra, porque el subprotocolo no admite espacios ni comas. `config` avisa
+    al arrancar si el configurado no lo cumple, para que no falle en silencio.
+
+    Devuelve el subprotocolo que hay que devolver al aceptar, o None si no hay que
+    devolver ninguno. Quien decide si se acepta es `ws_llamada`.
+    """
+
+    elegido = None
+    for ofrecido in ofrecidos:
+        if elegido is None and ofrecido.startswith(PREFIJO_TOKEN_WS):
+            elegido = ofrecido
+    return elegido
 
 
 # ==========================================================================
@@ -833,7 +886,7 @@ async def iniciar_llamada(datos: InicioLlamada) -> dict:
     }
 
 
-@app.post("/api/llamadas/{llamada_id}/turno")
+@app.post("/api/llamadas/{llamada_id}/turno", dependencies=PROTEGIDO)
 async def turno_texto(llamada_id: str, cuerpo: TurnoTexto) -> dict:
     """Turno por texto.
 
@@ -976,7 +1029,7 @@ async def audio_turno(llamada_id: str, turno: int) -> Response:
     return Response(content=datos, media_type="audio/wav")
 
 
-@app.post("/api/llamadas/{llamada_id}/cerrar")
+@app.post("/api/llamadas/{llamada_id}/cerrar", dependencies=PROTEGIDO)
 async def cerrar_llamada(llamada_id: str) -> dict:
     policy = E["llamadas"].get(llamada_id)
     if policy is None:
@@ -1506,7 +1559,7 @@ async def _procesar_audio_turno(
     return salida
 
 
-@app.post("/api/llamadas/{llamada_id}/audio")
+@app.post("/api/llamadas/{llamada_id}/audio", dependencies=PROTEGIDO)
 async def turno_por_audio(llamada_id: str, peticion: Request) -> JSONResponse:
     """Turno de voz por HTTP: respaldo cuando el WebSocket no esta disponible.
 
@@ -1838,9 +1891,29 @@ async def ws_llamada(ws: WebSocket, llamada_id: str) -> None:
 
     Y del cliente al servidor: `calibracion` (el ruido de su sala), `hablado` (cuantos
     fragmentos reprodujo de verdad) y `fin_reproduccion` (su cola se vacio).
+
+    **Acceso.** Con `CENTINELA_TOKEN` definido este canal tambien lo pide, y lo recibe
+    en el subprotocolo porque el navegador no admite cabeceras aqui: ver
+    `token_del_socket`. Conducir una llamada escribe en el registro clinico de un
+    paciente, asi que el `llamada_id` -- que el listado abierto publica -- no puede ser
+    la unica llave.
     """
 
-    await ws.accept()
+    # El token ANTES de aceptar. Cerrar sin aceptar hace que el navegador vea el
+    # handshake rechazado, que es lo correcto: no se abre un canal a quien no pasa la
+    # puerta, ni por un instante.
+    subprotocolo = token_del_socket(list(ws.scope.get("subprotocols") or []))
+    if config.token_consola:
+        presentado = (subprotocolo or "").removeprefix(PREFIJO_TOKEN_WS)
+        if not _token_valido(presentado):
+            log("acceso_rechazado", nivel="aviso", canal="ws",
+                presento_algo=bool(presentado))
+            await ws.close(code=1008, reason="falta el token o no es valido")
+            return
+
+    # Se devuelve el que el cliente ofrecio: el navegador aborta si el servidor
+    # responde con un subprotocolo que nadie pidio.
+    await ws.accept(subprotocol=subprotocolo)
     policy = E["llamadas"].get(llamada_id)
 
     if policy is None:

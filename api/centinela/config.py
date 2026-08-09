@@ -70,8 +70,14 @@ class Config:
     # Vacio a proposito. La compuerta G2 del reto da 15 minutos para levantar la
     # solucion siguiendo solo el README, y pedir configurar un token para ver la
     # consola gasta ese presupuesto en nada. Si se define, protege los endpoints que
-    # modifican algo. Un despliegue clinico real necesita identidad por persona, no
-    # un secreto compartido, y eso esta declarado en docs/operacion.md.
+    # modifican algo Y la llamada entera, canal de voz incluido. Un despliegue clinico
+    # real necesita identidad por persona, no un secreto compartido, y eso esta
+    # declarado en docs/operacion.md.
+    #
+    # Tiene que ser UNA PALABRA. El canal de voz lo lleva en el subprotocolo del
+    # WebSocket -- ver `main.token_del_socket` -- y ahi no caben espacios ni comas.
+    # `token_transportable` lo comprueba y el arranque lo avisa, porque el sintoma de
+    # un token con un espacio seria un canal de voz que no conecta sin decir por que.
     token_consola: str = os.environ.get("CENTINELA_TOKEN", "")
 
     # Tope de subida de documentos. Un PDF de guia clinica no pasa de unas decenas de
@@ -123,6 +129,21 @@ class Config:
     def asegurar_directorios(self) -> None:
         for d in (self.dir_index, self.dir_runtime, self.dir_audio_cache, self.dir_subidas):
             d.mkdir(parents=True, exist_ok=True)
+
+    def token_transportable(self) -> bool:
+        """Si el token configurado puede viajar en el subprotocolo del WebSocket.
+
+        Un subprotocolo es un `token` de HTTP: sin espacios, sin comas y sin
+        caracteres de control. Los separadores son los que romperian la cabecera; el
+        resto se deja pasar en vez de imponer una lista blanca, porque un token
+        rechazado por un guion seria una molestia sin motivo.
+        """
+
+        prohibidos = set(' \t",;()<>@\\/[]?={}')
+        sano = bool(self.token_consola) and not (
+            set(self.token_consola) & prohibidos
+        ) and self.token_consola.isprintable()
+        return sano
 
     def a_dict(self) -> dict:
         return {

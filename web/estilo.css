@@ -1610,6 +1610,9 @@ input[type="file"]::file-selector-button:hover {
 .aviso.ok { color: inherit; border-left-color: var(--verde); }
 .aviso.mal { color: inherit; border-left-color: var(--rojo); }
 .aviso.neutro { color: inherit; border-left-color: var(--linea-viva); }
+/* El titulo del cartel, en su propia linea. Lo hacia un `<br>` en la plantilla de
+   texto que estos carteles usaban antes; ahora se pintan con nodos y le toca al CSS. */
+.aviso > strong { display: block; }
 .aviso.ok > strong { color: var(--verde); }
 .aviso.mal > strong { color: var(--rojo); }
 

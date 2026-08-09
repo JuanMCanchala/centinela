@@ -18,7 +18,7 @@ Están en [`api/centinela/config.py`](../api/centinela/config.py) y se publican 
 | `CENTINELA_SLA_AMARILLO_H` | `24` | Horas de plazo para acusar una alerta de vigilancia |
 | `CENTINELA_WEBHOOK_ALERTAS` | *(vacío)* | URL a la que se entregan las alertas, además del disco |
 | `CENTINELA_SECRETO_WEBHOOK` | *(vacío)* | Secreto para la firma HMAC-SHA256 del cuerpo |
-| `CENTINELA_TOKEN` | *(vacío)* | Si se define, protege los endpoints que modifican algo |
+| `CENTINELA_TOKEN` | *(vacío)* | Si se define, protege los endpoints que modifican algo y la llamada entera, canal de voz incluido. **Una sola palabra** (ver más abajo) |
 | `CENTINELA_MAX_MB_DOC` | `64` | Tope de tamaño de un PDF subido |
 | `CENTINELA_BARGEIN` | `1` | El paciente puede cortarle la palabra al agente. A `0`, la voz sale entera |
 | `CENTINELA_BARGEIN_MARGEN_ECO` | `1.8` | Cuánto por encima del eco medido hay que hablar para cortar |
@@ -274,7 +274,7 @@ Cómo diagnosticarlo si vuelve a pasar:
 | Señal | Qué significa |
 |---|---|
 | El registro tiene el texto completo y el paciente oyó solo el principio | La interfaz colgó antes de tiempo: el turno terminado no debe cerrar, lo cierra `fin_voz` con la cola vacía |
-| Llega `fin_llamada` pero la consola sigue en «El agente habla» | Un trozo de voz no se decodificó; el perro guardián cierra a los 20 s y lo dice en el registro |
+| Llega `fin_llamada` pero la consola sigue en «El agente habla» | Un trozo de voz no se decodificó; el perro guardián cierra tras 8 s **sin que la voz avance** y lo dice en el registro. Mide silencio, no duración total: con un plazo fijo cortaba el cierre rojo, que son 29,5 s de audio, en el segundo 20 — justo antes de «diríjase al servicio de urgencias» |
 | `urgencia_oida: false` en el resumen | El paciente cortó la instrucción. Es dato, no fallo: la hoja de traspaso ya avisa de que hay que darla por teléfono |
 
 ### El arranque tarda más de lo normal
@@ -350,6 +350,29 @@ CENTINELA_TOKEN=nuevo-secreto make up
 La consola lo pide en el primer 401 y lo guarda en `sessionStorage`, así que se vuelve
 a pedir al cerrar la pestaña. En un puesto compartido eso es lo que se quiere.
 
+**Tiene que ser una sola palabra**, sin espacios ni comas. El canal de voz lo lleva en
+el subprotocolo del WebSocket (`Sec-WebSocket-Protocol`) y no en la URL, porque un token
+en una URL queda escrito en el log de acceso de cualquier proxy que haya en medio. Un
+subprotocolo es un *token* de HTTP y no admite separadores. Si el configurado no cumple,
+el arranque avisa con `token_no_transportable` en vez de dejar un canal de voz que no
+conecta sin decir por qué.
+
+### Qué protege exactamente
+
+| Con `CENTINELA_TOKEN` puesto | |
+|---|---|
+| Pide token | Subir y borrar documentos · atender una alerta · correr las suites · **la llamada entera**: `POST /api/llamadas`, `/turno`, `/audio`, `/cerrar` y `ws/llamada/{id}` |
+| Queda abierto | Todo lo que solo lee: `/api/salud`, `/api/reglas`, `/api/metricas`, `/api/documentos`, `/api/llamadas`, `/api/tickets`, las trazas |
+
+Que la llamada esté protegida **entera** y no solo al abrirla es la corrección de un
+hueco real. Antes, `POST /api/llamadas` pedía credencial y `/turno`, `/audio`, `/cerrar`
+y el WebSocket no, así que el `llamada_id` hacía de credencial de facto — y no lo era,
+porque `GET /api/llamadas` es de lectura y lo entrega. Medido contra el servidor en
+marcha, sin presentar nada: se leyó el id de una llamada **en curso** del listado, se la
+condujo a ROJO y se creó su ticket. Quien conduce una llamada escribe en el registro
+clínico de un paciente; eso es modificar. El listado sigue abierto y el id sigue ahí, y
+está bien: la diferencia es que ya no es una llave. Lo fija `tests/test_acceso.py`.
+
 ---
 
 ## Qué mirar en los logs
@@ -370,7 +393,8 @@ Una línea JSON por evento, en stderr, con `llamada_id` como campo de primera cl
 | `llamada_cerrada_por_el_sistema` | Cierre forzado, con su motivo | info |
 | `llamada_cerrada_por_inactividad` | Expiró el plazo sin turnos | info |
 | `llamadas_recuperadas_al_arrancar` | Cuántas quedaron de un proceso anterior | info |
-| `acceso_rechazado` | 401 en un endpoint protegido | aviso |
+| `acceso_rechazado` | 401 en un endpoint protegido, o `canal=ws` si fue el canal de voz | aviso |
+| `token_no_transportable` | `CENTINELA_TOKEN` tiene espacios: el canal de voz no lo puede llevar | aviso |
 | `subida_rechazada_por_tamano` | PDF por encima del tope | aviso |
 
 No se registra lo que dijo el paciente. La transcripción vive en la base de datos de
