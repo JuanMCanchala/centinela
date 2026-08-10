@@ -79,6 +79,7 @@ from .rag.store import KnowledgeStore
 from .stt.bargein import DetectorInterrupcion, Veredicto, rms_de
 from .stt.sesion import SesionTranscripcion
 from .stt.whisper import WhisperSTT, pcm16_a_float32
+from .tts.clon import VozClonada
 from .tts.piper import PiperTTS, concatenar_wav
 
 RAIZ = Path(__file__).resolve().parents[2]
@@ -164,7 +165,10 @@ async def lifespan(app: FastAPI):
     E["llm"] = LLMBackend(modelo=config.modelo_llm, url_base=config.url_ollama)
     E["extractor"] = Extractor(E["llm"])
     E["responder"] = ResponderClinico(E["retriever"], E["llm"])
-    E["tts"] = PiperTTS(dir_cache=config.dir_audio_cache)
+    E["tts"] = PiperTTS(
+        dir_cache=config.dir_audio_cache,
+        clon=VozClonada() if config.usar_voz_clonada else None,
+    )
     E["stt"] = WhisperSTT(
         tamano=config.modelo_stt or None,
         dispositivo=config.dispositivo_stt or None,

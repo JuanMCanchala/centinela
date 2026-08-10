@@ -416,6 +416,7 @@ Medido en `eval/redteam.py`: 33 casos adversariales, incluida la familia
 | `escalation/despacho.py` | Sacar la alerta del proceso, con reintentos y sin duplicar | Decidir a quién avisar |
 | `stt/whisper.py` | Transcripción | Interpretar |
 | `tts/piper.py` | Síntesis + caché pre-renderizado; nivelado y cadencia del audio | Elegir qué decir |
+| `tts/clon.py` | La voz clonada, leída de disco antes de sintetizar. Caché direccionado por contenido; cuenta y publica los fallos, porque un fallo es un cambio de hablante | Sintetizar nada |
 | `tts/hablado.py` | Cómo se lee una cifra en voz alta: `38.5` → «treinta y ocho y medio», `123` → «uno dos tres» | Cambiar el registro clínico |
 | `obs/metrics.py` | Instrumentación por etapa | Afectar el pipeline |
 | `obs/log.py` | Eventos JSON correlacionados por `llamada_id` | Registrar lo que dijo el paciente |

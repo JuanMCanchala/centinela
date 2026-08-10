@@ -38,6 +38,13 @@ data/index/
 !data/audio_cache/
 data/audio_cache/_tmp/
 
+# La voz clonada TAMBIEN se versiona, y por una razon mas fuerte: el modelo que la genera
+# --Chatterbox-- corre a RTF 4 en CPU y arrastra 2.5 GB de torch, asi que no puede instalarse
+# dentro de los 15 minutos de la compuerta G2. Estos WAV son la unica forma de que quien clone
+# el repositorio oiga la voz del agente sin instalar nada. Ver `api/centinela/tts/clon.py`.
+!data/audio_clon/
+data/audio_clon/_tmp/
+
 # --- sistema ---
 .DS_Store
 Thumbs.db

@@ -28,6 +28,7 @@ Están en [`api/centinela/config.py`](../api/centinela/config.py) y se publican 
 | `CENTINELA_CIERRE_ADAPTATIVO` | `1` | El turno cierra en cuanto la respuesta se sostiene sola. A `0`, siempre el techo |
 | `CENTINELA_CIERRE_MIN_MS` | `450` | Plazo mínimo: por debajo no se cierra ni con la respuesta más clara |
 | `CENTINELA_GRACIA_RECONEXION_S` | `20` | Cuánto se espera a que el navegador vuelva antes de dar la llamada por colgada. A `0`, cierre inmediato como antes |
+| `CENTINELA_VOZ_CLONADA` | `1` | La voz del agente sale de `data/audio_clon/`. A `0` habla enteramente Piper: es el interruptor para descartar la voz clonada sin borrar nada |
 | `CENTINELA_LLM_MODEL` | `phi3.5:3.8b-mini-instruct-q4_K_M` | Modelo declarado (compuerta G3) |
 | `CENTINELA_DIR_RUNTIME` | `data/runtime` | Dónde vive la base de datos de llamadas |
 | `CENTINELA_LLM_TIMEOUT_S` | `12` | Cuánto se le deja al modelo antes de darlo por perdido. Eran 60 s, que es un valor de script y no de conversación: un turno que espera un minuto ya no es un turno. El techo sale de la medición —la extracción tarda 2 255 ms en P50 y 2 924 ms en P95 sobre 366 invocaciones reales— más margen para el arranque en frío de Ollama |
@@ -165,6 +166,41 @@ criticidad solo sube. `make redteam`, familia `degradar_hallazgo`.
 ---
 
 ## Runbook
+
+### La voz cambia de persona a mitad de llamada
+
+Es el síntoma propio de este diseño y no es un fallo del audio: es un **fallo de caché**. La
+voz del agente es una clonación pre-renderizada que se lee de disco, porque el modelo que la
+genera corre a RTF 4 en CPU y no cabe en la compuerta G2. Cuando el texto que hay que decir
+no está pre-renderizado, lo dice Piper — y Piper es otra persona.
+
+```bash
+curl -s localhost:8000/api/salud | python -m json.tool | grep -A 9 voz_clonada
+```
+
+| Campo | Qué leer |
+|---|---|
+| `disponible` | `false` significa que no hay manifiesto: el agente habla con Piper todo el tiempo |
+| `cobertura_pct` | Cuántas de las frases pedidas salieron del clon |
+| `fallos` | Cuántas veces cambió de voz |
+| `textos_sin_clonar` | **Las frases exactas que faltaron.** Es lo que hay que renderizar |
+
+Los tres caminos que se sabe que fallan, dichos de frente: la **respuesta del RAG** (texto
+abierto del corpus), las **lecturas de vuelta de más de un dominio** («fiebre de 38.5 grados
+y líquido amarillo en la herida», cuyo espacio es el producto de los dominios) y cualquier
+frase del guion que se haya editado después del último render — porque la clave es el hash
+del texto, y al cambiar el texto cambia la clave.
+
+Para volver a renderizar lo que falte, con el venv aparte de la voz:
+
+```bash
+# El guion fijo
+<venv-voz>/python scripts/render_clon.py --referencia <grabacion>.wav
+# Las plantillas con parte variable finita: identidad por nombre y lecturas de vuelta
+<venv-voz>/python scripts/render_clon.py --referencia <grabacion>.wav --derivadas
+```
+
+Y si hay que descartar la voz clonada en caliente, sin borrar nada: `CENTINELA_VOZ_CLONADA=0`.
 
 ### Una alerta no salió
 

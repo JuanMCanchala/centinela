@@ -52,6 +52,9 @@ class Config:
     # --- comportamiento ---
     calentar_al_arrancar: bool = os.environ.get("CENTINELA_WARMUP", "1") == "1"
     pre_renderizar_audio: bool = os.environ.get("CENTINELA_PRERENDER", "1") == "1"
+    # A `0` el agente habla enteramente con Piper. Es el interruptor que se busca cuando algo
+    # suena raro en vivo: permite descartar la voz clonada sin editar codigo ni borrar WAV.
+    usar_voz_clonada: bool = os.environ.get("CENTINELA_VOZ_CLONADA", "1") == "1"
 
     # --- escalamiento ---
     #

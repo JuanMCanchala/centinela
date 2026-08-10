@@ -34,6 +34,7 @@ from ..obs.log import log
 
 import numpy as np
 
+from .clon import VozClonada
 from .hablado import para_voz
 
 RAIZ = Path(__file__).resolve().parents[3]
@@ -176,9 +177,13 @@ class PiperTTS:
         binario: Path | None = None,
         voz: Path | None = None,
         dir_cache: Path | None = None,
+        clon: VozClonada | None = None,
     ) -> None:
         self.binario = binario or self._localizar_binario()
         self.voz = voz or self._localizar_voz()
+        # La voz clonada es un lector de disco, no un motor: se consulta antes de sintetizar
+        # y si no tiene la frase, Piper la dice. Ver `tts/clon.py`.
+        self.clon = clon
         self.dir_cache = Path(dir_cache or DIR_CACHE)
         self.dir_cache.mkdir(parents=True, exist_ok=True)
         self._memoria: dict[str, bytes] = {}
@@ -214,6 +219,9 @@ class PiperTTS:
             "voz": self.voz.stem if self.voz else None,
             "locuciones_en_cache": len(list(self.dir_cache.glob("*.wav"))),
             "respaldo": "SpeechSynthesis del navegador si el motor no esta disponible",
+            # La voz que de verdad oye el paciente sale del clon cuando lo tiene. Sus fallos
+            # son cambios de hablante a mitad de llamada, asi que van publicados.
+            "voz_clonada": self.clon.estado() if self.clon else None,
         }
 
     @staticmethod
@@ -250,10 +258,38 @@ class PiperTTS:
 
     # ------------------------------------------------------------------
 
-    async def sintetizar(self, texto: str, clave: str | None = None) -> AudioSintetizado:
-        """Devuelve WAV. Si `clave` esta en cache y el texto no cambio, no ejecuta el motor."""
+    async def sintetizar(
+        self, texto: str, clave: str | None = None, usar_clon: bool = True
+    ) -> AudioSintetizado:
+        """Devuelve WAV. Si `clave` esta en cache y el texto no cambio, no ejecuta el motor.
+
+        `usar_clon=False` lo pide `pre_renderizar`: el arranque tiene que dejar el cache de
+        Piper caliente **aunque el clon cubra la frase**, porque ese cache es la red de
+        seguridad si un WAV clonado falta. Si el pre-renderizado se conformara con el acierto
+        del clon, la red no se tejeria y un archivo perdido acabaria sintetizando en vivo en
+        mitad de una llamada.
+        """
 
         t0 = time.perf_counter()
+
+        # El clon va primero: es la voz que el paciente debe oir. Se busca POR TEXTO, asi que
+        # cubre tambien lo que no tiene clave -- una respuesta del RAG, una lectura de vuelta.
+        clonado = self.clon.buscar(texto) if (usar_clon and self.clon) else None
+        if clonado:
+            devuelto = AudioSintetizado(
+                wav=clonado,
+                ms_sintesis=(time.perf_counter() - t0) * 1000,
+                desde_cache=True,
+                clave=clave,
+            )
+        else:
+            devuelto = await self._sintetizar_con_piper(texto, clave, t0)
+
+        return devuelto
+
+    async def _sintetizar_con_piper(
+        self, texto: str, clave: str | None, t0: float
+    ) -> AudioSintetizado:
         cacheable = bool(clave) and self._vigente(clave, texto)
 
         if cacheable and clave in self._memoria:
@@ -556,7 +592,11 @@ class PiperTTS:
                 elif getattr(loc, "breve", False):
                     datos = await self._la_mas_breve(loc)
                 else:
-                    datos = (await self.sintetizar(loc.texto, clave=loc.clave)).wav
+                    datos = (
+                        await self.sintetizar(
+                            loc.texto, clave=loc.clave, usar_clon=False
+                        )
+                    ).wav
 
                 if datos:
                     generadas += 1
