@@ -75,6 +75,15 @@ INTENTOS_MULETILLA = 8
 # Este camino no se puede cerrar del todo y conviene decirlo: el nombre entra por la peticion,
 # asi que quien escriba uno distinto oira el respaldo en esa frase --y solo en esa, porque la
 # parte fija va en otra frase aparte. Ver `derivadas`.
+# Los cinco procedimientos del dataset. Entran en la frase de la bandera roja con su articulo.
+PROCEDIMIENTOS = (
+    "Apendicectomía",
+    "Colecistectomía",
+    "Colectomía",
+    "Reemplazo de cadera/rodilla",
+    "Mastectomía",
+)
+
 NOMBRES_DE_LA_CONSOLA = (
     "Ana Lucía Restrepo",
     "Jorge Enrique Patiño",
@@ -162,6 +171,55 @@ def derivadas() -> list[tuple[str, str]]:
             if limpia and limpia not in vistas:
                 vistas.add(limpia)
                 textos.append((f"{etiqueta}_{i}" if i else etiqueta, limpia))
+
+    return textos
+
+
+def rojas() -> list[tuple[str, str]]:
+    """La frase que nombra el hallazgo al escalar, por hallazgo y por procedimiento.
+
+        "Lo que me describe -- fiebre de 38.5 grados -- es un signo de alarma
+         despues de una colecistectomia."
+
+    Se renderiza aparte porque es la mas caras de todas y a la vez la del momento que mas
+    importa. Va en el turno de la bandera roja, y ahi un cambio de voz es lo peor.
+
+    **Lo que ya estaba cubierto y lo que no.** `CIERRE_ROJO` --la instruccion de urgencias, la
+    que lleva el numero-- tiene clave y se clono con el guion. La lectura de vuelta del turno
+    anterior ("Me dice fiebre de 38.5 grados") tambien. Lo unico que caia al respaldo era esta
+    frase intermedia, y se vio en una corrida de humo real.
+
+    **No se puede partir.** `partir_en_frases` la devuelve entera: los guiones no son final de
+    frase. Asi que hay que enumerar el producto, y el producto es lo que decide el costo:
+    los cuatro dominios rojos --fiebre desde 38.0, dolor desde 7, secrecion purulenta y
+    movilidad incapacitante-- por los cinco procedimientos del dataset.
+    """
+
+    from centinela.clinical import thresholds as T
+    from centinela.dialog import confirmacion as C
+
+    hallazgos = [
+        C.frase_de("fiebre", round(T.FIEBRE_ROJO_C + i * 0.1, 1))
+        for i in range(0, 31)
+    ]
+    hallazgos += [
+        C.frase_de("dolor", n) for n in range(T.DOLOR_ROJO_NRS, 11)
+    ]
+    hallazgos += [
+        C.frase_de("herida", "secrecion_purulenta"),
+        C.frase_de("movilidad", "incapacitante_nueva"),
+    ]
+
+    textos = []
+    for procedimiento in PROCEDIMIENTOS:
+        bajo = procedimiento.lower()
+        for hallazgo in [h for h in hallazgos if h]:
+            etiqueta = f"roja_{bajo.split()[0][:12]}_{hallazgo.replace(' ', '_')[:26]}"
+            textos.append((
+                etiqueta,
+                f"Lo que me describe -- {hallazgo} -- es un signo de alarma "
+                f"después de {S.articulo_de(bajo)} {bajo}.",
+            ))
 
     return textos
 
@@ -383,6 +441,10 @@ def main() -> int:
         help="las plantillas con parte variable finita, en vez del guion fijo",
     )
     partes.add_argument(
+        "--rojas", action="store_true",
+        help="la frase que nombra el hallazgo al escalar, por hallazgo y procedimiento",
+    )
+    partes.add_argument(
         "--rehacer", action="store_true",
         help="vuelve a renderizar lo que ya tiene WAV y entrada en el manifiesto",
     )
@@ -393,13 +455,13 @@ def main() -> int:
         print(f"  no existe la referencia: {referencia}")
         return 1
 
-    if opciones.derivadas:
+    if opciones.derivadas or opciones.rojas:
         tasa = ritmo_del_clon()
         if tasa is None:
-            print("  falta el manifiesto del guion: corre primero sin --derivadas")
+            print("  falta el manifiesto del guion: corre primero el guion fijo")
             return 1
         print(f"  ritmo medido del clon: {tasa:.1f} caracteres por segundo")
-        pares = derivadas()
+        pares = rojas() if opciones.rojas else derivadas()
         locuciones = [Suelta(clave, texto) for clave, texto in pares]
         esperadas = {
             loc.clave: len(para_voz(loc.texto)) / tasa for loc in locuciones

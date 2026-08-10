@@ -198,7 +198,18 @@ Para volver a renderizar lo que falte, con el venv aparte de la voz:
 <venv-voz>/python scripts/render_clon.py --referencia <grabacion>.wav
 # Las plantillas con parte variable finita: identidad por nombre y lecturas de vuelta
 <venv-voz>/python scripts/render_clon.py --referencia <grabacion>.wav --derivadas
+# La frase que nombra el hallazgo al escalar, por hallazgo y procedimiento
+<venv-voz>/python scripts/render_clon.py --referencia <grabacion>.wav --rojas
 ```
+
+Lo ya renderizado se salta solo, así que añadir frases nuevas no repite las viejas. Para
+forzar, `--rehacer`.
+
+**Ojo con una cosa al pre-renderizar texto que no es del guion**: `main.py:1620` sintetiza un
+fragmento *con* clave entero, y uno *sin* clave lo parte con `partir_en_frases` y pide el audio
+frase a frase. Todo lo que se cubre aquí es de lo segundo, así que hay que renderizar **por
+frase**. Una plantilla de dos frases pre-renderizada entera no se encuentra nunca — costó una
+corrida de humo descubrirlo.
 
 Y si hay que descartar la voz clonada en caliente, sin borrar nada: `CENTINELA_VOZ_CLONADA=0`.
 
