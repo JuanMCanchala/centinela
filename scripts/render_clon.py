@@ -155,7 +155,19 @@ def derivadas() -> list[tuple[str, str]]:
     from centinela.dialog import confirmacion as C
     from centinela.tts.piper import partir_en_frases
 
-    completos = []
+    # Las locuciones del guion, otra vez, para quedarse con sus FRASES sueltas.
+    #
+    # Una locucion con clave se pide entera y ya esta clonada, pero hay caminos que la piden
+    # sin clave y entonces se parte. Medido en una corrida de humo: "Con mucho gusto." y
+    # "Antes de colgar, ¿hay algo de su recuperacion que quiera que quede anotado?" salian como
+    # fallos, y las dos son **una frase de** una locucion de dos que si estaba clonada entera.
+    # Enumerar tambien sus frases cierra la clase entera y cuesta solo las que sean nuevas.
+    completos = [
+        (loc.clave, loc.texto)
+        for loc in S.todas_las_locuciones() + S.naturalidad()
+        if "{" not in loc.texto
+    ]
+
     for paciente in NOMBRES_DE_LA_CONSOLA:
         completos.append((
             f"identidad_{paciente.split()[0].lower()}",
