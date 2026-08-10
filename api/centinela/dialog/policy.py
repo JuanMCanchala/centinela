@@ -42,7 +42,7 @@ from .confirmacion import (
     NIEGA,
     Confirmacion,
     frase_de,
-    hallazgos_como_al_hablar,
+    hallazgos_hablados,
     interpretar,
     que_confirmar,
 )
@@ -1036,31 +1036,38 @@ class DialogPolicy:
 
         # En el idioma del paciente, no en el del protocolo: `h.descripcion` es el
         # enunciado del umbral y esta escrito para la enfermera que lee el registro.
-        hallazgos = hallazgos_como_al_hablar(self.estado, decision.reglas_rojas)
+        sueltos = hallazgos_hablados(self.estado, decision.reglas_rojas)
         procedimiento = self.paciente.procedimiento.lower()
         fragmentos: list[Fragmento] = []
         if con_preambulo:
             fragmentos.append(
                 Fragmento(S.INTERRUPCION_ROJA.texto, S.INTERRUPCION_ROJA.clave)
             )
-        # Tres fragmentos y no uno, y el motivo es la VOZ.
+        # Un fragmento por PIEZA, y el motivo es la VOZ.
         #
         # La voz del agente es una clonacion pre-renderizada (`tts/clon.py`) y lo que no esta
         # pre-renderizado lo dice Piper, que es otra persona. Esta frase se armaba entera en el
         # turno, asi que caia al respaldo justo en el momento de escalar -- el peor sitio del
         # sistema para cambiar de hablante.
         #
-        # Entera hay que enumerar el producto de hallazgos por procedimientos: 185 frases, dos
-        # horas y media de renderizado, y **aun asi no cubre los casos de varios hallazgos**,
-        # porque entonces el hallazgo es una combinacion. Partida en tres, el hallazgo es su
-        # propia pieza: 43 frases, y los casos de varios hallazgos quedan cubiertos por
-        # construccion.
+        # Entera hay que enumerar el producto de hallazgos por procedimientos: 185 frases y dos
+        # horas y media de renderizado. Por piezas la enumeracion es una SUMA: 37 hallazgos mas
+        # 5 procedimientos, 42 frases.
+        #
+        # Y cada hallazgo va en su propio fragmento, no unidos. `hallazgos_como_al_hablar` los
+        # junta con comas y un "y" final, y esa cadena unida es un texto distinto por cada
+        # combinacion de dominios: volveria a ser un producto que no cabe pre-renderizar. Con un
+        # fragmento por hallazgo, los rojos de varios hallazgos quedan cubiertos con las mismas
+        # 37 frases. Lo que se pierde es el "y" --se oyen como una lista-- y en un anuncio de
+        # alarma clinica una lista no es peor.
         #
         # Los guiones que habia --"Lo que me describe -- X -- es un signo"-- ya marcaban estas
-        # dos pausas, asi que la frontera de fragmento cae donde ya estaba la pausa.
+        # pausas, asi que la frontera de fragmento cae donde ya estaba la pausa.
+        fragmentos.append(
+            Fragmento(S.PREAMBULO_HALLAZGO.texto, S.PREAMBULO_HALLAZGO.clave)
+        )
+        fragmentos.extend(Fragmento(f"{h}.") for h in sueltos)
         fragmentos.extend([
-            Fragmento(S.PREAMBULO_HALLAZGO.texto, S.PREAMBULO_HALLAZGO.clave),
-            Fragmento(f"{hallazgos}."),
             Fragmento(
                 f"Es un signo de alarma después de "
                 f"{S.articulo_de(procedimiento)} {procedimiento}."

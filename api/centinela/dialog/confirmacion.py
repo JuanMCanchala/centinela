@@ -193,6 +193,30 @@ def que_confirmar(
     return confirmacion
 
 
+def hallazgos_hablados(estado: ClinicalState, reglas) -> list[str]:
+    """Un hallazgo por elemento, sin unirlos todavia.
+
+    Existe separado de `hallazgos_como_al_hablar` porque la VOZ los quiere sueltos. El anuncio
+    de la bandera roja dice cada hallazgo en su propio fragmento, y eso es lo que permite que
+    la voz clonada los diga: pre-renderizar los 37 hallazgos rojos sueltos es una suma, y
+    pre-renderizar sus combinaciones unidas con comas y con "y" seria un producto que no cabe.
+
+    Un hallazgo sin forma hablada se cae a su descripcion. Perder informacion clinica por
+    sonar mejor no es un intercambio aceptable.
+    """
+
+    partes: list[str] = []
+    vistos: set[str] = set()
+
+    for regla in reglas:
+        if regla.dominio not in vistos:
+            vistos.add(regla.dominio)
+            partes.append(frase_de(regla.dominio, _valor_de(estado, regla))
+                          or regla.descripcion.lower())
+
+    return partes
+
+
 def hallazgos_como_al_hablar(estado: ClinicalState, reglas) -> str:
     """Las banderas rojas dichas en el idioma del paciente, no en el del protocolo.
 
@@ -209,14 +233,7 @@ def hallazgos_como_al_hablar(estado: ClinicalState, reglas) -> str:
     clinica por sonar mejor no es un intercambio aceptable.
     """
 
-    partes: list[str] = []
-    vistos: set[str] = set()
-
-    for regla in reglas:
-        if regla.dominio not in vistos:
-            vistos.add(regla.dominio)
-            partes.append(frase_de(regla.dominio, _valor_de(estado, regla))
-                          or regla.descripcion.lower())
+    partes = hallazgos_hablados(estado, reglas)
 
     if len(partes) > 1:
         texto = ", ".join(partes[:-1]) + f" y {partes[-1]}"
