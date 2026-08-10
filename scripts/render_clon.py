@@ -222,16 +222,23 @@ def rojas() -> list[tuple[str, str]]:
         C.frase_de("movilidad", "incapacitante_nueva"),
     ]
 
+    # El hallazgo es su propia pieza, asi que se enumera **sumando** y no multiplicando: los
+    # hallazgos por un lado y los procedimientos por otro. 43 frases en vez de 185, y los casos
+    # de varios hallazgos quedan cubiertos por construccion, porque cada uno se dice por
+    # separado. El preambulo no va aqui: es `S.PREAMBULO_HALLAZGO`, una locucion del guion, y
+    # se pre-renderiza con el.
     textos = []
+    for hallazgo in [h for h in hallazgos if h]:
+        textos.append((
+            f"hallazgo_{hallazgo.replace(' ', '_')[:30]}", f"{hallazgo}.",
+        ))
+
     for procedimiento in PROCEDIMIENTOS:
         bajo = procedimiento.lower()
-        for hallazgo in [h for h in hallazgos if h]:
-            etiqueta = f"roja_{bajo.split()[0][:12]}_{hallazgo.replace(' ', '_')[:26]}"
-            textos.append((
-                etiqueta,
-                f"Lo que me describe -- {hallazgo} -- es un signo de alarma "
-                f"después de {S.articulo_de(bajo)} {bajo}.",
-            ))
+        textos.append((
+            f"alarma_{bajo.split()[0][:14]}",
+            f"Es un signo de alarma después de {S.articulo_de(bajo)} {bajo}.",
+        ))
 
     return textos
 

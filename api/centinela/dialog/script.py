@@ -379,6 +379,13 @@ INTERRUPCION_ROJA = Locucion(
     "Voy a detener las preguntas aquí, porque lo que me acaba de contar es importante.",
 )
 
+# Lo que va justo antes de nombrarle el hallazgo. Es una locucion propia --y no parte de la
+# frase que la sigue-- porque esa frase lleva el hallazgo dentro y por tanto se arma en el
+# turno: no se puede pre-renderizar sin enumerar todos los hallazgos posibles. Partida asi, la
+# parte fija se pre-renderiza una vez y el hallazgo es su propia pieza, de modo que la voz
+# clonada cubre tambien los casos de varios hallazgos. Ver `policy._interrumpir_por_bandera_roja`.
+PREAMBULO_HALLAZGO = Locucion("preambulo_hallazgo", "Lo que me describe:")
+
 # La instruccion de urgencias se cuenta entre las cosas que hay que decir dos veces si
 # la primera no se oyo. Cuando el paciente corta al agente justo ahi, esto es lo que
 # vuelve a abrir el hueco -- sin fingir que no lo habiamos dicho ya.
@@ -463,6 +470,7 @@ def todas_las_locuciones() -> list[Locucion]:
         PEDIR_REPETIR, RELLENO_PENSANDO, ACEPTAR_TERCERO, FUERA_DE_MISION,
         SILENCIO_ACOMPANAR, SILENCIO_COMPROBAR_LINEA, SILENCIO_CIERRE,
         INTENTO_MANIPULACION, SIN_INFORMACION, NO_SOY_MEDICO, INTERRUPCION_ROJA,
+        PREAMBULO_HALLAZGO,
         RETOMAR_URGENCIA, CONFIRMAR_ENTENDIDO, CONFIRMAR_PREGUNTA,
         CONFIRMACION_ACEPTADA, CONFIRMACION_DESMENTIDA, ACUSE_CORRECCION,
     ]

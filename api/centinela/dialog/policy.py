@@ -1043,10 +1043,27 @@ class DialogPolicy:
             fragmentos.append(
                 Fragmento(S.INTERRUPCION_ROJA.texto, S.INTERRUPCION_ROJA.clave)
             )
+        # Tres fragmentos y no uno, y el motivo es la VOZ.
+        #
+        # La voz del agente es una clonacion pre-renderizada (`tts/clon.py`) y lo que no esta
+        # pre-renderizado lo dice Piper, que es otra persona. Esta frase se armaba entera en el
+        # turno, asi que caia al respaldo justo en el momento de escalar -- el peor sitio del
+        # sistema para cambiar de hablante.
+        #
+        # Entera hay que enumerar el producto de hallazgos por procedimientos: 185 frases, dos
+        # horas y media de renderizado, y **aun asi no cubre los casos de varios hallazgos**,
+        # porque entonces el hallazgo es una combinacion. Partida en tres, el hallazgo es su
+        # propia pieza: 43 frases, y los casos de varios hallazgos quedan cubiertos por
+        # construccion.
+        #
+        # Los guiones que habia --"Lo que me describe -- X -- es un signo"-- ya marcaban estas
+        # dos pausas, asi que la frontera de fragmento cae donde ya estaba la pausa.
         fragmentos.extend([
+            Fragmento(S.PREAMBULO_HALLAZGO.texto, S.PREAMBULO_HALLAZGO.clave),
+            Fragmento(f"{hallazgos}."),
             Fragmento(
-                f"Lo que me describe -- {hallazgos} -- es un signo de alarma "
-                f"después de {S.articulo_de(procedimiento)} {procedimiento}."
+                f"Es un signo de alarma después de "
+                f"{S.articulo_de(procedimiento)} {procedimiento}."
             ),
             # El unico fragmento URGENTE del sistema. Si el paciente lo corta, la
             # llamada no cuelga hasta haberlo repetido.
