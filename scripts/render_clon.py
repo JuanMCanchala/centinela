@@ -246,6 +246,51 @@ def ritmo_del_clon() -> float | None:
     return tasa
 
 
+def limpiar() -> int:
+    """Borra los WAV que ya nadie puede pedir.
+
+    Hace falta porque este directorio **se versiona**. La clave es el hash del texto, asi que
+    editar una frase del guion no deja el WAV viejo obsoleto: lo deja *inalcanzable*, ocupando
+    sitio en cada clon del repositorio para siempre y sin que nada lo delate. Lo mismo pasa al
+    cambiar como se enumera una plantilla, que es como aparecieron los cuatro primeros.
+
+    Alcanzable = el guion fijo, mas las derivadas, mas las rojas. Si algo no esta en esos tres
+    conjuntos, en ejecucion no se puede pedir.
+    """
+
+    alcanzables = {
+        clave_de(loc.texto)
+        for loc in S.todas_las_locuciones() + S.naturalidad()
+        if "{" not in loc.texto
+    }
+    alcanzables |= {clave_de(t) for _, t in derivadas()}
+    alcanzables |= {clave_de(t) for _, t in rojas()}
+
+    archivo = DIR_CLON / MANIFIESTO
+    previas = (
+        json.loads(archivo.read_text(encoding="utf-8")).get("locuciones") or {}
+        if archivo.exists()
+        else {}
+    )
+    sobran = {k: v for k, v in previas.items() if k not in alcanzables}
+
+    for clave, entrada in sobran.items():
+        (DIR_CLON / f"{clave}.wav").unlink(missing_ok=True)
+        print(f"  borrado  {clave}  {entrada.get('texto', '')[:64]}")
+
+    quedan = {k: v for k, v in previas.items() if k in alcanzables}
+    datos = json.loads(archivo.read_text(encoding="utf-8")) if archivo.exists() else {}
+    datos["locuciones"] = quedan
+    archivo.write_text(
+        json.dumps(datos, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
+
+    print()
+    print(f"  {len(sobran)} inalcanzables borradas, {len(quedan)} quedan")
+    print(f"  el conjunto alcanzable son {len(alcanzables)} frases")
+    return 0
+
+
 def guardar_manifiesto(entradas: dict, referencia: Path) -> None:
     """Escribe el manifiesto **sumando** a lo que ya hubiera.
 
@@ -433,7 +478,7 @@ class Renderizador:
 
 def main() -> int:
     partes = argparse.ArgumentParser()
-    partes.add_argument("--referencia", required=True)
+    partes.add_argument("--referencia", default="")
     partes.add_argument("--dispositivo", default="cpu")
     partes.add_argument("--solo", default="", help="claves separadas por coma")
     partes.add_argument(
@@ -448,18 +493,31 @@ def main() -> int:
         "--rehacer", action="store_true",
         help="vuelve a renderizar lo que ya tiene WAV y entrada en el manifiesto",
     )
+    partes.add_argument(
+        "--limpiar", action="store_true",
+        help="borra los WAV que ya nadie puede pedir, sin renderizar nada",
+    )
     opciones = partes.parse_args()
 
     referencia = Path(opciones.referencia)
-    if not referencia.exists():
-        print(f"  no existe la referencia: {referencia}")
-        return 1
+    tasa = ritmo_del_clon() if (opciones.derivadas or opciones.rojas) else 1.0
 
+    if opciones.limpiar:
+        codigo = limpiar()
+    elif not referencia.exists():
+        print(f"  no existe la referencia: {opciones.referencia or '(sin --referencia)'}")
+        codigo = 1
+    elif tasa is None:
+        print("  falta el manifiesto del guion: corre primero el guion fijo")
+        codigo = 1
+    else:
+        codigo = renderizar(opciones, referencia, tasa)
+
+    return codigo
+
+
+def renderizar(opciones, referencia: Path, tasa: float) -> int:
     if opciones.derivadas or opciones.rojas:
-        tasa = ritmo_del_clon()
-        if tasa is None:
-            print("  falta el manifiesto del guion: corre primero el guion fijo")
-            return 1
         print(f"  ritmo medido del clon: {tasa:.1f} caracteres por segundo")
         pares = rojas() if opciones.rojas else derivadas()
         locuciones = [Suelta(clave, texto) for clave, texto in pares]
