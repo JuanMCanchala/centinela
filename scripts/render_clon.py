@@ -59,6 +59,17 @@ SEMILLAS_DE_REINTENTO = (20260809, 1234, 7, 99991, 424242, 31337, 8675309, 27182
 # tomas desbocadas (la peor medida fue 2.9x) sin rechazar variacion normal.
 VENTANA = (0.55, 1.25)
 
+# La ventana de los modos que se miden contra el **modelo** de duracion, no contra Piper.
+# Tiene que ser mas ancha por arriba y no es laxitud: la vara de Piper es una medicion exacta
+# de esa misma frase, y el modelo es una prediccion con su propia varianza, asi que exigirle
+# la misma estrechez rechaza tomas buenas. Medido: con techo 1.25 el promedio salia a tres
+# intentos y treinta segundos por locucion de dos.
+#
+# 1.35 sigue atrapando lo que importa. Una toma desbocada **repite** la frase, asi que su
+# razon no baja de 1.8; la peor medida fue 2.9. Entre 1.25 y 1.35 no hay desbocadas, hay
+# lecturas algo mas lentas.
+VENTANA_MODELO = (0.55, 1.35)
+
 # Por debajo de esto la razon contra Piper no dice nada: Piper articula una palabra sola en
 # un cuarto de segundo y ningun modelo autorregresivo baja de ~0.7 s. Ver `con_guarda`.
 MINIMO_PARA_RAZON = 1.2
@@ -363,6 +374,7 @@ def guardar_manifiesto(entradas: dict, referencia: Path) -> None:
                     "la persona grabo la referencia para este uso; ver informe final"
                 ),
                 "ventana_de_duracion": list(VENTANA),
+                "ventana_del_modelo": list(VENTANA_MODELO),
                 "locuciones": {**previas, **entradas},
             },
             indent=2,
@@ -434,18 +446,28 @@ class Renderizador:
         self.modelo = Motor.from_pretrained(device=dispositivo)
         self.frecuencia = self.modelo.sr
 
+        # La referencia se embebe UNA vez, no en cada frase.
+        #
+        # `generate()` hace `if audio_prompt_path: self.prepare_conditionals(...)`, asi que
+        # pasarle la ruta en cada llamada vuelve a procesar los 43 s de grabacion cada vez. En
+        # una locucion larga ese coste se diluye; en una de dos segundos lo es casi todo, y se
+        # vio en la medicion: el saludo de 11.6 s salia a RTF 4 y las lecturas de vuelta de
+        # 2.5 s a RTF 12 --treinta segundos por frase-- con el mismo modelo y la misma maquina.
+        #
+        # Preparadas aqui, `generate()` reutiliza `self.conds` y solo paga la sintesis.
+        self.modelo.prepare_conditionals(
+            str(referencia), exaggeration=MANDOS["exaggeration"]
+        )
+
     def una_toma(self, texto: str, semilla: int) -> tuple[np.ndarray, float]:
         self.torch.manual_seed(semilla)
-        onda = self.modelo.generate(
-            para_voz(texto),
-            language_id="es",
-            audio_prompt_path=str(self.referencia),
-            **MANDOS,
-        )
+        onda = self.modelo.generate(para_voz(texto), language_id="es", **MANDOS)
         muestras = np.asarray(onda).reshape(-1).astype(np.float32)
         return muestras, len(muestras) / self.frecuencia
 
-    def con_guarda(self, texto: str, esperado: float | None) -> tuple[np.ndarray, dict]:
+    def con_guarda(
+        self, texto: str, esperado: float | None, ventana: tuple[float, float] = VENTANA
+    ) -> tuple[np.ndarray, dict]:
         """Reintenta con otra semilla hasta que la duracion sea plausible.
 
         **La razon contra Piper solo vale si Piper tardo lo suficiente.** Medido: Piper dice
@@ -460,7 +482,7 @@ class Renderizador:
 
         def acepta(segundos: float) -> bool:
             if por_razon:
-                bien = VENTANA[0] <= segundos / esperado <= VENTANA[1]
+                bien = ventana[0] <= segundos / esperado <= ventana[1]
             else:
                 bien = segundos * 1000 <= TOPE_MS_CORTA
             return bien
@@ -556,6 +578,8 @@ def main() -> int:
 
 def renderizar(opciones, referencia: Path, modelo: tuple[float, float]) -> int:
     arranque, por_caracter = modelo
+    por_modelo = opciones.derivadas or opciones.rojas
+    ventana = VENTANA_MODELO if por_modelo else VENTANA
 
     if opciones.derivadas or opciones.rojas:
         print(f"  duracion esperada = {arranque:.2f} s + {por_caracter:.4f} s por caracter "
@@ -614,7 +638,9 @@ def renderizar(opciones, referencia: Path, modelo: tuple[float, float]) -> int:
             if getattr(loc, "breve", False):
                 muestras, detalle = motor.la_mas_breve(loc.texto)
             else:
-                muestras, detalle = motor.con_guarda(loc.texto, esperadas.get(loc.clave))
+                muestras, detalle = motor.con_guarda(
+                    loc.texto, esperadas.get(loc.clave), ventana
+                )
 
             crudo = temporal / f"{clave}.wav"
             escribir_wav(crudo, muestras, motor.frecuencia)
