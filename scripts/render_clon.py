@@ -67,14 +67,10 @@ TOPE_MS_CORTA = 1500
 FRECUENCIA_PIPER = 22050
 INTENTOS_MULETILLA = 8
 
-# Los pacientes del desplegable de la consola (`web/app.js:105`) y los que usan los arneses,
-# que NO son los mismos: el arnes dice "Ana Lucia Restrepo" sin tilde y "Mauricio Gonzalez"
-# sin los dos nombres del medio. La confirmacion de identidad lleva el nombre, asi que sin
-# enumerarlos la voz cambiaria de persona en el segundo turno de cada llamada.
-#
-# Este camino no se puede cerrar del todo y conviene decirlo: el nombre entra por la peticion,
-# asi que quien escriba uno distinto oira el respaldo en esa frase --y solo en esa, porque la
-# parte fija va en otra frase aparte. Ver `derivadas`.
+# Piper deja las muletillas entre 386 y 662 ms. Una de mas de segundo y medio ya no es una
+# muletilla: es el agente hablando encima del paciente.
+TOPE_MS_MULETILLA = 1500
+
 # Los cinco procedimientos del dataset. Entran en la frase de la bandera roja con su articulo.
 PROCEDIMIENTOS = (
     "Apendicectomía",
@@ -84,6 +80,14 @@ PROCEDIMIENTOS = (
     "Mastectomía",
 )
 
+# Los pacientes del desplegable de la consola (`web/app.js:105`) y los que usan los arneses,
+# que NO son los mismos: el arnes dice "Ana Lucia Restrepo" sin tilde y "Mauricio Gonzalez"
+# sin los dos nombres del medio. La confirmacion de identidad lleva el nombre, asi que sin
+# enumerarlos la voz cambiaria de persona en el segundo turno de cada llamada.
+#
+# Este camino no se puede cerrar del todo y conviene decirlo: el nombre entra por la peticion,
+# asi que quien escriba uno distinto oira el respaldo en esa frase --y solo en esa, porque la
+# parte fija va en otra frase aparte. Ver `derivadas`.
 NOMBRES_DE_LA_CONSOLA = (
     "Ana Lucía Restrepo",
     "Jorge Enrique Patiño",
@@ -92,9 +96,6 @@ NOMBRES_DE_LA_CONSOLA = (
     "Ana Lucia Restrepo",
     "Mauricio González",
 )
-# Piper deja las muletillas entre 386 y 662 ms. Una de mas de segundo y medio ya no es una
-# muletilla: es el agente hablando encima del paciente.
-TOPE_MS_MULETILLA = 1500
 
 
 @dataclass
@@ -224,26 +225,63 @@ def rojas() -> list[tuple[str, str]]:
     return textos
 
 
-def ritmo_del_clon() -> float | None:
-    """Caracteres por segundo que el clon mostro en el guion ya renderizado.
+def caracteres_hablados(texto: str) -> int:
+    """Longitud del texto tal como se DICE, no como se escribe.
 
-    Las derivadas no tienen una locucion de Piper con la que compararse, asi que la vara sale
-    del propio clon: con 60 frases medidas, su ritmo es un dato y no una suposicion.
+    Un digito no cuesta un caracter: "36" se dice "treinta y seis". Casi todo lo que se
+    pre-renderiza aqui son lecturas de vuelta de cifras, asi que con caracteres crudos el
+    modelo de duracion las subestima en bloque y las tomas buenas salen "demasiado largas".
+    Medido: las razones de las lecturas de fiebre se apilaban entre 1.15 y 1.26 contra un
+    techo de 1.25, y cada locucion gastaba de tres a ocho semillas para colarse.
+
+    Tres caracteres extra por digito es una aproximacion, y basta: lo que importa es que el
+    **mismo** contador se use para ajustar el modelo y para predecir, de modo que el ajuste
+    absorbe el error que quede.
+    """
+
+    dichos = para_voz(texto)
+    return len(dichos) + 3 * sum(c.isdigit() for c in dichos)
+
+
+def modelo_de_duracion() -> tuple[float, float] | None:
+    """Cuanto tarda el clon en decir un texto, ajustado sobre el guion ya renderizado.
+
+    Las derivadas y las rojas no tienen una locucion de Piper con la que compararse, asi que la
+    vara sale del propio clon. Lo que **no** sirve es una tasa unica de caracteres por segundo,
+    y esto costo dos horas de computo tirado: el clon tiene un **arranque fijo** de unos 0.6 s
+    --el ataque de la voz y la cola-- mas unos 0.05 s por caracter. Medido sobre 101 muestras
+    de 4 a 278 caracteres, comparando el modelo de tasa unica con el lineal:
+
+        caracteres   real     razon con tasa unica   razon con modelo lineal
+                 4   0.68 s                   2.71                      0.84
+                 5   0.72 s                   2.30                      0.83
+               239  13.56 s                   0.91                      1.05
+               278  15.00 s                   0.86                      1.00
+
+    Con la tasa unica, toda frase corta sale "demasiado larga" y agota las ocho semillas para
+    acabar aceptando una toma que estaba bien: `Me dice fiebre de 38 grados` daba razon 1.26
+    contra un techo de 1.25. Ciento veinte segundos de computo por locucion, rechazando tomas
+    buenas. El guion no lo sufrio porque ahi la vara es la duracion real de Piper.
+
+    Devuelve (arranque, segundos_por_caracter).
     """
 
     archivo = DIR_CLON / MANIFIESTO
-    tasa = None
+    ajuste = None
     if archivo.exists():
         datos = json.loads(archivo.read_text(encoding="utf-8"))
         entradas = [
             e for e in (datos.get("locuciones") or {}).values()
             if e.get("s") and e.get("texto") and not e.get("muletilla")
         ]
-        if entradas:
-            caracteres = sum(len(para_voz(e["texto"])) for e in entradas)
-            segundos = sum(e["s"] for e in entradas)
-            tasa = caracteres / segundos if segundos else None
-    return tasa
+        if len(entradas) >= 10:
+            caracteres = np.array(
+                [caracteres_hablados(e["texto"]) for e in entradas], dtype=float
+            )
+            segundos = np.array([e["s"] for e in entradas], dtype=float)
+            pendiente, arranque = np.polyfit(caracteres, segundos, 1)
+            ajuste = (float(arranque), float(pendiente))
+    return ajuste
 
 
 def limpiar() -> int:
@@ -500,29 +538,33 @@ def main() -> int:
     opciones = partes.parse_args()
 
     referencia = Path(opciones.referencia)
-    tasa = ritmo_del_clon() if (opciones.derivadas or opciones.rojas) else 1.0
+    modelo = modelo_de_duracion() if (opciones.derivadas or opciones.rojas) else (0.0, 0.0)
 
     if opciones.limpiar:
         codigo = limpiar()
     elif not referencia.exists():
         print(f"  no existe la referencia: {opciones.referencia or '(sin --referencia)'}")
         codigo = 1
-    elif tasa is None:
+    elif modelo is None:
         print("  falta el manifiesto del guion: corre primero el guion fijo")
         codigo = 1
     else:
-        codigo = renderizar(opciones, referencia, tasa)
+        codigo = renderizar(opciones, referencia, modelo)
 
     return codigo
 
 
-def renderizar(opciones, referencia: Path, tasa: float) -> int:
+def renderizar(opciones, referencia: Path, modelo: tuple[float, float]) -> int:
+    arranque, por_caracter = modelo
+
     if opciones.derivadas or opciones.rojas:
-        print(f"  ritmo medido del clon: {tasa:.1f} caracteres por segundo")
+        print(f"  duracion esperada = {arranque:.2f} s + {por_caracter:.4f} s por caracter "
+              f"({1 / por_caracter:.1f} car/s al margen)")
         pares = rojas() if opciones.rojas else derivadas()
         locuciones = [Suelta(clave, texto) for clave, texto in pares]
         esperadas = {
-            loc.clave: len(para_voz(loc.texto)) / tasa for loc in locuciones
+            loc.clave: arranque + por_caracter * caracteres_hablados(loc.texto)
+            for loc in locuciones
         }
     else:
         esperadas = referencias()
