@@ -615,8 +615,15 @@ mismo `runtime.json` que esta tabla — si divergen, alguien editó una a mano.
 
 ### Compuerta G2 (`scripts/ensayo_g2.ps1`)
 
-Clon limpio → sistema respondiendo: **0.8 min** medidos, **5.4 min** estimados en
-máquina virgen. Límite del reto: 15 min. Margen en el peor caso: **9.6 minutos**.
+Clon limpio **desde el remoto público** → sistema respondiendo: **0.9 min** medidos,
+**5.7 min** estimados en máquina virgen. Límite del reto: 15 min. Margen en el peor caso:
+**9.3 minutos**.
+
+El peor caso incluye la descarga del propio repositorio (116 MB: el índice del corpus
+comprimido, el caché de audio y las 300 locuciones de la voz clonada), que se versionan a
+propósito porque reconstruir cualquiera de las tres no cabe en quince minutos. El ensayo
+comprueba además que **el clon traiga esas 300 locuciones**: si un `.gitignore` las excluyera,
+el agente hablaría con la voz de respaldo y nada lo avisaría.
 
 ### Diagrama (`make diagrama`)
 
