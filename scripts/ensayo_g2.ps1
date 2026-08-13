@@ -140,6 +140,8 @@ Paso "7. make up (arranque) y primera respuesta" {
                 Write-Host ("  sistema arriba: {0} docs, {1} fragmentos, modelo {2}" -f `
                     $s.corpus.documentos, $s.corpus.chunks, $s.llm.modelo_configurado)
                 Write-Host ("  voz: {0} / {1} locuciones en cache" -f $s.tts.voz, $s.tts.locuciones_en_cache)
+                Write-Host ("  voz clonada: {0} locuciones, disponible={1}" -f `
+                    $s.tts.voz_clonada.locuciones, $s.tts.voz_clonada.disponible)
                 break
             }
         } catch { Start-Sleep -Milliseconds 2000 }
@@ -162,6 +164,16 @@ Paso "8. Verificacion funcional minima" {
     $docs = Invoke-RestMethod "http://127.0.0.1:$Puerto/api/documentos"
     Write-Host "  consola: $($docs.total) documentos indexados, generacion $($docs.generacion)"
     if ($docs.total -lt 100) { throw "el indice no se extrajo completo" }
+
+    # La voz del agente son WAV versionados, no un modelo que se instale: el que genera la
+    # clonacion arrastra 2.5 GB de torch y no cabe en esta compuerta. Por eso el riesgo aqui
+    # no es que falle una descarga, es que un `.gitignore` los excluya y el clon del jurado
+    # se quede hablando con la voz de respaldo sin que nada lo avise. Se comprueba en el clon.
+    $clonados = @(Get-ChildItem (Join-Path $Destino "data\audio_clon") -Filter *.wav -ErrorAction SilentlyContinue)
+    Write-Host "  voz clonada en el clon: $($clonados.Count) WAV"
+    if ($clonados.Count -lt 250) {
+        throw "el clon no trajo la voz clonada ($($clonados.Count) WAV): el agente hablaria con el respaldo"
+    }
 }
 
 $reloj.Stop()
@@ -180,6 +192,37 @@ Write-Host ("  Medido: {0:N1} minutos   (limite {1})" -f $total, $LIMITE_MINUTOS
 # se reporta en el README no sea el mejor caso.
 $descargasPendientes = 0
 $notas = @()
+
+# La descarga del REPOSITORIO tambien cuenta, y el ensayo no la mide: clonar de una ruta
+# local tarda segundos, y clonar del remoto depende de la red del jurado y no de la mia. El
+# repositorio versiona ~100 MB a proposito --el indice del corpus comprimido, el cache de
+# audio y las 300 locuciones de la voz clonada-- porque reconstruir cualquiera de las tres
+# cosas no cabe en quince minutos. Ese peso es una decision, asi que su costo se reporta.
+# Se suman los archivos que git TIENE VERSIONADOS, que es lo que un clon superficial
+# transfiere. Los dos atajos que parecian equivalentes no lo son:
+#
+#   el arbol de trabajo   a estas alturas lleva encima los 2.2 GB de cache de modelos que
+#                         este ensayo copio al destino, ya contados en sus propias lineas.
+#                         Medido asi dio 6 269 MB y el ensayo se reporto como fallado.
+#   el .git del clon      clonar de una ruta local copia el almacen de objetos entero e
+#                         ignora `--depth 1`, asi que da 256 MB: la historia completa, no lo
+#                         que el jurado descarga.
+$megas = 0
+Push-Location $Destino
+$rastreados = @(git ls-files)
+Pop-Location
+foreach ($rel in $rastreados) {
+    $f = Join-Path $Destino $rel
+    if (Test-Path $f) { $megas += (Get-Item $f).Length }
+}
+$megas = [math]::Round($megas / 1MB, 0)
+# 10 MB/s es una conexion domestica corriente; a 5 MB/s se dobla, y se dice para no reportar
+# el mejor caso como si fuera el unico.
+$segundosClon = [math]::Round($megas / 10, 0)
+$descargasPendientes += $segundosClon
+$notas += ("clonar el repositorio ({0} MB a 10 MB/s): ~{1} s   [a 5 MB/s serian ~{2} s]" -f `
+    $megas, $segundosClon, ($segundosClon * 2))
+
 if (-not $SinCache) {
     if ($script:modeloYaEstaba) {
         $descargasPendientes += 150   # 2.4 GB de Phi-3.5 a ~16 MB/s
