@@ -55,8 +55,9 @@ No es un texto cualquiera. Cubre lo que la voz clonada tiene que poder hacer:
   y las cinco vocales tónicas y átonas.
 - **Una instrucción y un cierre cálido**, que son los dos registros del final de la llamada.
 
-## Dónde dejar el archivo
+## Dónde queda el archivo
 
-En cualquier carpeta; dime la ruta. **No se versiona en el repositorio**: es la voz de una
-persona real y lo que se publica es el audio sintetizado, no su muestra. Lo que sí queda
-declarado en el informe final es que la voz del agente es una clonación con consentimiento.
+Fuera del repositorio, y la ruta se le pasa al renderizador con `--referencia`
+(`scripts/render_clon.py`). **La grabación no se versiona**: es la voz de una persona real y
+lo que se publica es el audio sintetizado, no su muestra. Lo que sí queda declarado en el
+informe final es que la voz del agente es una clonación con consentimiento.
