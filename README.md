@@ -7,6 +7,29 @@ regla que la disparó.
 
 Entrega para el **Tech Sphere Challenge 2026** (Source Meridian).
 
+## Entregables
+
+| | |
+|---|---|
+| **Video demo** | **https://youtu.be/o6HEGjZ64vo** |
+| **Informe final** | [`docs/informe-final.md`](docs/informe-final.md) |
+| **Diagrama** | [`docs/arquitectura.md`](docs/arquitectura.md) |
+| **Repositorio** | este |
+
+**Stack de modelos y voz**, declarado de entrada:
+
+| | | |
+|---|---|---|
+| Razonamiento | **`phi3.5:3.8b-mini-instruct-q4_K_M`** vía Ollama | local · [compuerta G3](#modelo-declarado-compuerta-g3) |
+| Transcripción (STT) | **faster-whisper `medium`** (CTranslate2, con Silero VAD) | local |
+| Síntesis de voz (TTS) | **Piper** `es_ES-davefx-medium` | local |
+| Voz del agente | **Chatterbox Multilingual** (Resemble AI, MIT) — clonación de una grabación con consentimiento, **pre-renderizada** a `data/audio_clon/` | fuera de ejecución |
+| Embeddings | **multilingual-e5-large** vía fastembed (ONNX, sin PyTorch) | local |
+| Base vectorial | **ChromaDB** + BM25 (recuperación híbrida) | local |
+
+**No hace falta ninguna clave de API**: los seis corren en local. Ver [`.env.example`](.env.example)
+para las variables de entorno, todas opcionales.
+
 > Todas las cifras de este documento las generan los scripts de `eval/` y `scripts/`.
 > Ninguna se escribe a mano: la rúbrica advierte que lo reportado se contrasta con los
 > logs de la sesión.
@@ -408,7 +431,7 @@ clasificador aislado. Resultado: **42/42**.
 - Intentos de manipulación resistidos: **11/11**
 - Casos donde la criticidad bajó porque el paciente lo pidió: **0**
 
-Más `make test`: **817 tests**, que incluyen cero falsos positivos de manipulación sobre
+Más `make test`: **835 tests**, que incluyen cero falsos positivos de manipulación sobre
 turnos textuales del dataset oficial. Ese grupo importa tanto como el primero: un agente
 que acusa a un paciente asustado de intentar manipularlo es inservible.
 
@@ -936,7 +959,7 @@ ejecuta exactamente estos comandos como subprocesos. El veredicto es su código 
 así que no hay una segunda implementación dentro del panel.
 
 ```bash
-make test        # 817 tests unitarios y de regresión
+make test        # 835 tests unitarios y de regresión
 make eval        # 160 casos oficiales · cero falsos negativos clínicos
 make redteam     # 46 casos adversariales (requiere la API levantada)
 make humo        # 103 comprobaciones de extremo a extremo (requiere la API levantada)
@@ -956,7 +979,7 @@ make metricas    # regenera docs/metricas.md desde las mediciones
 
 ## Licencia
 
-MIT. Los PDFs del corpus clínico son obra de sus respectivos autores y se usan solo como
+**MIT**, con el texto completo en [`LICENSE`](LICENSE). Los PDFs del corpus clínico son obra de sus respectivos autores y se usan solo como
 material de referencia del reto. Lo mismo vale para el material complementario de
 `data/complementario/`: es una guía de educación al paciente publicada por Memorial Sloan
 Kettering, con su URL y su fecha de descarga registradas en `procedencia.json`, y se usa

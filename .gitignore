@@ -1,5 +1,11 @@
 # --- entorno ---
 .venv/
+# El `.env` real NUNCA se versiona: es donde van el token de acceso y el secreto del webhook,
+# los dos unicos campos sensibles del sistema. Lo que si va versionado es `.env.example`, con
+# esos dos campos vacios y todo lo demas documentado.
+.env
+.env.*
+!.env.example
 __pycache__/
 *.py[cod]
 .pytest_cache/
