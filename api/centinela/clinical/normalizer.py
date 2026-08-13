@@ -604,6 +604,10 @@ PISTAS_HERIDA = {
         "secrecion amarilla", "material amarillo", "mal olor", "huele mal",
         "feo olor", "supura", "supurando", "sale liquido", "sale materia",
         "liquido con mal olor", "verdoso",
+        # "amarillento" y "amarillenta" son como lo dice la gente, y faltaban: el lexico
+        # solo tenia "liquido amarillo". Medido en una llamada real, "me esta saliendo un
+        # liquido amarillento" no producia ninguna pista de herida.
+        "amarillent",
     ),
     "eritema_leve": (
         "rojita", "rojito", "enrojecid", "enrojecimiento", "roja alrededor",
@@ -693,6 +697,54 @@ def menciona(texto: str, dominio: str) -> bool:
         # respaldo lo da la regex que leyo la cifra, no una palabra clave.
         hallado = True
     return hallado
+
+
+# Pistas que NO valen como subcadena: son palabras cortas que viven dentro de otras.
+#
+# `"lento"` --pista de movilidad limitada-- engancha dentro de "amari**llento**", asi que
+# *"me esta saliendo un liquido amarillento"* se clasificaba como `movilidad:
+# limitada_esperada` en vez de `herida: secrecion_purulenta`. Un hallazgo **rojo** convertido
+# en uno amarillo, y de otro dominio. Encontrado en una llamada real: el agente respondia
+# "corrijo entonces, me queda que se mueve con algo de dificultad", nunca registraba la
+# herida, y repreguntaba lo mismo en bucle porque el dominio seguia sin resolver.
+#
+# El resto de las pistas siguen siendo subcadenas **a proposito**: "enrojecid" tiene que coger
+# "enrojecida" y "enrojecido", "purulent" las dos formas, y "supura" coge "supurando". Por eso
+# esto es una lista explicita y no una regla general: lo que hace falta es frontera de palabra
+# donde la pista ES una palabra, sin perder los prefijos deliberados.
+PISTAS_CON_FRONTERA = frozenset({"lento", "lenta", "lentos", "lentas"})
+
+# Y estas la necesitan **solo por la izquierda**, porque su terminacion si es productiva.
+#
+# `"normal"` vive dentro de "**a**normal", que significa lo contrario. Medido: *"la herida
+# esta anormal"* daba `herida: normal`. Un hallazgo descrito por el paciente como anormal
+# archivado como normal es el falso negativo mas literal que puede tener este sistema.
+#
+# Pero exigir frontera por la derecha tambien romperia "normalidad" y "normalmente", que si
+# quieren decir normal y son como habla la gente. De ahi que la frontera sea de un solo lado.
+PISTAS_CON_FRONTERA_IZQUIERDA = frozenset({"normal"})
+
+_RE_FRONTERA = {
+    **{
+        t: re.compile(rf"(?<![a-z]){re.escape(t)}(?![a-z])")
+        for t in PISTAS_CON_FRONTERA
+    },
+    **{
+        t: re.compile(rf"(?<![a-z]){re.escape(t)}")
+        for t in PISTAS_CON_FRONTERA_IZQUIERDA
+    },
+}
+
+
+def _aparece(termino: str, base: str) -> bool:
+    """La pista esta en el texto, exigiendo frontera de palabra si le hace falta."""
+
+    patron = _RE_FRONTERA.get(termino)
+    if patron is None:
+        encontrado = termino in base
+    else:
+        encontrado = patron.search(base) is not None
+    return encontrado
 
 
 PISTAS_MOVILIDAD = {
@@ -854,7 +906,7 @@ def pistas_cualitativas(texto: str, dominio_objetivo: str = "") -> dict[str, str
         for categoria, terminos in mapa.items():
             if dominio not in salida:
                 for t in terminos:
-                    if t in base:
+                    if _aparece(t, base):
                         if categoria == "normal":
                             admisible = (
                                 t not in TERMINOS_AMBIGUOS
