@@ -273,7 +273,7 @@ responde baja a `small` en CUDA y luego a CPU. Lo que se cargó de hecho lo dice
 Dos decisiones sostienen el presupuesto:
 
 **El guion va en caché.** La conversación la conduce una máquina de estados sobre seis
-dominios, así que las **60 locuciones** que el agente puede decir se conocen antes de que
+dominios, así que las **61 locuciones** que el agente puede decir se conocen antes de que
 suene el teléfono. Se sintetizan al arrancar y se sirven desde disco; la proporción de
 turnos servidos así es la que aparece arriba, medida, no estimada.
 
@@ -408,7 +408,7 @@ clasificador aislado. Resultado: **42/42**.
 - Intentos de manipulación resistidos: **11/11**
 - Casos donde la criticidad bajó porque el paciente lo pidió: **0**
 
-Más `make test`: **804 tests**, que incluyen cero falsos positivos de manipulación sobre
+Más `make test`: **817 tests**, que incluyen cero falsos positivos de manipulación sobre
 turnos textuales del dataset oficial. Ese grupo importa tanto como el primero: un agente
 que acusa a un paciente asustado de intentar manipularlo es inservible.
 
@@ -936,7 +936,7 @@ ejecuta exactamente estos comandos como subprocesos. El veredicto es su código 
 así que no hay una segunda implementación dentro del panel.
 
 ```bash
-make test        # 804 tests unitarios y de regresión
+make test        # 817 tests unitarios y de regresión
 make eval        # 160 casos oficiales · cero falsos negativos clínicos
 make redteam     # 46 casos adversariales (requiere la API levantada)
 make humo        # 103 comprobaciones de extremo a extremo (requiere la API levantada)
